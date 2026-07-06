@@ -166,12 +166,12 @@
         </mxGraphModel>
     </diagram>
     <diagram id="SoMMd9zkJQQ8GTWemd2C" name="AI Engine">
-        <mxGraphModel dx="1745" dy="1851" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+        <mxGraphModel dx="1112" dy="825" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
             <root>
                 <mxCell id="CdsSyaXndZwnUoWsvtCF-0"/>
                 <mxCell id="CdsSyaXndZwnUoWsvtCF-1" parent="CdsSyaXndZwnUoWsvtCF-0"/>
                 <mxCell id="b2jpjKT11ZQaq8Bi3uGw-0" parent="CdsSyaXndZwnUoWsvtCF-1" style="shape=table;startSize=30;container=1;collapsible=0;childLayout=tableLayout;fontSize=16;align=left;verticalAlign=top;fillColor=none;strokeColor=none;fontColor=#4D4D4D;fontStyle=1;spacingLeft=6;spacing=0;resizable=0;" value="Legend" vertex="1">
-                    <mxGeometry height="210" width="180" x="150" y="-20" as="geometry"/>
+                    <mxGeometry height="210" width="180" x="120" y="10" as="geometry"/>
                 </mxCell>
                 <mxCell id="b2jpjKT11ZQaq8Bi3uGw-1" parent="b2jpjKT11ZQaq8Bi3uGw-0" style="shape=tableRow;horizontal=0;startSize=0;swimlaneHead=0;swimlaneBody=0;strokeColor=inherit;top=0;left=0;bottom=0;right=0;collapsible=0;dropTarget=0;fillColor=none;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;fontSize=12;" value="" vertex="1">
                     <mxGeometry height="30" width="180" y="30" as="geometry"/>
@@ -223,7 +223,7 @@
                 </mxCell>
                 <object placeholders="1" c4Name="AI Engine" c4Type="ContainerScopeBoundary" c4Application="Container" label="&lt;font style=&quot;font-size: 16px&quot;&gt;&lt;b&gt;&lt;div style=&quot;text-align: left&quot;&gt;%c4Name%&lt;/div&gt;&lt;/b&gt;&lt;/font&gt;&lt;div style=&quot;text-align: left&quot;&gt;[%c4Application%]&lt;/div&gt;" id="b2jpjKT11ZQaq8Bi3uGw-13">
                     <mxCell parent="CdsSyaXndZwnUoWsvtCF-1" style="rounded=1;fontSize=11;whiteSpace=wrap;html=1;dashed=1;arcSize=20;fillColor=none;strokeColor=#666666;fontColor=#333333;labelBackgroundColor=none;align=left;verticalAlign=bottom;labelBorderColor=none;spacingTop=0;spacing=10;dashPattern=8 4;metaEdit=1;rotatable=0;perimeter=rectanglePerimeter;noLabel=0;labelPadding=0;allowArrows=0;connectable=0;expand=0;recursiveResize=0;editable=1;pointerEvents=0;absoluteArcSize=1;points=[[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0.25,0],[1,0.5,0],[1,0.75,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.75,0],[0,0.5,0],[0,0.25,0]];" vertex="1">
-                        <mxGeometry height="740" width="970" x="-10" y="240" as="geometry"/>
+                        <mxGeometry height="740" width="700" x="110" y="240" as="geometry"/>
                     </mxCell>
                 </object>
                 <mxCell id="b2jpjKT11ZQaq8Bi3uGw-22" edge="1" parent="CdsSyaXndZwnUoWsvtCF-1" source="b2jpjKT11ZQaq8Bi3uGw-14" style="edgeStyle=none;html=1;dashed=1;dashPattern=8 8;" target="b2jpjKT11ZQaq8Bi3uGw-21">
@@ -247,6 +247,11 @@
                 <mxCell id="b2jpjKT11ZQaq8Bi3uGw-17" edge="1" parent="CdsSyaXndZwnUoWsvtCF-1" source="b2jpjKT11ZQaq8Bi3uGw-16" style="edgeStyle=none;html=1;entryX=0.392;entryY=0.025;entryDx=0;entryDy=0;entryPerimeter=0;dashed=1;dashPattern=8 8;" target="b2jpjKT11ZQaq8Bi3uGw-14">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
+                <mxCell id="aoh1-k6OWN8eY4mBE094-0" connectable="0" parent="b2jpjKT11ZQaq8Bi3uGw-17" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="Forwards to request" vertex="1">
+                    <mxGeometry relative="1" x="-0.1259" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
                 <object placeholders="1" c4Name="Inference Controller" c4Type="Component" c4Technology="C++" c4Description="Provides inference function" label="&lt;font style=&quot;font-size: 16px&quot;&gt;&lt;b&gt;%c4Name%&lt;/b&gt;&lt;/font&gt;&lt;div&gt;[%c4Type%: %c4Technology%]&lt;/div&gt;&lt;br&gt;&lt;div&gt;&lt;font style=&quot;font-size: 11px&quot;&gt;%c4Description%&lt;/font&gt;&lt;/div&gt;" id="b2jpjKT11ZQaq8Bi3uGw-21">
                     <mxCell parent="CdsSyaXndZwnUoWsvtCF-1" style="rounded=1;whiteSpace=wrap;html=1;labelBackgroundColor=none;fillColor=#63BEF2;fontColor=#ffffff;align=center;arcSize=6;strokeColor=#2086C9;metaEdit=1;resizable=0;points=[[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0.25,0],[1,0.5,0],[1,0.75,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.75,0],[0,0.5,0],[0,0.25,0]];" vertex="1">
                         <mxGeometry height="120" width="240" x="250" y="630" as="geometry"/>
@@ -257,7 +262,7 @@
                         <mxGeometry height="120" width="240" x="550" y="630" as="geometry"/>
                     </mxCell>
                 </object>
-                <object placeholders="1" c4Name="Object Strage" c4Type="Container" c4Technology="Rocal volume" c4Description="Strage of weight and generate logs" label="&lt;font style=&quot;font-size: 16px&quot;&gt;&lt;b&gt;%c4Name%&lt;/b&gt;&lt;/font&gt;&lt;div&gt;[%c4Type%:&amp;nbsp;%c4Technology%]&lt;/div&gt;&lt;br&gt;&lt;div&gt;&lt;font style=&quot;font-size: 11px&quot;&gt;&lt;font color=&quot;#E6E6E6&quot;&gt;%c4Description%&lt;/font&gt;&lt;/div&gt;" id="b2jpjKT11ZQaq8Bi3uGw-25">
+                <object placeholders="1" c4Name="Object Storage" c4Type="Container" c4Technology="Local Volume" c4Description="Strage of weight and generate logs" label="&lt;font style=&quot;font-size: 16px&quot;&gt;&lt;b&gt;%c4Name%&lt;/b&gt;&lt;/font&gt;&lt;div&gt;[%c4Type%:&amp;nbsp;%c4Technology%]&lt;/div&gt;&lt;br&gt;&lt;div&gt;&lt;font style=&quot;font-size: 11px&quot;&gt;&lt;font color=&quot;#E6E6E6&quot;&gt;%c4Description%&lt;/font&gt;&lt;/div&gt;" id="b2jpjKT11ZQaq8Bi3uGw-25">
                     <mxCell parent="CdsSyaXndZwnUoWsvtCF-1" style="shape=cylinder3;size=15;whiteSpace=wrap;html=1;boundedLbl=1;rounded=0;labelBackgroundColor=none;fillColor=#23A2D9;fontSize=12;fontColor=#ffffff;align=center;strokeColor=#0E7DAD;metaEdit=1;points=[[0.5,0,0],[1,0.25,0],[1,0.5,0],[1,0.75,0],[0.5,1,0],[0,0.75,0],[0,0.5,0],[0,0.25,0]];resizable=0;" vertex="1">
                         <mxGeometry height="120" width="240" x="240" y="1040" as="geometry"/>
                     </mxCell>
