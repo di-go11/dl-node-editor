@@ -1,6 +1,6 @@
 <mxfile host="65bd71144e">
     <diagram id="nwg15SmEY8SsfU0MmKSa" name="software-architecture">
-        <mxGraphModel dx="2069" dy="922" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+        <mxGraphModel grid="1" page="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
@@ -30,7 +30,7 @@
                         <mxPoint x="-3" y="-2" as="offset"/>
                     </mxGeometry>
                 </mxCell>
-                <object placeholders="1" c4Name="AI Engine" c4Type="Container" c4Technology="C++, CUDA" c4Description="Description of container role/responsibility." label="&lt;font style=&quot;font-size: 16px&quot;&gt;&lt;b&gt;%c4Name%&lt;/b&gt;&lt;/font&gt;&lt;div&gt;[%c4Type%: %c4Technology%]&lt;/div&gt;&lt;br&gt;&lt;div&gt;&lt;font style=&quot;font-size: 11px&quot;&gt;&lt;font color=&quot;#E6E6E6&quot;&gt;%c4Description%&lt;/font&gt;&lt;/div&gt;" id="iImmaSMTrJ7Yt7cwyGYh-13">
+                <object placeholders="1" c4Name="AI Engine" c4Type="Container" c4Technology="C++, CUDA, docker" c4Description="Description of container role/responsibility." label="&lt;font style=&quot;font-size: 16px&quot;&gt;&lt;b&gt;%c4Name%&lt;/b&gt;&lt;/font&gt;&lt;div&gt;[%c4Type%: %c4Technology%]&lt;/div&gt;&lt;br&gt;&lt;div&gt;&lt;font style=&quot;font-size: 11px&quot;&gt;&lt;font color=&quot;#E6E6E6&quot;&gt;%c4Description%&lt;/font&gt;&lt;/div&gt;" id="iImmaSMTrJ7Yt7cwyGYh-13">
                     <mxCell parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;labelBackgroundColor=none;fillColor=#23A2D9;fontColor=#ffffff;align=center;arcSize=10;strokeColor=#0E7DAD;metaEdit=1;resizable=0;points=[[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0.25,0],[1,0.5,0],[1,0.75,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.75,0],[0,0.5,0],[0,0.25,0]];" vertex="1">
                         <mxGeometry height="120" width="240" x="174" y="960" as="geometry"/>
                     </mxCell>
@@ -166,7 +166,7 @@
         </mxGraphModel>
     </diagram>
     <diagram id="SoMMd9zkJQQ8GTWemd2C" name="AI Engine">
-        <mxGraphModel dx="1112" dy="825" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+        <mxGraphModel dx="1043" dy="825" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
             <root>
                 <mxCell id="CdsSyaXndZwnUoWsvtCF-0"/>
                 <mxCell id="CdsSyaXndZwnUoWsvtCF-1" parent="CdsSyaXndZwnUoWsvtCF-0"/>
@@ -223,41 +223,32 @@
                 </mxCell>
                 <object placeholders="1" c4Name="AI Engine" c4Type="ContainerScopeBoundary" c4Application="Container" label="&lt;font style=&quot;font-size: 16px&quot;&gt;&lt;b&gt;&lt;div style=&quot;text-align: left&quot;&gt;%c4Name%&lt;/div&gt;&lt;/b&gt;&lt;/font&gt;&lt;div style=&quot;text-align: left&quot;&gt;[%c4Application%]&lt;/div&gt;" id="b2jpjKT11ZQaq8Bi3uGw-13">
                     <mxCell parent="CdsSyaXndZwnUoWsvtCF-1" style="rounded=1;fontSize=11;whiteSpace=wrap;html=1;dashed=1;arcSize=20;fillColor=none;strokeColor=#666666;fontColor=#333333;labelBackgroundColor=none;align=left;verticalAlign=bottom;labelBorderColor=none;spacingTop=0;spacing=10;dashPattern=8 4;metaEdit=1;rotatable=0;perimeter=rectanglePerimeter;noLabel=0;labelPadding=0;allowArrows=0;connectable=0;expand=0;recursiveResize=0;editable=1;pointerEvents=0;absoluteArcSize=1;points=[[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0.25,0],[1,0.5,0],[1,0.75,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.75,0],[0,0.5,0],[0,0.25,0]];" vertex="1">
-                        <mxGeometry height="740" width="700" x="110" y="240" as="geometry"/>
+                        <mxGeometry height="740" width="970" x="110" y="240" as="geometry"/>
                     </mxCell>
                 </object>
-                <mxCell id="b2jpjKT11ZQaq8Bi3uGw-22" edge="1" parent="CdsSyaXndZwnUoWsvtCF-1" source="b2jpjKT11ZQaq8Bi3uGw-14" style="edgeStyle=none;html=1;dashed=1;dashPattern=8 8;" target="b2jpjKT11ZQaq8Bi3uGw-21">
-                    <mxGeometry relative="1" as="geometry"/>
-                </mxCell>
-                <mxCell id="b2jpjKT11ZQaq8Bi3uGw-23" connectable="0" parent="b2jpjKT11ZQaq8Bi3uGw-22" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="Uses" vertex="1">
-                    <mxGeometry relative="1" x="-0.3765" y="3" as="geometry">
-                        <mxPoint x="-12" y="6" as="offset"/>
+                <object placeholders="1" c4Name="Interactors" c4Type="Component" c4Technology="c++" c4Description="Operate the component that use in application." label="&lt;font style=&quot;font-size: 16px&quot;&gt;&lt;b&gt;%c4Name%&lt;/b&gt;&lt;/font&gt;&lt;div&gt;[%c4Type%: %c4Technology%]&lt;/div&gt;&lt;br&gt;&lt;div&gt;&lt;font style=&quot;font-size: 11px&quot;&gt;%c4Description%&lt;/font&gt;&lt;/div&gt;" id="b2jpjKT11ZQaq8Bi3uGw-14">
+                    <mxCell parent="CdsSyaXndZwnUoWsvtCF-1" style="rounded=1;whiteSpace=wrap;html=1;labelBackgroundColor=none;fillColor=#63BEF2;fontColor=#ffffff;align=center;arcSize=6;strokeColor=#2086C9;metaEdit=1;resizable=0;points=[[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0.25,0],[1,0.5,0],[1,0.75,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.75,0],[0,0.5,0],[0,0.25,0]];" vertex="1">
+                        <mxGeometry height="120" width="240" x="380" y="450" as="geometry"/>
+                    </mxCell>
+                </object>
+                <mxCell id="xhHppPm6a-vk0JqUOQpL-1" edge="1" parent="CdsSyaXndZwnUoWsvtCF-1" source="b2jpjKT11ZQaq8Bi3uGw-16" style="edgeStyle=none;html=1;rounded=0;curved=0;dashed=1;dashPattern=8 8;" target="xhHppPm6a-vk0JqUOQpL-0">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="880" y="320"/>
+                        </Array>
                     </mxGeometry>
                 </mxCell>
-                <object placeholders="1" c4Name="AI Controller Component" c4Type="Component" c4Technology="c++" c4Description="Operate the component that use in application." label="&lt;font style=&quot;font-size: 16px&quot;&gt;&lt;b&gt;%c4Name%&lt;/b&gt;&lt;/font&gt;&lt;div&gt;[%c4Type%: %c4Technology%]&lt;/div&gt;&lt;br&gt;&lt;div&gt;&lt;font style=&quot;font-size: 11px&quot;&gt;%c4Description%&lt;/font&gt;&lt;/div&gt;" id="b2jpjKT11ZQaq8Bi3uGw-14">
+                <object placeholders="1" c4Name="main" c4Type="Component" c4Technology="c++" c4Description="entry point" label="&lt;font style=&quot;font-size: 16px&quot;&gt;&lt;b&gt;%c4Name%&lt;/b&gt;&lt;/font&gt;&lt;div&gt;[%c4Type%: %c4Technology%]&lt;/div&gt;&lt;br&gt;&lt;div&gt;&lt;font style=&quot;font-size: 11px&quot;&gt;%c4Description%&lt;/font&gt;&lt;/div&gt;" id="b2jpjKT11ZQaq8Bi3uGw-16">
                     <mxCell parent="CdsSyaXndZwnUoWsvtCF-1" style="rounded=1;whiteSpace=wrap;html=1;labelBackgroundColor=none;fillColor=#63BEF2;fontColor=#ffffff;align=center;arcSize=6;strokeColor=#2086C9;metaEdit=1;resizable=0;points=[[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0.25,0],[1,0.5,0],[1,0.75,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.75,0],[0,0.5,0],[0,0.25,0]];" vertex="1">
-                        <mxGeometry height="120" width="240" x="425" y="440" as="geometry"/>
+                        <mxGeometry height="120" width="240" x="430" y="260" as="geometry"/>
                     </mxCell>
                 </object>
-                <object placeholders="1" c4Name="Docker Adapter" c4Type="Component" c4Technology="c++" c4Description="Description of component role/responsibility." label="&lt;font style=&quot;font-size: 16px&quot;&gt;&lt;b&gt;%c4Name%&lt;/b&gt;&lt;/font&gt;&lt;div&gt;[%c4Type%: %c4Technology%]&lt;/div&gt;&lt;br&gt;&lt;div&gt;&lt;font style=&quot;font-size: 11px&quot;&gt;%c4Description%&lt;/font&gt;&lt;/div&gt;" id="b2jpjKT11ZQaq8Bi3uGw-16">
-                    <mxCell parent="CdsSyaXndZwnUoWsvtCF-1" style="rounded=1;whiteSpace=wrap;html=1;labelBackgroundColor=none;fillColor=#63BEF2;fontColor=#ffffff;align=center;arcSize=6;strokeColor=#2086C9;metaEdit=1;resizable=0;points=[[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0.25,0],[1,0.5,0],[1,0.75,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.75,0],[0,0.5,0],[0,0.25,0]];" vertex="1">
-                        <mxGeometry height="120" width="240" x="310" y="260" as="geometry"/>
-                    </mxCell>
-                </object>
-                <mxCell id="b2jpjKT11ZQaq8Bi3uGw-17" edge="1" parent="CdsSyaXndZwnUoWsvtCF-1" source="b2jpjKT11ZQaq8Bi3uGw-16" style="edgeStyle=none;html=1;entryX=0.392;entryY=0.025;entryDx=0;entryDy=0;entryPerimeter=0;dashed=1;dashPattern=8 8;" target="b2jpjKT11ZQaq8Bi3uGw-14">
-                    <mxGeometry relative="1" as="geometry"/>
-                </mxCell>
-                <mxCell id="aoh1-k6OWN8eY4mBE094-0" connectable="0" parent="b2jpjKT11ZQaq8Bi3uGw-17" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="Forwards to request" vertex="1">
-                    <mxGeometry relative="1" x="-0.1259" as="geometry">
-                        <mxPoint as="offset"/>
-                    </mxGeometry>
-                </mxCell>
-                <object placeholders="1" c4Name="Inference Controller" c4Type="Component" c4Technology="C++" c4Description="Provides inference function" label="&lt;font style=&quot;font-size: 16px&quot;&gt;&lt;b&gt;%c4Name%&lt;/b&gt;&lt;/font&gt;&lt;div&gt;[%c4Type%: %c4Technology%]&lt;/div&gt;&lt;br&gt;&lt;div&gt;&lt;font style=&quot;font-size: 11px&quot;&gt;%c4Description%&lt;/font&gt;&lt;/div&gt;" id="b2jpjKT11ZQaq8Bi3uGw-21">
+                <object placeholders="1" c4Name="Inference" c4Type="Component" c4Technology="C++" c4Description="Provides inference function" label="&lt;font style=&quot;font-size: 16px&quot;&gt;&lt;b&gt;%c4Name%&lt;/b&gt;&lt;/font&gt;&lt;div&gt;[%c4Type%: %c4Technology%]&lt;/div&gt;&lt;br&gt;&lt;div&gt;&lt;font style=&quot;font-size: 11px&quot;&gt;%c4Description%&lt;/font&gt;&lt;/div&gt;" id="b2jpjKT11ZQaq8Bi3uGw-21">
                     <mxCell parent="CdsSyaXndZwnUoWsvtCF-1" style="rounded=1;whiteSpace=wrap;html=1;labelBackgroundColor=none;fillColor=#63BEF2;fontColor=#ffffff;align=center;arcSize=6;strokeColor=#2086C9;metaEdit=1;resizable=0;points=[[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0.25,0],[1,0.5,0],[1,0.75,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.75,0],[0,0.5,0],[0,0.25,0]];" vertex="1">
                         <mxGeometry height="120" width="240" x="250" y="630" as="geometry"/>
                     </mxCell>
                 </object>
-                <object placeholders="1" c4Name="Learning Controller" c4Type="Component" c4Technology="C++" c4Description="Provides learning function" label="&lt;font style=&quot;font-size: 16px&quot;&gt;&lt;b&gt;%c4Name%&lt;/b&gt;&lt;/font&gt;&lt;div&gt;[%c4Type%: %c4Technology%]&lt;/div&gt;&lt;br&gt;&lt;div&gt;&lt;font style=&quot;font-size: 11px&quot;&gt;%c4Description%&lt;/font&gt;&lt;/div&gt;" id="b2jpjKT11ZQaq8Bi3uGw-24">
+                <object placeholders="1" c4Name="Learning" c4Type="Component" c4Technology="C++" c4Description="Provides learning function" label="&lt;font style=&quot;font-size: 16px&quot;&gt;&lt;b&gt;%c4Name%&lt;/b&gt;&lt;/font&gt;&lt;div&gt;[%c4Type%: %c4Technology%]&lt;/div&gt;&lt;br&gt;&lt;div&gt;&lt;font style=&quot;font-size: 11px&quot;&gt;%c4Description%&lt;/font&gt;&lt;/div&gt;" id="b2jpjKT11ZQaq8Bi3uGw-24">
                     <mxCell parent="CdsSyaXndZwnUoWsvtCF-1" style="rounded=1;whiteSpace=wrap;html=1;labelBackgroundColor=none;fillColor=#63BEF2;fontColor=#ffffff;align=center;arcSize=6;strokeColor=#2086C9;metaEdit=1;resizable=0;points=[[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0.25,0],[1,0.5,0],[1,0.75,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.75,0],[0,0.5,0],[0,0.25,0]];" vertex="1">
                         <mxGeometry height="120" width="240" x="550" y="630" as="geometry"/>
                     </mxCell>
@@ -267,14 +258,6 @@
                         <mxGeometry height="120" width="240" x="240" y="1040" as="geometry"/>
                     </mxCell>
                 </object>
-                <mxCell id="b2jpjKT11ZQaq8Bi3uGw-30" edge="1" parent="CdsSyaXndZwnUoWsvtCF-1" source="b2jpjKT11ZQaq8Bi3uGw-14" style="edgeStyle=none;html=1;entryX=0.371;entryY=-0.008;entryDx=0;entryDy=0;entryPerimeter=0;dashed=1;dashPattern=8 8;" target="b2jpjKT11ZQaq8Bi3uGw-24">
-                    <mxGeometry relative="1" as="geometry"/>
-                </mxCell>
-                <mxCell id="b2jpjKT11ZQaq8Bi3uGw-31" connectable="0" parent="b2jpjKT11ZQaq8Bi3uGw-30" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="Uses" vertex="1">
-                    <mxGeometry relative="1" x="0.1357" y="-1" as="geometry">
-                        <mxPoint as="offset"/>
-                    </mxGeometry>
-                </mxCell>
                 <object placeholders="1" c4Name="API Application" c4Type="Container" c4Technology="Rust" c4Description="Description of container role/responsibility." label="&lt;font style=&quot;font-size: 16px&quot;&gt;&lt;b&gt;%c4Name%&lt;/b&gt;&lt;/font&gt;&lt;div&gt;[%c4Type%: %c4Technology%]&lt;/div&gt;&lt;br&gt;&lt;div&gt;&lt;font style=&quot;font-size: 11px&quot;&gt;&lt;font color=&quot;#E6E6E6&quot;&gt;%c4Description%&lt;/font&gt;&lt;/div&gt;" id="5h4uxgJPPN02Oz0mZPIW-0">
                     <mxCell parent="CdsSyaXndZwnUoWsvtCF-1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;labelBackgroundColor=none;fillColor=#23A2D9;fontColor=#ffffff;align=center;arcSize=10;strokeColor=#0E7DAD;metaEdit=1;resizable=0;points=[[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0.25,0],[1,0.5,0],[1,0.75,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.75,0],[0,0.5,0],[0,0.25,0]];" vertex="1">
                         <mxGeometry height="120" width="240" x="440" y="80" as="geometry"/>
@@ -285,7 +268,7 @@
                 </mxCell>
                 <mxCell id="5h4uxgJPPN02Oz0mZPIW-2" connectable="0" parent="5h4uxgJPPN02Oz0mZPIW-1" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="gRPC" vertex="1">
                     <mxGeometry relative="1" x="0.3764" y="4" as="geometry">
-                        <mxPoint x="8" y="-15" as="offset"/>
+                        <mxPoint x="-4" y="-15" as="offset"/>
                     </mxGeometry>
                 </mxCell>
                 <object placeholders="1" c4Name="Object Detection Component" c4Type="Component" c4Technology="C++" c4Description="Provides learning function" label="&lt;font style=&quot;font-size: 16px&quot;&gt;&lt;b&gt;%c4Name%&lt;/b&gt;&lt;/font&gt;&lt;div&gt;[%c4Type%: %c4Technology%]&lt;/div&gt;&lt;br&gt;&lt;div&gt;&lt;font style=&quot;font-size: 11px&quot;&gt;%c4Description%&lt;/font&gt;&lt;/div&gt;" id="5h4uxgJPPN02Oz0mZPIW-4">
@@ -316,6 +299,22 @@
                     <mxGeometry relative="1" x="0.2531" y="1" as="geometry">
                         <mxPoint as="offset"/>
                     </mxGeometry>
+                </mxCell>
+                <object placeholders="1" c4Name="Controllers" c4Type="Component" c4Technology="c++" c4Description="外部からの入力を内部のコード内で読める形に変換するコンポーネント" label="&lt;font style=&quot;font-size: 16px&quot;&gt;&lt;b&gt;%c4Name%&lt;/b&gt;&lt;/font&gt;&lt;div&gt;[%c4Type%: %c4Technology%]&lt;/div&gt;&lt;br&gt;&lt;div&gt;&lt;font style=&quot;font-size: 11px&quot;&gt;%c4Description%&lt;/font&gt;&lt;/div&gt;" id="xhHppPm6a-vk0JqUOQpL-0">
+                    <mxCell parent="CdsSyaXndZwnUoWsvtCF-1" style="rounded=1;whiteSpace=wrap;html=1;labelBackgroundColor=none;fillColor=#63BEF2;fontColor=#ffffff;align=center;arcSize=6;strokeColor=#2086C9;metaEdit=1;resizable=0;points=[[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0.25,0],[1,0.5,0],[1,0.75,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.75,0],[0,0.5,0],[0,0.25,0]];" vertex="1">
+                        <mxGeometry height="120" width="240" x="760" y="440" as="geometry"/>
+                    </mxCell>
+                </object>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram id="HSJtt42sEC7sw30r3gzP" name="ObjectDetectionComponent">
+        <mxGraphModel dx="1056" dy="784" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+            <root>
+                <mxCell id="Nz-PTpHQicmRMRTD6nee-0"/>
+                <mxCell id="Nz-PTpHQicmRMRTD6nee-1" parent="Nz-PTpHQicmRMRTD6nee-0"/>
+                <mxCell id="C8Xm1kNzPp2S7T_8RD7c-0" parent="Nz-PTpHQicmRMRTD6nee-1" style="shape=module;align=left;spacingLeft=20;align=center;verticalAlign=top;whiteSpace=wrap;html=1;" value="ObjectDetectionComponent" vertex="1">
+                    <mxGeometry height="490" width="550" x="60" y="90" as="geometry"/>
                 </mxCell>
             </root>
         </mxGraphModel>
