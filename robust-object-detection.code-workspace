@@ -3,6 +3,9 @@
     {
       "path": ".",
     },
+    {
+      "path": "apps/backend/ai-engine",
+    },
   ],
   "settings": {
     // editor settings

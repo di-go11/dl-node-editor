@@ -1,0 +1,9 @@
+version: "3.8"
+services:
+  ai-engine-dev:
+    image: mcr.microsoft.com/devcontainers/cpp:1-ubuntu-22.04 # Microsoft公式のC++開発用イメージ
+    volumes:
+      - ..:/workspaces:cached # ワークスペース全体をマウント（必要に応じて調整）
+    # VS Code が DevContainer として認識し続けるための設定
+    command: sleep infinity
+    working_dir: /workspaces/apps/backend/ai-engine
