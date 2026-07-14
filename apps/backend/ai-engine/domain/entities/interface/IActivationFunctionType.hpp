@@ -1,6 +1,8 @@
+#include<string>
+
 class IActivationFunctionType
 {
 public:
     virtual ~IActivationFunctionType() = default;
-    virtual ActivationFunction getType() const = 0;
+    virtual std::string getType() const = 0;
 };

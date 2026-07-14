@@ -1,6 +1,8 @@
+#include <string>
+
 class IModelType
 {
 public:
     virtual ~IModelType() = default;
-    virtual Model getModelType() const = 0;
+    virtual std::string getModelType() const = 0;
 };

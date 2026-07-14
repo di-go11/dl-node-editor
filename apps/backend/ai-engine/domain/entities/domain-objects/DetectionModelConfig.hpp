@@ -1,3 +1,6 @@
+#ifndef DETECTION_MODEL_CONFIG_HPP
+#define DETECTION_MODEL_CONFIG_HPP
+
 #include "../interface/IModelConfig.hpp"
 #include "../interface/IActivationFunctionType.hpp"
 #include "../interface/IModelType.hpp"
@@ -16,10 +19,11 @@ public:
     DetectionModelConfig(IModelType *modelType, IActivationFunctionType *activationFunctionType, unsigned int channels, unsigned int height, unsigned int width, unsigned int imgLayer);
     ~DetectionModelConfig() override;
 
-    IModelType *getModelType() const override;
-    IActivationFunctionType *getActivationFunctionType() const;
+    std::string getModelType() const override;
+    std::string getActivationFunctionType() const;
     unsigned int getChannels() const;
     unsigned int getHeight() const;
     unsigned int getWidth() const;
     unsigned int getImgLayer() const;
 };
+#endif // DETECTION_MODEL_CONFIG_HPP
