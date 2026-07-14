@@ -3,7 +3,7 @@ services:
   ai-engine-dev:
     build:
       context: .
-      dockerfile: .devcontainer/Dockerfile
+      dockerfile: Dockerfile
     volumes:
       - ..:/workspaces:cached # ワークスペース全体をマウント（必要に応じて調整）
     # VS Code が DevContainer として認識し続けるための設定
