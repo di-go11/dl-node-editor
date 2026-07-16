@@ -13,8 +13,15 @@ void TrainModelUsecase::execute(IDatasetRepository *dataset)
     // 1. Load the dataset using the dataset repository.
     // 2. Configure the model using the training parameters.
     // 3. Start the training process using the model trainer.
-    for (int epoch = 0; epoch < _param->getEpochSize(); ++epoch) {
+    for (int epoch = 0; epoch < _param->getEpochSize(); ++epoch)
+    {
         // Load dataset
-        
+        for (int batch = 0; batch < _param->getBatchSize(); ++batch)
+        {
+            // Get the data for the current batch
+            std::vector<std::vector<float>> data = dataset->getArray();
+
+            _trainer->trainTorch(data);
+        }
     }
 }
