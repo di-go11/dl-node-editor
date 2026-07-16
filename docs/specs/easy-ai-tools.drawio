@@ -422,7 +422,7 @@
         </mxGraphModel>
     </diagram>
     <diagram id="VY_42uLnqveadeTYHzR4" name="class">
-        <mxGraphModel dx="1391" dy="1644" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+        <mxGraphModel dx="1270" dy="1542" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
@@ -548,7 +548,7 @@
                 <mxCell id="GEm41cHpnrpwdkfAqM4L-43" parent="GEm41cHpnrpwdkfAqM4L-41" style="line;strokeWidth=1;fillColor=none;align=left;verticalAlign=middle;spacingTop=-1;spacingLeft=3;spacingRight=3;rotatable=0;labelPosition=right;points=[];portConstraint=eastwest;strokeColor=inherit;" value="" vertex="1">
                     <mxGeometry height="8" width="280" y="80" as="geometry"/>
                 </mxCell>
-                <mxCell id="GEm41cHpnrpwdkfAqM4L-44" parent="GEm41cHpnrpwdkfAqM4L-41" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;whiteSpace=wrap;html=1;" value="&lt;div&gt;+ TrainModelUsecase (trainer: IModelTrainer&amp;amp;, path&lt;span style=&quot;color: rgb(0, 0, 0); background-color: transparent;&quot;&gt;: IPathProvider&amp;amp; {const}&lt;/span&gt;&lt;span style=&quot;color: rgb(0, 0, 0); background-color: transparent;&quot;&gt;, parameter: TrainParam&amp;amp; {const}&lt;/span&gt;&lt;span style=&quot;background-color: transparent;&quot;&gt;)&lt;/span&gt;&lt;/div&gt;+ Execute(dataset: IDatasetRepository&amp;amp; {const}): void" vertex="1">
+                <mxCell id="GEm41cHpnrpwdkfAqM4L-44" parent="GEm41cHpnrpwdkfAqM4L-41" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;whiteSpace=wrap;html=1;" value="&lt;div&gt;+ TrainModelUsecase (trainer: IModelTrainer&amp;amp;, path&lt;span style=&quot;color: rgb(0, 0, 0); background-color: transparent;&quot;&gt;: IPathProvider&amp;amp; {const}&lt;/span&gt;&lt;span style=&quot;color: rgb(0, 0, 0); background-color: transparent;&quot;&gt;, parameter: TrainParam&amp;amp; {const}&lt;/span&gt;&lt;span style=&quot;background-color: transparent;&quot;&gt;)&lt;/span&gt;&lt;/div&gt;+ Execute(dataset: IDatasetRepository&amp;amp;): void" vertex="1">
                     <mxGeometry height="92" width="280" y="88" as="geometry"/>
                 </mxCell>
                 <mxCell id="bKql9IcUE8EAirn_OoC0-2" parent="1" style="verticalAlign=top;align=left;overflow=fill;html=1;whiteSpace=wrap;" value="&lt;p style=&quot;margin:0px;margin-top:4px;text-align:center;&quot;&gt;&lt;i&gt;&amp;lt;&amp;lt;Interface&amp;gt;&amp;gt;&lt;/i&gt;&lt;br&gt;&lt;b&gt;IDatasetRepository&lt;/b&gt;&lt;/p&gt;&lt;hr size=&quot;1&quot; style=&quot;border-style:solid;&quot;&gt;&lt;p style=&quot;margin:0px;margin-left:4px;&quot;&gt;+ getArray(): array&lt;/p&gt;" vertex="1">
@@ -568,19 +568,19 @@
                     <mxGeometry height="290" width="360" x="430" y="-150" as="geometry"/>
                 </mxCell>
                 <mxCell id="bKql9IcUE8EAirn_OoC0-1" parent="lRvb6tiC7Dd3dMnYeQ8r-8" style="shape=module;align=left;spacingLeft=20;align=center;verticalAlign=top;whiteSpace=wrap;html=1;" value="DatasetAdapter" vertex="1">
-                    <mxGeometry height="220" width="480" x="-120" y="70" as="geometry"/>
+                    <mxGeometry height="320" width="480" x="-120" y="-30" as="geometry"/>
                 </mxCell>
                 <mxCell id="lRvb6tiC7Dd3dMnYeQ8r-55" parent="lRvb6tiC7Dd3dMnYeQ8r-8" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=26;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;" value="ValDatasetRepositoryImpl" vertex="1">
-                    <mxGeometry height="129.9995652173913" width="201.18" x="140" y="140" as="geometry"/>
+                    <mxGeometry height="131.21695652173912" width="201.18" x="140" y="140" as="geometry"/>
                 </mxCell>
                 <mxCell id="lRvb6tiC7Dd3dMnYeQ8r-56" parent="lRvb6tiC7Dd3dMnYeQ8r-55" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;whiteSpace=wrap;html=1;" value="- _batch: unsigned int&lt;div&gt;- _pth: std::string&lt;/div&gt;" vertex="1">
-                    <mxGeometry height="32.78260869565217" width="201.18" y="26" as="geometry"/>
+                    <mxGeometry height="34" width="201.18" y="26" as="geometry"/>
                 </mxCell>
                 <mxCell id="lRvb6tiC7Dd3dMnYeQ8r-57" parent="lRvb6tiC7Dd3dMnYeQ8r-55" style="line;strokeWidth=1;fillColor=none;align=left;verticalAlign=middle;spacingTop=-1;spacingLeft=3;spacingRight=3;rotatable=0;labelPosition=right;points=[];portConstraint=eastwest;strokeColor=inherit;" value="" vertex="1">
-                    <mxGeometry height="10.08695652173913" width="201.18" y="58.78260869565217" as="geometry"/>
+                    <mxGeometry height="10.08695652173913" width="201.18" y="60" as="geometry"/>
                 </mxCell>
                 <mxCell id="lRvb6tiC7Dd3dMnYeQ8r-58" parent="lRvb6tiC7Dd3dMnYeQ8r-55" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;whiteSpace=wrap;html=1;" value="&lt;div&gt;+ DatasetRepositoryImpl(batch: unsigned int, pth: std::string )&lt;/div&gt;&lt;div&gt;&lt;span style=&quot;background-color: transparent;&quot;&gt;+ getArray(): array&lt;/span&gt;&lt;/div&gt;&lt;div&gt;&lt;span style=&quot;background-color: transparent;&quot;&gt;&lt;br&gt;&lt;/span&gt;&lt;/div&gt;" vertex="1">
-                    <mxGeometry height="61.13" width="201.18" y="68.8695652173913" as="geometry"/>
+                    <mxGeometry height="61.13" width="201.18" y="70.08695652173913" as="geometry"/>
                 </mxCell>
                 <mxCell id="lRvb6tiC7Dd3dMnYeQ8r-2" parent="lRvb6tiC7Dd3dMnYeQ8r-8" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=26;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;" value="TrainDatasetRepositoryImpl" vertex="1">
                     <mxGeometry height="129.9995652173913" width="201.18" x="-80" y="140" as="geometry"/>
@@ -593,6 +593,21 @@
                 </mxCell>
                 <mxCell id="lRvb6tiC7Dd3dMnYeQ8r-5" parent="lRvb6tiC7Dd3dMnYeQ8r-2" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;whiteSpace=wrap;html=1;" value="&lt;div&gt;+ DatasetRepositoryImpl(batch: unsigned int, pth: std::string )&lt;/div&gt;&lt;div&gt;&lt;span style=&quot;background-color: transparent;&quot;&gt;+ getArray(): array&lt;/span&gt;&lt;/div&gt;&lt;div&gt;&lt;span style=&quot;background-color: transparent;&quot;&gt;&lt;br&gt;&lt;/span&gt;&lt;/div&gt;" vertex="1">
                     <mxGeometry height="61.13" width="201.18" y="68.8695652173913" as="geometry"/>
+                </mxCell>
+                <mxCell id="Af7UfQ02Ju2DBl-D-yVV-1" parent="lRvb6tiC7Dd3dMnYeQ8r-8" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=26;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;" value="ReadImg" vertex="1">
+                    <mxGeometry height="128" width="200" x="-69.41000000000003" y="-10" as="geometry"/>
+                </mxCell>
+                <mxCell id="Af7UfQ02Ju2DBl-D-yVV-2" parent="Af7UfQ02Ju2DBl-D-yVV-1" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;whiteSpace=wrap;html=1;" value="- _readImgNum: unsigned int&lt;div&gt;- _finalReadImg: std::string&lt;/div&gt;" vertex="1">
+                    <mxGeometry height="34" width="200" y="26" as="geometry"/>
+                </mxCell>
+                <mxCell id="Af7UfQ02Ju2DBl-D-yVV-3" parent="Af7UfQ02Ju2DBl-D-yVV-1" style="line;strokeWidth=1;fillColor=none;align=left;verticalAlign=middle;spacingTop=-1;spacingLeft=3;spacingRight=3;rotatable=0;labelPosition=right;points=[];portConstraint=eastwest;strokeColor=inherit;" value="" vertex="1">
+                    <mxGeometry height="8" width="200" y="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="Af7UfQ02Ju2DBl-D-yVV-4" parent="Af7UfQ02Ju2DBl-D-yVV-1" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;whiteSpace=wrap;html=1;" value="+ ReadImg()&lt;div&gt;+ getImgList(): vector&amp;lt;Img&amp;gt;&lt;/div&gt;&lt;div&gt;+ getReadImgNum(): unsigned int&lt;/div&gt;" vertex="1">
+                    <mxGeometry height="60" width="200" y="68" as="geometry"/>
+                </mxCell>
+                <mxCell id="Af7UfQ02Ju2DBl-D-yVV-5" edge="1" parent="lRvb6tiC7Dd3dMnYeQ8r-8" source="Af7UfQ02Ju2DBl-D-yVV-1" style="edgeStyle=orthogonalEdgeStyle;shape=connector;rounded=0;html=1;entryX=0.446;entryY=0.016;entryDx=0;entryDy=0;entryPerimeter=0;strokeColor=default;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=11;fontColor=default;labelBackgroundColor=default;endArrow=diamond;endFill=1;" target="lRvb6tiC7Dd3dMnYeQ8r-2">
+                    <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
                 <mxCell id="lRvb6tiC7Dd3dMnYeQ8r-22" parent="1" style="shape=module;align=left;spacingLeft=20;align=center;verticalAlign=top;whiteSpace=wrap;html=1;" value="SavePathAdapter" vertex="1">
                     <mxGeometry height="230" width="470" x="800" y="-90" as="geometry"/>
@@ -685,16 +700,16 @@
                 <mxCell id="lRvb6tiC7Dd3dMnYeQ8r-59" edge="1" parent="1" source="lRvb6tiC7Dd3dMnYeQ8r-2" style="edgeStyle=orthogonalEdgeStyle;shape=connector;rounded=0;libavoidRouting=1;html=1;dashed=1;dashPattern=8 8;strokeColor=default;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=11;fontColor=default;labelBackgroundColor=default;endArrow=block;endFill=0;" target="bKql9IcUE8EAirn_OoC0-2">
                     <mxGeometry relative="1" as="geometry">
                         <Array as="points">
-                            <mxPoint x="451" y="255"/>
-                            <mxPoint x="600" y="255"/>
+                            <mxPoint x="451" y="256"/>
+                            <mxPoint x="600" y="256"/>
                         </Array>
                     </mxGeometry>
                 </mxCell>
                 <mxCell id="lRvb6tiC7Dd3dMnYeQ8r-60" edge="1" parent="1" source="lRvb6tiC7Dd3dMnYeQ8r-55" style="edgeStyle=orthogonalEdgeStyle;shape=connector;rounded=0;libavoidRouting=1;html=1;dashed=1;dashPattern=8 8;strokeColor=default;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=11;fontColor=default;labelBackgroundColor=default;endArrow=block;endFill=0;" target="bKql9IcUE8EAirn_OoC0-2">
                     <mxGeometry relative="1" as="geometry">
                         <Array as="points">
-                            <mxPoint x="671" y="255"/>
-                            <mxPoint x="600" y="255"/>
+                            <mxPoint x="671" y="256"/>
+                            <mxPoint x="600" y="256"/>
                         </Array>
                     </mxGeometry>
                 </mxCell>
