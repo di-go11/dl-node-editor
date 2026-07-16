@@ -1,12 +1,12 @@
-#ifndef TRAINING_PARAMETER_HPP
-#define TRAINING_PARAMETER_HPP
+#ifndef TRAIN_PARAM_HPP
+#define TRAIN_PARAM_HPP
 
 #include <memory>
 
 #include "../interface/IModelConfig.hpp"
 #include "../interface/ILossFnConfig.hpp"
 
-class TrainingParameter {
+class TrainParam {
 private:
     std::shared_ptr<IModelConfig> _modelConfig;
     std::shared_ptr<ILossFnConfig> _lossFnConfig;
@@ -16,8 +16,8 @@ private:
     double _learningRate;
 
 public:
-    TrainingParameter(std::shared_ptr<IModelConfig> modelconfig, std::shared_ptr<ILossFnConfig> lossfnconfig, unsigned int epochsize, unsigned int batchsize, double learningrate);
-    ~TrainingParameter() = default;
+    TrainParam(std::shared_ptr<IModelConfig> modelconfig, std::shared_ptr<ILossFnConfig> lossfnconfig, unsigned int epochsize, unsigned int batchsize, double learningrate);
+    ~TrainParam() = default;
 
     double getLr() const;
     unsigned int getEpochSize() const;
@@ -26,4 +26,4 @@ public:
     std::shared_ptr<ILossFnConfig> getLossFnConfig() const;
 };
 
-#endif // TRAINING_PARAMETER_HPP
+#endif // TRAIN_PARAM_HPP
