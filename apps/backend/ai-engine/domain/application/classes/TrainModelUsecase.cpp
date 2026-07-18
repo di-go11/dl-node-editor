@@ -19,9 +19,8 @@ void TrainModelUsecase::execute(IDatasetRepository *dataset)
         for (int batch = 0; batch < _param->getBatchSize(); ++batch)
         {
             // Get the data for the current batch
-            std::vector<std::vector<float>> data = dataset->getArray();
-
-            _trainer->train();
+            BatchData batchData = dataset->getBatchData();
+            _trainer->train(batchData);
         }
     }
 }

@@ -1,8 +1,8 @@
-#include <vector>
+#include "../../entities/domain-objects/BatchData.hpp"
 
 class IDatasetRepository
 {
-    public:
-        virtual ~IDatasetRepository() = default;
-        virtual std::vector<std::vector<float>> getArray() = 0;
+public:
+    virtual ~IDatasetRepository() = default;
+    virtual BatchData getBatchData() = 0;
 };
