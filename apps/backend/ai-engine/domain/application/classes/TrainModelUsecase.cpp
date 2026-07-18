@@ -21,7 +21,7 @@ void TrainModelUsecase::execute(IDatasetRepository *dataset)
             // Get the data for the current batch
             std::vector<std::vector<float>> data = dataset->getArray();
 
-            _trainer->trainTorch(data);
+            _trainer->train();
         }
     }
 }

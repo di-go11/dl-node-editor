@@ -1,8 +1,5 @@
 #include <vector>
 
-struct TrainData{
-    
-}
 class IModelTrainer
 {
 public:
