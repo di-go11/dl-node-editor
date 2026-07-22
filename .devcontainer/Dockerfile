@@ -24,7 +24,7 @@ RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
 WORKDIR /opt
 
 # 3. LibTorch (CUDA 12.6 / cxx11 ABI) をダウンロードして解凍
-RUN wget -O libtorch.zip https://download.pytorch.org/libtorch/cu126/libtorch-cxx11-abi-shared-with-deps-2.5.1%2Bcu126.zip \
+RUN wget -O libtorch.zip https://download.pytorch.org/libtorch/cu126/libtorch-shared-with-deps-2.13.0%2Bcu126.zip \
     && unzip -q libtorch.zip \
     && rm libtorch.zip
 
