@@ -13,10 +13,13 @@ find_package(Torch REQUIRED)
 
 # 2. ライブラリを作成
 add_library(ai_engine_app
-	domain/adapters/TorchModelTrainer.cpp
-	domain/application/classes/TrainModelUsecase.cpp
+	domain/adapters/impl/BatchTensorConverter.cpp
+	domain/adapters/impl/TorchModelTrainer.cpp
+	domain/adapters/interfaces/IModelAchManager.hpp
+	domain/application/impl/TrainModelUsecase.cpp
 	domain/entities/domain-objects/SegnetConfig.cpp
 	domain/entities/domain-objects/TrainParam.cpp
+	domain/entities/domain-objects/ImageData.hpp
 )
 
 # 3. LibTorchのインクルードパスとライブラリをターゲットに設定する

@@ -1,8 +1,8 @@
 #include "./TrainModelUsecase.hpp"
 #include "../../entities/domain-objects/TrainParam.hpp"
-#include "../interface/IDatasetRepository.hpp"
-#include "../interface/IModelTrainer.hpp"
-#include "../interface/IPathProvidor.hpp"
+#include "../interfaces/IDatasetRepository.hpp"
+#include "../interfaces/IModelTrainer.hpp"
+#include "../interfaces/IPathProvidor.hpp"
 #include "../../entities/domain-objects/BatchData.hpp"
 #include "../../entities/domain-objects/DatasetSize.hpp"
 
