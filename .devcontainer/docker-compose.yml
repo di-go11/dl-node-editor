@@ -7,5 +7,20 @@ services:
     volumes:
       - ..:/workspaces:cached # ワークスペース全体をマウント（必要に応じて調整）
     # VS Code が DevContainer として認識し続けるための設定
-    command: sleep infinity
+    command: /bin/bash -c "while sleep 1000; do :; done"
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    cap_add:
+      - SYS_PTRACE
+
+    security_opt:
+      - seccomp:unconfined
+
     working_dir: /workspaces/apps/backend/ai-engine
