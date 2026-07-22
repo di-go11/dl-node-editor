@@ -18,8 +18,6 @@ TrainModelUsecase::TrainModelUsecase(const std::shared_ptr<TrainParam> &param,
       _trainer(trainer),
       _datasetSize(datasetSize) {}
 
-TrainModelUsecase::~TrainModelUsecase() = default;
-
 void TrainModelUsecase::execute(IDatasetRepository *dataset)
 {
     // Here you can implement the logic to execute the training process
