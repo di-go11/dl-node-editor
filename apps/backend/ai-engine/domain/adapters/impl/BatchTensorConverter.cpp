@@ -15,38 +15,42 @@ std::vector<float> BatchTensorConverter::flattenValues(const BatchData &batchDat
 
     return flattened;
 }
-
+// ImageDataのshapeチェック
 std::vector<int64_t> BatchTensorConverter::resolveShape(const BatchData &batchData, std::size_t valueCount)
 {
-    if (!batchData.shape.empty())
-    {
-        std::vector<int64_t> resolvedShape;
-        resolvedShape.reserve(batchData.shape.size());
-
-        std::size_t shapeProduct = 1;
-        for (const auto dimension : batchData.shape)
-        {
-            resolvedShape.push_back(static_cast<int64_t>(dimension));
-            shapeProduct *= dimension;
-        }
-
-        if (shapeProduct != valueCount)
-        {
-            throw std::invalid_argument("BatchData.shape does not match values size");
-        }
-
-        return resolvedShape;
-    }
-
     if (batchData.values.empty())
     {
         throw std::invalid_argument("BatchData.values is empty");
     }
 
-    const auto firstRowSize = batchData.values.front().values.size();
-    for (const auto &row : batchData.values)
+    const auto &firstImage = batchData.values.front(); // values配列の最初の要素を参照(変数にコピーはしない)
+
+    if (!firstImage.shape.empty())
     {
-        if (row.values.size() != firstRowSize)
+        std::vector<int64_t> resolvedShape;
+        resolvedShape.reserve(firstImage.shape.size() + 1);                     // (channels, height, width分の配列サイズ+1の確保) +1は最後尾に画像サイズを入れるため
+        resolvedShape.push_back(static_cast<int64_t>(batchData.values.size())); // ベクトル(配列)の末尾(今回は配列の最初の方になる)にvaluesのサイズ(画像の枚数)のデータを保存
+
+        std::size_t shapeProduct = 1;
+        for (const auto dimension : firstImage.shape)
+        {
+            resolvedShape.push_back(static_cast<int64_t>(dimension));
+            shapeProduct *= dimension; // 画像のchannels*height*width
+        }
+
+        shapeProduct *= batchData.values.size();
+        if (shapeProduct != valueCount)
+        {
+            throw std::invalid_argument("ImageData.shape does not match values size");
+        }
+
+        return resolvedShape;
+    }
+
+    const auto firstRowSize = firstImage.values.size();
+    for (const auto &image : batchData.values)
+    {
+        if (image.values.size() != firstRowSize)
         {
             throw std::invalid_argument("BatchData.values must be rectangular when shape is omitted");
         }

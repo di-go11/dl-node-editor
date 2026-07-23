@@ -4,19 +4,16 @@
 #include "../interfaces/IModelTrainer.hpp"
 #include "../interfaces/IPathProvidor.hpp"
 #include "../../entities/domain-objects/BatchData.hpp"
-#include "../../entities/domain-objects/DatasetSize.hpp"
 
 #include <memory>
 #include <vector>
 
 TrainModelUsecase::TrainModelUsecase(const std::shared_ptr<TrainParam> &param,
                                      const std::shared_ptr<IPathProvidor> &path,
-                                     const std::shared_ptr<IModelTrainer> &trainer,
-                                     const std::shared_ptr<DatasetSize> &datasetSize)
+                                     const std::shared_ptr<IModelTrainer> &trainer)
     : _param(param),
       _path(path),
-      _trainer(trainer),
-      _datasetSize(datasetSize) {}
+      _trainer(trainer) {}
 
 void TrainModelUsecase::execute(IDatasetRepository *dataset)
 {
@@ -30,7 +27,7 @@ void TrainModelUsecase::execute(IDatasetRepository *dataset)
     {
         BatchData *batchData = dataset->getBatchData();
         // Load dataset
-        for (int offset = 0; offset < dataset->getDatasetSize()->num_samples; offset += _param->getBatchSize())
+        for (int offset = 0; offset < dataset->getBatchData()->num_samples; offset += _param->getBatchSize())
         {
             // Get the data for the current batch
             _trainer->train(batchData);

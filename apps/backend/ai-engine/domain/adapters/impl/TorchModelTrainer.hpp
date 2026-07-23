@@ -1,19 +1,21 @@
 #include <memory>
 #include <string>
+#include "../../application/interfaces/IModelTrainer.hpp"
 
-class IModelarchitecture;
+class IModelAchManager;
 class BatchData;
+class TrainParam;
 
-class TorchModelTrainer
+class TorchModelTrainer : IModelTrainer
 {
 private:
-    std::shared_ptr<IModelarchitecture> _modelArch;
+    std::shared_ptr<IModelAchManager> _modelArch;
     std::string _weightPath;
     std::string _graphPath;
 
 public:
-    TorchModelTrainer(const std::shared_ptr<IModelarchitecture> &modelArch, const std::string &weightPath, const std::string &graphPath);
+    TorchModelTrainer(const std::shared_ptr<IModelAchManager> &modelArch, const std::string &weightPath, const std::string &graphPath);
     ~TorchModelTrainer();
 
-    void train(BatchData *batchData);
+    void train(BatchData *batchData, TrainParam *trainParam) override = 0;
 };
