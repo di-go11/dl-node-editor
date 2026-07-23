@@ -3,10 +3,10 @@ namespace torch
     class Tensor;
 };
 
-struct IModelAchManager : torch::nn::Module
+struct IModelAchManager
 {
     // 仮想デストラクタ  (メモリリーク防止)
     virtual ~IModelAchManager() = default;
 
-    virtual torch::Tensor forward(torch::Tensor x) = 0;
+    virtual torch::Tensor computeForward(torch::Tensor x) = 0;
 };

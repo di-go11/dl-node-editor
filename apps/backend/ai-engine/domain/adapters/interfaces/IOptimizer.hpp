@@ -3,9 +3,9 @@ namespace torch
     class Tensor;
 };
 
-class IOptimization
+class IOptimizer
 {
 public:
-    virtual ~IOptimization() = default;
+    virtual ~IOptimizer() = default;
     virtual torch::Tensor computeOpimizer() = 0;
 };

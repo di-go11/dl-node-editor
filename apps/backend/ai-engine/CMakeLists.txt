@@ -15,7 +15,7 @@ find_package(Torch REQUIRED)
 add_library(ai_engine_app
 	domain/adapters/impl/BatchTensorConverter.cpp
 	domain/adapters/impl/TorchModelTrainer.cpp
-	domain/adapters/interfaces/IModelAchManager.hpp
+	domain/adapters/interfaces/IForward.hpp
 	domain/application/impl/TrainModelUsecase.cpp
 	domain/entities/domain-objects/SegnetConfig.cpp
 	domain/entities/domain-objects/TrainParam.cpp
