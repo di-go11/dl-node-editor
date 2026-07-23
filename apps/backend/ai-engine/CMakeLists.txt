@@ -20,6 +20,7 @@ add_library(ai_engine_app
 	domain/entities/domain-objects/SegnetConfig.cpp
 	domain/entities/domain-objects/TrainParam.cpp
 	domain/entities/domain-objects/ImageData.hpp
+	domain/adapters/interfaces/IZeroGrad.hpp
 )
 
 # 3. LibTorchのインクルードパスとライブラリをターゲットに設定する
