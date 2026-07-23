@@ -1,4 +1,7 @@
-#include <torch/torch.h>
+namespace torch
+{
+    class Tensor;
+};
 
 struct IModelAchManager : torch::nn::Module
 {
