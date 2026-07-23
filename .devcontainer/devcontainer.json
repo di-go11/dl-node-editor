@@ -5,7 +5,11 @@
   "workspaceFolder": "/workspaces/apps/backend/ai-engine",
   "customizations": {
     "vscode": {
-      "extensions": ["ms-vscode.cpptools", "ms-vscode.cmake-tools"],
+      "extensions": [
+        "ms-vscode.cpptools",
+        "ms-vscode.cmake-tools",
+        "mhutchie.git-graph"
+      ],
       "settings": {
         "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools"
       }
