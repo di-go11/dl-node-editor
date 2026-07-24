@@ -25,12 +25,13 @@ void TrainModelUsecase::execute(IDatasetRepository *dataset)
     // 3. Start the training process using the model trainer.
     for (int epoch = 0; epoch < _param->getEpochSize(); ++epoch)
     {
-        BatchData *batchData = dataset->getBatchData();
+        BatchData *predictionBatchData = dataset->getBatchData();
+        BatchData *targetBatchData = dataset->getBatchData();
         // Load dataset
         for (int offset = 0; offset < dataset->getBatchData()->num_samples; offset += _param->getBatchSize())
         {
             // Get the data for the current batch
-            _trainer->train(batchData);
+            _trainer->train(*predictionBatchData, *targetBatchData, *_param);
         }
     }
 }

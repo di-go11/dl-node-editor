@@ -5,5 +5,5 @@ class IModelTrainer
 {
 public:
     virtual ~IModelTrainer() = default;
-    virtual void train(BatchData *batchData, TrainParam *trainParam) = 0;
+    virtual void train(BatchData &predictionBatchData, BatchData &targetBatchData, TrainParam &trainParam) = 0;
 };

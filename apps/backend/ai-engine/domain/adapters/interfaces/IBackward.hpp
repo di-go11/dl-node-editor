@@ -7,5 +7,5 @@ class IBackward
 {
 public:
     virtual ~IBackward() = default;
-    virtual torch::Tensor computeBackword() = 0;
+    virtual torch::Tensor computeBackword(torch::Tensor &lossed) = 0;
 };

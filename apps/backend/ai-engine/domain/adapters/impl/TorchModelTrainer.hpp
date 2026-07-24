@@ -2,27 +2,35 @@
 #include <string>
 #include "../../application/interfaces/IModelTrainer.hpp"
 
-class IForward;
+class IModelAchManager;
+class IBackward;
 class ILoss;
 class IOptimizer;
 class IZeroGrad;
 class BatchData;
 class TrainParam;
 
-class TorchModelTrainer : IModelTrainer
+class TorchModelTrainer : public IModelTrainer
 {
 private:
-    std::shared_ptr<IForward> _forward;
-    std::shared_ptr<ILoss> _loss;
-    std::shared_ptr<IBackward> _backward;
-    std::shared_ptr<IOptimizer> _optimizer;
-    std::shared_ptr<IZeroGrad> _zerograd;
+    const std::shared_ptr<IModelAchManager> _forward;
+    const std::shared_ptr<ILoss> _loss;
+    const std::shared_ptr<IBackward> _backward;
+    const std::shared_ptr<IOptimizer> _optimizer;
+    const std::shared_ptr<IZeroGrad> _zerograd;
     std::string _weightPath;
     std::string _graphPath;
 
 public:
-    TorchModelTrainer(const std::shared_ptr<IForward> &forward, const std::string &weightPath, const std::string &graphPath);
-    ~TorchModelTrainer();
+    TorchModelTrainer(
+        const std::shared_ptr<IModelAchManager> &forward,
+        const std::shared_ptr<ILoss> &loss,
+        const std::shared_ptr<IBackward> &backward,
+        const std::shared_ptr<IOptimizer> &optimizer,
+        const std::shared_ptr<IZeroGrad> &zerograd,
+        const std::string &weightPath,
+        const std::string &graphPath);
+    ~TorchModelTrainer() override;
 
-    void train(BatchData *batchData, TrainParam *trainParam) override = 0;
+    void train(BatchData &predictionBatchData, BatchData &targetBatchData, TrainParam &trainParam) override;
 };

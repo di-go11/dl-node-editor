@@ -5,9 +5,9 @@ namespace torch
 
 class TrainParam;
 
-class ILossComputation
+class ILoss
 {
 public:
-    virtual ~ILossComputation() = default;
-    virtual torch::Tensor computeLoss(const TrainParam &trainParam, const torch::Tensor &predicted, const torch::Tensor &target) = 0;
+    virtual ~ILoss() = default;
+    virtual torch::Tensor computeLoss(const TrainParam &trainParam, torch::Tensor &predicted, torch::Tensor &target) = 0;
 };
