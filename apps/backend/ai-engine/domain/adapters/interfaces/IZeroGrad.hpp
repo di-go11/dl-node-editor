@@ -1,11 +1,8 @@
-namespace torch
-{
-    class Tensor;
-};
+#pragma once
 
 class IZeroGrad
 {
 public:
     virtual ~IZeroGrad() = default;
-    virtual torch::Tensor computeZeroGrad() = 0;
+    virtual void zeroGrad() = 0;
 };

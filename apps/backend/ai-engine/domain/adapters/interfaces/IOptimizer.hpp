@@ -1,11 +1,8 @@
-namespace torch
-{
-    class Tensor;
-};
+#pragma once
 
 class IOptimizer
 {
 public:
     virtual ~IOptimizer() = default;
-    virtual torch::Tensor computeOpimizer() = 0;
+    virtual void step() = 0;
 };
