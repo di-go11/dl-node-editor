@@ -5,11 +5,9 @@ namespace torch
     class Tensor;
 }
 
-class TrainParams;
-
 class IActivation
 {
 public:
     virtual ~IActivation() = default;
-    virtual void activate(const TrainParams &trainParams, torch::Tensor &input, torch::Tensor &output) = 0;
+    virtual void activate(const torch::Tensor &input, torch::Tensor &output) = 0;
 };
