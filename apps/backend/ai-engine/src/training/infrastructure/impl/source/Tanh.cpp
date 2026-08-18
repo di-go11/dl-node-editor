@@ -1,6 +1,6 @@
 #include "../header/Tanh.hpp"
 
-#include <torch::torch.hpp>
+#include <torch/torch.h>
 
 Tanh::Tanh() {}
 

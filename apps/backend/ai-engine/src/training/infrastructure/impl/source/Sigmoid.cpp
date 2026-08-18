@@ -1,9 +1,9 @@
 #include "../header/Sigmoid.hpp"
 
-#include <torch::torch.hpp>
+#include <torch/torch.h>
 
 Sigmoid::Sigmoid() {}
 
-void ReLL::activate(const torch::Tensor &input, torch::Tensor &output)
+void Sigmoid::activate(const torch::Tensor &input, torch::Tensor &output)
 {
 }

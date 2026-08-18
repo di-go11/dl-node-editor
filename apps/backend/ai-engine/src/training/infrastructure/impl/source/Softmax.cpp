@@ -1,9 +1,9 @@
 #include "../header/Softmax.hpp"
 
-#include <torch::torch.hpp>
+#include <torch/torch.h>
 
 Softmax::Softmax() {}
 
-void ReLL::activate(const torch::Tensor &input, torch::Tensor &output)
+void Softmax::activate(const torch::Tensor &input, torch::Tensor &output)
 {
 }
