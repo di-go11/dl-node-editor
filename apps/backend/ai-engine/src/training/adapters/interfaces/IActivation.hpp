@@ -1,6 +1,6 @@
 #pragma once
 
-namespace torch
+namespace at
 {
     class Tensor;
 }
@@ -9,5 +9,5 @@ class IActivation
 {
 public:
     virtual ~IActivation() = default;
-    virtual void activate(const torch::Tensor &input, torch::Tensor &output) = 0;
+    virtual void activate(const at::Tensor &input, at::Tensor &output) = 0;
 };

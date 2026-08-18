@@ -4,6 +4,7 @@
 
 Sigmoid::Sigmoid() {}
 
-void Sigmoid::activate(const torch::Tensor &input, torch::Tensor &output)
+void Sigmoid::activate(const at::Tensor &input, at::Tensor &output)
 {
+    output = torch::sigmoid(input);
 }

@@ -4,5 +4,5 @@ class Tanh : public IActivation
 {
 public:
     Tanh();
-    void activate(const torch::Tensor &input, torch::Tensor &output) override;
+    void activate(const at::Tensor &input, at::Tensor &output) override;
 };

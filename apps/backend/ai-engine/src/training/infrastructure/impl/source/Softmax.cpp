@@ -4,6 +4,7 @@
 
 Softmax::Softmax() {}
 
-void Softmax::activate(const torch::Tensor &input, torch::Tensor &output)
+void Softmax::activate(const at::Tensor &input, at::Tensor &output)
 {
+    output = torch::softmax(input, /*dim=*/1);
 }

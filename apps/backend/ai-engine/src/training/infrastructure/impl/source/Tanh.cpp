@@ -4,6 +4,7 @@
 
 Tanh::Tanh() {}
 
-void Tanh::activate(const torch::Tensor &input, torch::Tensor &output)
+void Tanh::activate(const at::Tensor &input, at::Tensor &output)
 {
+    output = torch::tanh(input);
 }

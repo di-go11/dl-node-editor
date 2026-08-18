@@ -2,10 +2,9 @@
 
 #include <torch/torch.h>
 
-namespace torchF = torch::nn::functional;
-
 ReLU::ReLU() {}
 
-void ReLU::activate(const torch::Tensor &input, torch::Tensor &output)
+void ReLU::activate(const at::Tensor &input, at::Tensor &output)
 {
+    output = torch::relu(input);
 }
