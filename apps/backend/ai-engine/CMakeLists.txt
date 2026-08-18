@@ -6,7 +6,8 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-set(Torch_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/libtorch/share/cmake/Torch")
+# libtorchのパスを指定する（Dockerfileで指定したパスを使用）
+set(CMAKE_PREFIX_PATH "/opt/libtorch" ${CMAKE_PREFIX_PATH})
 
 # 1. 以前のDockerfileで指定した環境変数（/opt/libtorch）からLibTorchを探す
 find_package(Torch REQUIRED)

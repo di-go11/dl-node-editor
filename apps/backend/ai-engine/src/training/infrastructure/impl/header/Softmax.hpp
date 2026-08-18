@@ -4,5 +4,5 @@ class Softmax : public IActivation
 {
 public:
     Softmax();
-    void activate(const torch::Tensor &input, torch::Tensor &output) {}
+    void activate(const torch::Tensor &input, torch::Tensor &output) override;
 };

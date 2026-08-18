@@ -14,6 +14,18 @@
 #include "../interfaces/IOptimizer.hpp"
 #include "../interfaces/IZeroGrad.hpp"
 
+namespace
+{
+    class NullActivation : public IActivation
+    {
+    public:
+        void activate(const torch::Tensor &input, torch::Tensor &output) override
+        {
+            output = input;
+        }
+    };
+} // namespace
+
 TorchModelTrainer::TorchModelTrainer(
     const std::shared_ptr<IModel> &model,
     const std::string &weightPath,
@@ -35,11 +47,12 @@ void TorchModelTrainer::train(BatchData &predictionBatchData, BatchData &targetB
     std::shared_ptr<ILoss> loss;
     std::shared_ptr<IOptimizer> optimizer;
     std::shared_ptr<IZeroGrad> zeroGrad;
+    std::shared_ptr<IActivation> activation = std::make_shared<NullActivation>();
 
     std::shared_ptr<IModel> model = _model;
 
     torch::Tensor predictionTensor = converter.convert(predictionBatchData);
     torch::Tensor targetTensor = converter.convert(targetBatchData);
 
-    model.train(predictionTensor, targetTensor, loss, optimizer, zeroGrad);
+    model->train(predictionTensor, targetTensor, *loss, *optimizer, *zeroGrad, *activation);
 }

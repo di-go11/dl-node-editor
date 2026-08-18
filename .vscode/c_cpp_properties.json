@@ -2,8 +2,18 @@
   "configurations": [
     {
       "name": "Linux",
-      "includePath": ["${workspaceFolder}/**"],
-      "compilerPath": "/usr/bin/g++",
+      "includePath": [
+        "${workspaceFolder}/apps/backend/ai-engine/src/**",
+        "${workspaceFolder}/apps/backend/ai-engine/**",
+        "${workspaceFolder}/**"
+      ],
+      "browse": {
+        "path": [
+          "${workspaceFolder}/apps/backend/ai-engine/src",
+          "${workspaceFolder}"
+        ]
+      },
+      "compileCommands": "${workspaceFolder}/apps/backend/ai-engine/build/compile_commands.json",
       "cStandard": "c17",
       "cppStandard": "c++17",
       "intelliSenseMode": "linux-gcc-x64",

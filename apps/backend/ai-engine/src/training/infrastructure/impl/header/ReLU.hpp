@@ -1,8 +1,8 @@
-#include "training/adapters/interfaces/IActivation.hpp"
+#include "../../../adapters/interfaces/IActivation.hpp"
 
 class ReLU : public IActivation
 {
 public:
     ReLU();
-    void activate(const torch::Tensor &input, torch::Tensor &output) {}
+    void activate(const torch::Tensor &input, torch::Tensor &output) override;
 };
