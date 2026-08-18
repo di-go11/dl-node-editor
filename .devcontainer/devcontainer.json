@@ -7,13 +7,13 @@
     "vscode": {
       "extensions": [
         "ms-vscode.cpptools",
-        "ms-vscode.cmake-tools"
+        "ms-vscode.cmake-tools",
+        "mhutchie.git-graph"
       ],
       "settings": {
-        "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
-        "C_Cpp.default.compilerPath": "/usr/bin/clang++",
-        "C_Cpp.default.intelliSenseMode": "linux-clang-x64"
+        "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools"
       }
     }
-  }
+  },
+  "remoteUser": "root"
 }

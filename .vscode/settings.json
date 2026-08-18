@@ -1,0 +1,5 @@
+{
+  "cmake.sourceDirectory": "D:/dagofile/graduate_research/robust-object-detection/apps/backend/ai-engine",
+  "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+  "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json"
+}
