@@ -3,6 +3,6 @@
 class ReLU : public IActivation
 {
 public:
-    ReLL();
+    ReLU();
     void activate(const torch::Tensor &input, torch::Tensor &output) {}
 };

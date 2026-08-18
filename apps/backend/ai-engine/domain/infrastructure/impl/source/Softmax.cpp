@@ -2,7 +2,7 @@
 
 #include <torch::torch.hpp>
 
-ReLU::ReLU() {}
+Softmax::Softmax() {}
 
 void ReLL::activate(const torch::Tensor &input, torch::Tensor &output)
 {
