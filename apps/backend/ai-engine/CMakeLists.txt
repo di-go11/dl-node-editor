@@ -23,7 +23,7 @@ add_library(ai_engine_app
 )
 
 # ヘッダーファイルを探す「基準の場所」を src フォルダに設定する
-target_include_directories(ai_engine_app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/training_engine)
+target_include_directories(ai_engine_app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 # 3. LibTorchのインクルードパスとライブラリをターゲットに設定する
 target_include_directories(ai_engine_app PRIVATE
