@@ -11,7 +11,7 @@ set(Torch_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/libtorch/share/cmake/Torc
 # 1. 以前のDockerfileで指定した環境変数（/opt/libtorch）からLibTorchを探す
 find_package(Torch REQUIRED)
 
-file(GLOB_RECURSE ALL_SRCS "training_engine/*.cpp")
+file(GLOB_RECURSE ALL_SRCS "src/training/*.cpp")
 
 # 2. ライブラリを作成
 add_library(ai_engine_app

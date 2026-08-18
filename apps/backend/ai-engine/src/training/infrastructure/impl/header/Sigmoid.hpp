@@ -1,4 +1,4 @@
-#include "../../../adapters/interfaces/IActivation.hpp"
+#include "adapters/interfaces/IActivation.hpp"
 
 class Sigmoid : public IActivation
 {

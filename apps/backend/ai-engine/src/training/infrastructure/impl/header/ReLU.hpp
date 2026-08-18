@@ -1,4 +1,4 @@
-#include "../../../adapters/interfaces/IActivation.hpp"
+#include "training/adapters/interfaces/IActivation.hpp"
 
 class ReLU : public IActivation
 {
