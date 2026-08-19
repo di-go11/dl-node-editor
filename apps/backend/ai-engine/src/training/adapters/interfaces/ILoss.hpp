@@ -9,5 +9,5 @@ class ILoss
 {
 public:
     virtual ~ILoss() = default;
-    virtual torch::Tensor computeLoss(const torch::Tensor &predicted, const torch::Tensor &target, torch::Tensor &output) = 0;
+    virtual void lossOut(const torch::Tensor &predicted, const torch::Tensor &target, torch::Tensor &output) = 0;
 };
