@@ -8,7 +8,8 @@
       "extensions": [
         "ms-vscode.cpptools",
         "ms-vscode.cmake-tools",
-        "mhutchie.git-graph"
+        "mhutchie.git-graph",
+        "anthropic.claude-code"
       ],
       "settings": {
         "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools"
