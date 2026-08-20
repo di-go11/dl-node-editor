@@ -20,7 +20,7 @@ private:
     std::unique_ptr<torch::optim::SGD> _optim;
 
 public:
-    SGDOptimizer(std::vector<torch::Tensor> &parameters, double learningRate);
+    SGDOptimizer(std::vector<torch::Tensor> &parameters, double learningRate, double momentum = 0.9, double weight_decay = 1e-4, bool nesterov = false);
     void resetGradients() override;
     void updateParmeters() override;
 };
