@@ -1,3 +1,5 @@
+#pragma once
+
 #include "../../../adapters/interfaces/IActivation.hpp"
 
 class Sigmoid : public IActivation

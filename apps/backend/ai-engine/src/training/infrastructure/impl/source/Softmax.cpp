@@ -2,9 +2,8 @@
 
 #include <torch/torch.h>
 
-Softmax::Softmax() {}
-
+Softmax::Softmax(int dim) : _dim(dim) {}
 void Softmax::activate(const at::Tensor &input, at::Tensor &output)
 {
-    output = torch::softmax(input, /*dim=*/1);
+    output = torch::softmax(input, /*dim=*/_dim);
 }

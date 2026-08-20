@@ -4,5 +4,6 @@ class IOptimizer
 {
 public:
     virtual ~IOptimizer() = default;
-    virtual void step() = 0;
+    virtual void resetGradients() = 0;
+    virtual void updateParmeters() = 0;
 };

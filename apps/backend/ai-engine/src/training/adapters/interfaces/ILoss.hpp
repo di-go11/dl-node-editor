@@ -1,6 +1,6 @@
 #pragma once
 
-namespace torch
+namespace at
 {
     class Tensor;
 }
@@ -9,5 +9,5 @@ class ILoss
 {
 public:
     virtual ~ILoss() = default;
-    virtual void lossOut(const torch::Tensor &predicted, const torch::Tensor &target, torch::Tensor &output) = 0;
+    virtual void lossOut(const at::Tensor &predicted, const at::Tensor &target, at::Tensor &output) = 0;
 };
