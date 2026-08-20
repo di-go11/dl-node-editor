@@ -1,4 +1,4 @@
-#include "../header/Sigmoid.hpp"
+#include "training/infrastructure/torchFunc/header/Sigmoid.hpp"
 
 #include <torch/torch.h>
 

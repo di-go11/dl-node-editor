@@ -1,3 +1,4 @@
+#pragma once
 #include "training/adapters/interfaces/IOptimizer.hpp"
 
 #include <memory>
