@@ -1,10 +1,10 @@
 #pragma once
 
-#include "src/training/adapters/interfaces/ILoss.hpp"
+#include "training/adapters/interfaces/ILoss.hpp"
 
-class CrossEntropy : public ILoss
+class MseLoss : public ILoss
 {
 public:
-    CrossEntropy();
+    MseLoss();
     void lossOut(const at::Tensor &predicted, const at::Tensor &target, at::Tensor &output) override;
 };
