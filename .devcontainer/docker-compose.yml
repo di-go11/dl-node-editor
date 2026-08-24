@@ -6,6 +6,7 @@ services:
       dockerfile: Dockerfile
     volumes:
       - ..:/workspaces:cached # ワークスペース全体をマウント（必要に応じて調整）
+      - ~/.claude:/root/.claude:cached # ホスト側のClaude設定(CLAUDE.md等)を共有
     # VS Code が DevContainer として認識し続けるための設定
     command: /bin/bash -c "while sleep 1000; do :; done"
 

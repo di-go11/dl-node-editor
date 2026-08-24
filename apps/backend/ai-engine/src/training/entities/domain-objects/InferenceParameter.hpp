@@ -1,6 +1,6 @@
 #include <memory>
 
-#include "../interface/IModelConfig.hpp"
+#include "../interfaces/IModelConfig.hpp"
 
 
 

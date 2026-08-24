@@ -4,9 +4,9 @@
 #include <stdexcept>
 #include <vector>
 
-#include "../interface/IDetectionModelConfig.hpp"
-#include "../interface/IActivationFunctionType.hpp"
-#include "../interface/IModelType.hpp"
+#include "../interfaces/IDetectionModelConfig.hpp"
+#include "../interfaces/IActivationFunctionType.hpp"
+#include "../interfaces/IModelType.hpp"
 
 class SegnetConfig : public IDetectionModelConfig
 {

@@ -1,4 +1,4 @@
-#include "training/infrastructure/torchFunc/header/AdamWOptimizer.hpp"
+#include "training/infrastructure/torchFunc/AdamWOptimizer.hpp"
 
 #include <torch/torch.h>
 
