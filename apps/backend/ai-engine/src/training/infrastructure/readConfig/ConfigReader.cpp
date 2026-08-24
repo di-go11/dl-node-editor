@@ -1,4 +1,4 @@
-#include "training/infrastructure/readConfig/headers/ConfigReader.hpp"
+#include "training/infrastructure/readConfig/ConfigReader.hpp"
 
 #include <fstream>
 #include <sstream>

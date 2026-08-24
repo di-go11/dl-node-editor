@@ -1,4 +1,4 @@
-#include "training/infrastructure/torchFunc/headers/ReLU.hpp"
+#include "training/infrastructure/torchFunc/ReLU.hpp"
 
 #include <torch/torch.h>
 

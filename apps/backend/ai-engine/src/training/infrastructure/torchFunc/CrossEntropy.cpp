@@ -1,4 +1,4 @@
-#include "src/training/infrastructure/torchFunc/headers/CrossEntropy.hpp"
+#include "src/training/infrastructure/torchFunc/CrossEntropy.hpp"
 
 #include <torch/torch.h>
 
