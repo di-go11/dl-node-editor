@@ -1,4 +1,4 @@
-#include "training/infrastructure/torchFunc/header/Tanh.hpp"
+#include "training/infrastructure/torchFunc/headers/Tanh.hpp"
 
 #include <torch/torch.h>
 

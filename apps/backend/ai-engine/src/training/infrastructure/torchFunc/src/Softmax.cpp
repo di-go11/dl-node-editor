@@ -1,4 +1,4 @@
-#include "training/infrastructure/torchFunc/header/Softmax.hpp"
+#include "training/infrastructure/torchFunc/headers/Softmax.hpp"
 
 #include <torch/torch.h>
 

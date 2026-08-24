@@ -2,8 +2,8 @@
 
 #include <memory>
 
-#include "../interface/IModelConfig.hpp"
-#include "../interface/ILossFnConfig.hpp"
+#include "../interfaces/IModelConfig.hpp"
+#include "../interfaces/ILossFnConfig.hpp"
 
 class TrainParam
 {
