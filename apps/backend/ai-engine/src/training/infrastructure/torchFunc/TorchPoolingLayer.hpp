@@ -13,5 +13,5 @@ public:
     void forward(const at::Tensor &input, at::Tensor &output) override;
 
 private:
-    std::variant<torch::nn::MaxPool2d, torch::nn::AvgPool2d> _param;
+    std::variant<torch::nn::MaxPool2d, torch::nn::AvgPool2d> _module;
 };
