@@ -12,6 +12,9 @@ services:
 
     deploy:
       resources:
+        limits:
+          cpus: "4"
+          memory: 5g
         reservations:
           devices:
             - driver: nvidia
