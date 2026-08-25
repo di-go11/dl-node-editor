@@ -11,6 +11,15 @@ TorchActivationLayer::TorchActivationLayer(const ActivationParams &params)
     case ActivationType::ReLU:
         _activation = std::make_shared<ReLU>();
         break;
+    case ActivationType::Sigmoid:
+        _activation = std::make_shared<Sigmoid>();
+        break;
+    case ActivationType::Softmax:
+        _activation = std::make_shared<Softmax>();
+        break;
+    case ActivationType::Tanh:
+        _activation = std::make_shared<Tanh>();
+        break;
 
     default:
         break;
@@ -19,5 +28,5 @@ TorchActivationLayer::TorchActivationLayer(const ActivationParams &params)
 
 void TorchActivationLayer::forward(const at::Tensor &input, at::Tensor &output)
 {
-    output =
+    _activation->activate(input, output);
 }
