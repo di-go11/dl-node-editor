@@ -1,5 +1,5 @@
 class BatchData;
-struct TrainigBatch;
+struct TrainingBatch;
 
 class IDatasetRepository
 {
