@@ -6,3 +6,8 @@ void TorchConv2DLayer::forward(const at::Tensor &input, at::Tensor &output)
 {
     output = _module->forward(input);
 }
+
+std::vector<at::Tensor> TorchConv2DLayer::parameters() const
+{
+    return _module->parameters();
+}

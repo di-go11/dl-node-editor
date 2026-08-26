@@ -1,6 +1,13 @@
 #include "training/infrastructure/torchFunc/TorchLayerBuilder.hpp"
 #include "training/adapters/interfaces/ILayer.hpp"
+
 // 各Paramsに対応する具象Layerのヘッダをinclude
+#include "training/infrastructure/torchFunc/TorchConv2DLayer.hpp"
+#include "training/infrastructure/torchFunc/TorchPoolingLayer.hpp"
+#include "training/infrastructure/torchFunc/TorchBatchNormLayer.hpp"
+#include "training/infrastructure/torchFunc/TorchLinearLayer.hpp"
+#include "training/infrastructure/torchFunc/TorchActivationLayer.hpp"
+
 #include <variant>
 
 namespace
