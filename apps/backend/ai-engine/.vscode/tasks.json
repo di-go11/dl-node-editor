@@ -1,0 +1,34 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"type": "shell",
+			"label": "CMake: build",
+			"command": "cmake --build ${workspaceFolder}/build --target ai_engine_app",
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"problemMatcher": ["$gcc"],
+			"detail": "CMake Toolsに依存せずcmakeコマンドを直接呼び出すビルドタスク(デバッグ開始前の自動ビルド用)"
+		},
+		{
+			"type": "cmake",
+			"label": "CMake: クリーンしてリビルド",
+			"command": "cleanRebuild",
+			"targets": [
+				"all"
+			],
+			"group": "build",
+			"problemMatcher": [],
+			"detail": "CMake テンプレート クリーンしてリビルド タスク"
+		},
+		{
+			"type": "cmake",
+			"label": "CMake: インストール",
+			"command": "install",
+			"problemMatcher": [],
+			"detail": "CMake テンプレート インストール タスク"
+		}
+	]
+}

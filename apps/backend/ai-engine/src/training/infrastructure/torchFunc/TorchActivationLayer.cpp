@@ -4,6 +4,8 @@
 #include "training/infrastructure/torchFunc/Softmax.hpp"
 #include "training/infrastructure/torchFunc/Tanh.hpp"
 
+#include <torch/torch.h>
+
 TorchActivationLayer::TorchActivationLayer(const ActivationParams &params)
 {
     switch (params.activationType)

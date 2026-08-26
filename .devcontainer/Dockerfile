@@ -9,6 +9,7 @@ RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
     cmake \
     ninja-build \
     clang \
+    gdb \
     git \
     pkg-config \
     ca-certificates \
@@ -17,8 +18,17 @@ RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
     libopencv-dev \
     wget \
     unzip \
+    # LibTorch(CUDAビルド)のtorch_cuda.so/torch_nvshmem.soが実行時に要求する
+    # オプションのCUDAライブラリ(構造化スパース演算・マルチGPU共有メモリ)
+    libcusparselt0-cuda-12 \
+    libnvshmem3-cuda-12 \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    # libcusparseLt/libnvshmemはバージョン別サブディレクトリに配置され、
+    # 標準のライブラリ検索パスに含まれないため、ldconfigに明示的に追加する
+    && echo "/usr/lib/x86_64-linux-gnu/libcusparseLt/12" > /etc/ld.so.conf.d/cusparselt.conf \
+    && echo "/usr/lib/x86_64-linux-gnu/nvshmem/12" > /etc/ld.so.conf.d/nvshmem.conf \
+    && ldconfig
 
 # 2. LibTorchを配置するディレクトリに移動
 WORKDIR /opt

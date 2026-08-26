@@ -1,17 +1,21 @@
 #include "training/infrastructure/torchFunc/TorchPoolingLayer.hpp"
 
-TorchPoolingLayer::TorchPoolingLayer(const PoolingParams &params)
+namespace
 {
-    if (params.type == PoolingType::Max)
+    std::variant<torch::nn::MaxPool2d, torch::nn::AvgPool2d> makeModule(const PoolingParams &params)
     {
-        _module = torch::nn::MaxPool2d(
-            torch::nn::MaxPool2dOptions(params.kernelSize).stride(params.stride).padding(params.padding));
-    }
-    else if (params.type == PoolingType::Average)
-    {
-        _module = torch::nn::AvgPool2d(
+        if (params.type == PoolingType::Max)
+        {
+            return torch::nn::MaxPool2d(
+                torch::nn::MaxPool2dOptions(params.kernelSize).stride(params.stride).padding(params.padding));
+        }
+        return torch::nn::AvgPool2d(
             torch::nn::AvgPool2dOptions(params.kernelSize).stride(params.stride).padding(params.padding));
     }
+} // namespace
+
+TorchPoolingLayer::TorchPoolingLayer(const PoolingParams &params) : _module(makeModule(params))
+{
 }
 
 void TorchPoolingLayer::forward(const at::Tensor &input, at::Tensor &output)

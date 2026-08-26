@@ -5,6 +5,7 @@
 class ConfigReader
 {
 public:
+    ConfigReader();
     AppConfig readAll(const std::string &filePath);
 
 private:
