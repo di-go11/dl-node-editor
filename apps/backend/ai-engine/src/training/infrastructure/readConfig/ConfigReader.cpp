@@ -91,11 +91,22 @@ AppConfig ConfigReader::readAll(const std::string &filePath)
                 {
                     throw std::runtime_error("Learning rate value is empty");
                 }
-                else if (value > "1.0" || value < "0.0")
+
+                double parsedValue;
+                try
+                {
+                    parsedValue = std::stod(value);
+                }
+                catch (...) // パース失敗時のエラー
+                {
+                    throw std::runtime_error("Learning rate value is not a number: " + value);
+                }
+
+                if (parsedValue > 1.0 || parsedValue < 0.0)
                 {
                     throw std::runtime_error("Learning rate value is out of range (0.0 - 1.0): " + value);
                 }
-                appConfig.optimizer.learningRate = std::stod(value);
+                appConfig.optimizer.learningRate = parsedValue;
             }
             else if (key == "weight_decay")
             {
@@ -103,7 +114,22 @@ AppConfig ConfigReader::readAll(const std::string &filePath)
                 {
                     throw std::runtime_error("Weight decay value is empty");
                 }
-                appConfig.optimizer.weightDecay = std::stod(value);
+
+                double parsedValue;
+                try
+                {
+                    parsedValue = std::stod(value);
+                }
+                catch (...) // パース失敗時のエラー
+                {
+                    throw std::runtime_error("Weight decay value is not a number: " + value);
+                }
+
+                if (parsedValue < 0.0)
+                {
+                    throw std::runtime_error("Weight decay value must not be negative: " + value);
+                }
+                appConfig.optimizer.weightDecay = parsedValue;
             }
             else
             {
