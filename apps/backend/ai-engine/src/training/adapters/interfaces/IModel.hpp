@@ -2,7 +2,7 @@
 
 #include <memory>
 
-namespace torch
+namespace at
 {
     class Tensor;
 }
@@ -16,5 +16,5 @@ class IModel
 public:
     virtual ~IModel() = default;
 
-    virtual void train(torch::Tensor &prediction, torch::Tensor &target, ILoss &loss, IOptimizer &optimizer, IActivation &activationFn) = 0;
+    virtual void train(at::Tensor &prediction, at::Tensor &target, ILoss &loss, IOptimizer &optimizer, IActivation &activationFn) = 0;
 };
