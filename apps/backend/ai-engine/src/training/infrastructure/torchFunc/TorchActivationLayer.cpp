@@ -4,6 +4,8 @@
 #include "training/infrastructure/torchFunc/Softmax.hpp"
 #include "training/infrastructure/torchFunc/Tanh.hpp"
 
+#include <torch/torch.h>
+
 TorchActivationLayer::TorchActivationLayer(const ActivationParams &params)
 {
     switch (params.activationType)
@@ -15,7 +17,7 @@ TorchActivationLayer::TorchActivationLayer(const ActivationParams &params)
         _activation = std::make_shared<Sigmoid>();
         break;
     case ActivationType::Softmax:
-        _activation = std::make_shared<Softmax>();
+        _activation = std::make_shared<Softmax>(params.dim);
         break;
     case ActivationType::Tanh:
         _activation = std::make_shared<Tanh>();
@@ -29,4 +31,9 @@ TorchActivationLayer::TorchActivationLayer(const ActivationParams &params)
 void TorchActivationLayer::forward(const at::Tensor &input, at::Tensor &output)
 {
     _activation->activate(input, output);
+}
+
+std::vector<at::Tensor> TorchActivationLayer::parameters() const
+{
+    return {};
 }

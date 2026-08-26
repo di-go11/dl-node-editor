@@ -6,3 +6,8 @@ void TorchLinearLayer::forward(const at::Tensor &input, at::Tensor &output)
 {
     output = _module->forward(input);
 }
+
+std::vector<at::Tensor> TorchLinearLayer::parameters() const
+{
+    return _module->parameters();
+}

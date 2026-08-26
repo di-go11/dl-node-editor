@@ -1,3 +1,5 @@
+#pragma once
+
 #include "training/entities/domain-objects/LayersConfig.hpp"
 #include <vector>
 

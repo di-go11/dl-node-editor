@@ -10,6 +10,7 @@ class TorchLinearLayer : public ILayer
 public:
     explicit TorchLinearLayer(const LinearParams &params);
     void forward(const at::Tensor &input, at::Tensor &output) override;
+    std::vector<at::Tensor> parameters() const override;
 
 private:
     torch::nn::Linear _module;

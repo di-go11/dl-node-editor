@@ -10,6 +10,7 @@ class TorchConv2DLayer : public ILayer
 public:
     explicit TorchConv2DLayer(const Conv2DParams &params);
     void forward(const at::Tensor &input, at::Tensor &output) override;
+    std::vector<at::Tensor> parameters() const override;
 
 private:
     torch::nn::Conv2d _module;

@@ -1,8 +1,8 @@
-#include "training/infrastructure/impl/header/SGDOptimizer.hpp"
+#include "training/infrastructure/torchFunc/SGDOptimizer.hpp"
 
 #include <torch/torch.h>
 
-SGDOptimizer::SGDOptimizer(std::vector<torch::Tensor> &parameters, double learningRate, double momentum, double weight_decay, bool nesterov)
+SGDOptimizer::SGDOptimizer(std::vector<at::Tensor> &parameters, double learningRate, double momentum, double weight_decay, bool nesterov)
 {
     _optim = std::make_unique<torch::optim::SGD>(parameters, torch::optim::SGDOptions(learningRate).momentum(momentum).weight_decay(weight_decay).nesterov(nesterov));
 }
