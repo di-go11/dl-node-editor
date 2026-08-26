@@ -1,10 +1,12 @@
 #pragma once
 
 #include <memory>
-#include <string>
-#include "../../application/interfaces/IModelTrainer.hpp"
-#include "../interfaces/IModel.hpp"
+#include "training/application/interfaces/IModelTrainer.hpp"
 
+class IModel;
+class ILoss;
+class IOptimizer;
+class IActivation;
 class BatchData;
 class TrainParam;
 
@@ -12,15 +14,17 @@ class TorchModelTrainer : public IModelTrainer
 {
 private:
     const std::shared_ptr<IModel> _model;
-    std::string _weightPath;
-    std::string _graphPath;
+    const std::shared_ptr<ILoss> _loss;
+    const std::shared_ptr<IOptimizer> _optimizer;
+    const std::shared_ptr<IActivation> _activation;
 
 public:
     TorchModelTrainer(
         const std::shared_ptr<IModel> &model,
-        const std::string &weightPath,
-        const std::string &graphPath);
+        const std::shared_ptr<ILoss> &loss,
+        const std::shared_ptr<IOptimizer> &optimizer,
+        const std::shared_ptr<IActivation> &activation);
     ~TorchModelTrainer() override;
 
-    void train(BatchData &predictionBatchData, BatchData &targetBatchData, TrainParam &trainParam) override;
+    void train(BatchData &inputBatchData, BatchData &targetBatchData, TrainParam &trainParam) override;
 };
