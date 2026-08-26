@@ -30,3 +30,8 @@ void TorchActivationLayer::forward(const at::Tensor &input, at::Tensor &output)
 {
     _activation->activate(input, output);
 }
+
+std::vector<at::Tensor> TorchActivationLayer::parameters() const
+{
+    return {};
+}

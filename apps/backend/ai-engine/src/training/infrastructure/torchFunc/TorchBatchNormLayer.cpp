@@ -6,3 +6,8 @@ void TorchBatchNormLayer::forward(const at::Tensor &input, at::Tensor &output)
 {
     output = _module->forward(input);
 }
+
+std::vector<at::Tensor> TorchBatchNormLayer::parameters() const
+{
+    return _module->parameters();
+}

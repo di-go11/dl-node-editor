@@ -11,6 +11,7 @@ class TorchActivationLayer : public ILayer
 public:
     explicit TorchActivationLayer(const ActivationParams &params);
     void forward(const at::Tensor &input, at::Tensor &output) override;
+    std::vector<at::Tensor> parameters() const override;
 
 private:
     std::shared_ptr<IActivation> _activation;
