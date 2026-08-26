@@ -18,7 +18,7 @@ TorchModel::TorchModel(const ModelGraph &graph, ILayerBuilder &builder)
     }
 }
 
-void TorchModel::train(torch::Tensor &prediction, torch::Tensor &target, ILoss &loss, IOptimizer &optimizer, IActivation &activationFn)
+void TorchModel::train(at::Tensor &prediction, at::Tensor &target, ILoss &loss, IOptimizer &optimizer, IActivation &activationFn)
 {
     at::Tensor current = prediction;
     at::Tensor next;

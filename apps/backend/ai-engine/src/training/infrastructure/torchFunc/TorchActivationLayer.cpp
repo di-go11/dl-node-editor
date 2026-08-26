@@ -15,7 +15,7 @@ TorchActivationLayer::TorchActivationLayer(const ActivationParams &params)
         _activation = std::make_shared<Sigmoid>();
         break;
     case ActivationType::Softmax:
-        _activation = std::make_shared<Softmax>();
+        _activation = std::make_shared<Softmax>(params.dim);
         break;
     case ActivationType::Tanh:
         _activation = std::make_shared<Tanh>();
