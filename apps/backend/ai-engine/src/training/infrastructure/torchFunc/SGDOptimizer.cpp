@@ -1,4 +1,4 @@
-#include "training/infrastructure/impl/header/SGDOptimizer.hpp"
+#include "training/infrastructure/torchFunc/SGDOptimizer.hpp"
 
 #include <torch/torch.h>
 
