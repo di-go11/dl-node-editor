@@ -4,6 +4,7 @@
 #include "../interfaces/IModelTrainer.hpp"
 #include "../interfaces/IPathProvidor.hpp"
 #include "../../entities/domain-objects/BatchData.hpp"
+#include "training/entities/domain-objects/TrainingBatch.hpp"
 
 #include <memory>
 #include <vector>
@@ -25,13 +26,11 @@ void TrainModelUsecase::execute(IDatasetRepository *dataset)
     // 3. Start the training process using the model trainer.
     for (int epoch = 0; epoch < _param->getEpochSize(); ++epoch)
     {
-        BatchData *predictionBatchData = dataset->getBatchData();
-        BatchData *targetBatchData = dataset->getBatchData();
-        // Load dataset
-        for (int offset = 0; offset < dataset->getBatchData()->num_samples; offset += _param->getBatchSize())
+        dataset->reset();
+        while (dataset->hasNext())
         {
-            // Get the data for the current batch
-            _trainer->train(*predictionBatchData, *targetBatchData, *_param);
+            TrainingBatch batch = dataset->getNextBatch();
+            _trainer->train(batch.input, batch.target, *_param);
         }
     }
 }
