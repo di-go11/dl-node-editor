@@ -1,5 +1,35 @@
 # c++技術書
 
+## virtual関数と純粋仮想関数
+
+| 種類 | 記法 | 実装 | 特徴 |
+|---|---|---|---|
+| 非virtual関数 | `void foo();` | 必須 | オーバーライド不可、静的束縛 |
+| 通常のvirtual関数 | `virtual void foo();` | 必須(基底クラス側に) | オーバーライド可能、動的束縛。派生クラスは再定義してもしなくてもよい |
+| 純粋仮想関数 | `virtual void foo() = 0;` | 不要(むしろ持たないのが基本) | オーバーライド**必須**。このクラス自体はインスタンス化できなくなる |
+
+### `= 0`が意味すること
+
+`= 0`は「この関数には実装本体を書かない(vtable上のエントリをnullptrで初期化する)」というコンパイラへの指示。これにより2つの効果が生まれる。
+
+1. **抽象クラス化**: 純粋仮想関数を1つでも持つクラスは「抽象クラス」となり、直接`new`でインスタンス化することはコンパイルエラーになる。
+2. **実装の強制**: このクラスを継承する派生クラスは、純粋仮想関数をすべてオーバーライドしない限り、その派生クラス自身も抽象クラスのままになり、インスタンス化できない。
+
+例(`IDatasetRepository.hpp`):
+```c++
+class IDatasetRepository
+{
+public:
+    virtual ~IDatasetRepository() = default; // 純粋仮想ではなく=default
+    virtual BatchData *getBatchData() = 0;
+    virtual void reset() = 0;
+    virtual bool hasNext() const = 0;
+    virtual TrainingBatch getNextBatch() = 0;
+};
+```
+
+デストラクタだけ`= 0`ではなく`= default`になっている点に注意。仮想デストラクタが必要な理由は、基底クラスのポインタ経由で派生クラスのオブジェクトを`delete`したときに、正しく派生クラスのデストラクタまで呼ばれるようにするため(仮想でないと未定義動作になる)。デストラクタまで純粋仮想にする必要はなく、`virtual`かつ実装を持てば(あるいは`= default`で自動生成させれば)十分。
+
 ## std::variantとstd::visit
 
 ### std::variant
