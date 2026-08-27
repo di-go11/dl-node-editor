@@ -1,25 +1,16 @@
 #pragma once
+
 #include <cstdint>
 #include <vector>
 
-struct RgbColor
-{
-    uint8_t r;
-    uint8_t g;
-    uint8_t b;
-};
-
-struct ColorClassEntry
-{
-    RgbColor color;
-    int classId;
-};
+struct ColorClassEntry;
+class RgbColor;
 
 class ColorLabelMap
 {
 public:
     void addEntry(const RgbColor &color, int classId);
-    int resolveClassId(const RgbColor &color) const;
+    int resolveClassId(const RgbColor &color /*アノテーションではなく対象画像の1ピクセル事のrgbデータ*/) const;
 
 private:
     std::vector<ColorClassEntry> _entries;
