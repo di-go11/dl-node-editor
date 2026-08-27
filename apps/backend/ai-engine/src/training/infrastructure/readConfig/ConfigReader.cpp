@@ -5,7 +5,7 @@
 #include <stdexcept>
 #include <iostream>
 
-ConfigReader::ConfigReader() = default;
+ConfigReader::ConfigReader() {}
 
 AppConfig ConfigReader::readAll(const std::string &filePath)
 {
