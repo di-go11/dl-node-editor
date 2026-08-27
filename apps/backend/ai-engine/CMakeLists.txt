@@ -12,6 +12,9 @@ set(CMAKE_PREFIX_PATH "/opt/libtorch" ${CMAKE_PREFIX_PATH})
 # 1. 以前のDockerfileで指定した環境変数（/opt/libtorch）からLibTorchを探す
 find_package(Torch REQUIRED)
 
+# 1-2. 画像デコード(JPEG/PNG)用にOpenCVを探す(Dockerfileでlibopencv-devをインストール済み)
+find_package(OpenCV REQUIRED)
+
 file(GLOB_RECURSE ALL_SRCS "src/training/*.cpp")
 
 # 2. ライブラリを作成(adapter/application/entities/infrastructure配下の実装をまとめる)
@@ -22,12 +25,13 @@ add_library(ai_engine_lib
 # ヘッダーファイルを探す「基準の場所」を src フォルダに設定する
 target_include_directories(ai_engine_lib PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
-# 3. LibTorchのインクルードパスとライブラリをターゲットに設定する
+# 3. LibTorch/OpenCVのインクルードパスとライブラリをターゲットに設定する
 target_include_directories(ai_engine_lib PRIVATE
 	${CMAKE_CURRENT_SOURCE_DIR}
 	${TORCH_INCLUDE_DIRS}
+	${OpenCV_INCLUDE_DIRS}
 )
-target_link_libraries(ai_engine_lib PRIVATE "${TORCH_LIBRARIES}")
+target_link_libraries(ai_engine_lib PRIVATE "${TORCH_LIBRARIES}" ${OpenCV_LIBS})
 
 # 4. (重要) CMakeの仕様で必要なコンパイルフラグを追加
 set_property(TARGET ai_engine_lib PROPERTY CXX_STANDARD 17)
