@@ -131,6 +131,60 @@ AppConfig ConfigReader::readAll(const std::string &filePath)
                 }
                 appConfig.optimizer.weightDecay = parsedValue;
             }
+            else if (key == "dataset_path")
+            {
+                if (value.empty())
+                {
+                    throw std::runtime_error("Dataset path value is empty");
+                }
+                appConfig.datasetPath = value;
+            }
+            else if (key == "epoch_size")
+            {
+                if (value.empty())
+                {
+                    throw std::runtime_error("Epoch size value is empty");
+                }
+
+                int parsedValue;
+                try
+                {
+                    parsedValue = std::stoi(value);
+                }
+                catch (...) // パース失敗時のエラー
+                {
+                    throw std::runtime_error("Epoch size value is not a number: " + value);
+                }
+
+                if (parsedValue <= 0)
+                {
+                    throw std::runtime_error("Epoch size value must be greater than 0: " + value);
+                }
+                appConfig.epochSize = static_cast<unsigned int>(parsedValue);
+            }
+            else if (key == "batch_size")
+            {
+                if (value.empty())
+                {
+                    throw std::runtime_error("Batch size value is empty");
+                }
+
+                int parsedValue;
+                try
+                {
+                    parsedValue = std::stoi(value);
+                }
+                catch (...) // パース失敗時のエラー
+                {
+                    throw std::runtime_error("Batch size value is not a number: " + value);
+                }
+
+                if (parsedValue <= 0)
+                {
+                    throw std::runtime_error("Batch size value must be greater than 0: " + value);
+                }
+                appConfig.batchSize = static_cast<unsigned int>(parsedValue);
+            }
             else
             {
                 throw std::runtime_error("Unknown config key: " + key);

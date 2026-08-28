@@ -2,7 +2,6 @@
 #include "../../entities/domain-objects/TrainParam.hpp"
 #include "../interfaces/IDatasetRepository.hpp"
 #include "../interfaces/IModelTrainer.hpp"
-#include "../interfaces/IPathProvidor.hpp"
 #include "../../entities/domain-objects/BatchData.hpp"
 #include "training/entities/domain-objects/TrainingBatch.hpp"
 
@@ -10,10 +9,10 @@
 #include <vector>
 
 TrainModelUsecase::TrainModelUsecase(const std::shared_ptr<TrainParam> &param,
-                                     const std::shared_ptr<IPathProvidor> &path,
+                                     const AppConfig &appConfig,
                                      const std::shared_ptr<IModelTrainer> &trainer)
     : _param(param),
-      _path(path),
+      _appConfig(appConfig),
       _trainer(trainer) {}
 
 void TrainModelUsecase::execute(IDatasetRepository *dataset)
