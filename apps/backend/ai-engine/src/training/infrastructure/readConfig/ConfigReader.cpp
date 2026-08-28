@@ -131,6 +131,14 @@ AppConfig ConfigReader::readAll(const std::string &filePath)
                 }
                 appConfig.optimizer.weightDecay = parsedValue;
             }
+            else if (key == "dataset_path")
+            {
+                if (value.empty())
+                {
+                    throw std::runtime_error("Dataset path value is empty");
+                }
+                appConfig.datasetPath = value;
+            }
             else
             {
                 throw std::runtime_error("Unknown config key: " + key);

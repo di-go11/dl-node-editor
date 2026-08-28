@@ -13,6 +13,10 @@
 #include "training/infrastructure/torchFunc/AdamOptimizer.hpp"
 #include "training/infrastructure/torchFunc/MseLoss.hpp" // または CrossEntropy.hpp
 #include "training/infrastructure/torchFunc/ReLU.hpp"    // モデル全体の最終活性化用
+#include "training/infrastructure/readConfig/ConfigReader.hpp"
+#include "training/infrastructure/readConfig/DatasetPathProvider.hpp"
+
+#include "training/infrastructure/dataset/OpenCvImageDecoder.hpp"
 
 // adapters/application(具象クラス)
 #include "training/adapters/impl/TorchModelTrainer.hpp"
@@ -42,6 +46,15 @@ ModelGraph buildSampleModelGraph()
 
 int main(void)
 {
+    // configの読み込み
+    ConfigReader configReader;
+
+    AppConfig appConfig = configReader.readAll(".config");
+
+    auto pathProvidor = std::make_shared<DatasetPathProvider>(appConfig);
+
+    std::string datasetPath = pathProvidor->getPath();
+
     // TrainParamの設定
     auto param = std::make_shared<TrainParam>(/*epochsize*/ 1, /*batchsize*/ 1);
     // ModelGraph
