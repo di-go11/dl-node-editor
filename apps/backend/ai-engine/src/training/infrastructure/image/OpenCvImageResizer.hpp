@@ -2,10 +2,10 @@
 
 #include "training/application/interfaces/image/IImagePreprocessor.hpp"
 
-class ImageResizer : public IImagePreprocessor
+class OpenCvImageResizer : public IImagePreprocessor
 {
 public:
-    ImageResizer(const uint16_t &width, const uint16_t &height);
+    OpenCvImageResizer(const uint16_t &width, const uint16_t &height);
     ImageData process(const ImageData &rowImage) const override;
 
 private:
