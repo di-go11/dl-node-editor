@@ -50,8 +50,8 @@ int main(void)
 
     AppConfig appConfig = configReader.readAll(".config");
 
-    // TrainParamの設定
-    auto param = std::make_shared<TrainParam>(/*epochsize*/ 1, /*batchsize*/ 1);
+    // TrainParamの設定(.configから取得。将来的にGUI入力にも置き換わる想定)
+    auto param = std::make_shared<TrainParam>(appConfig.epochSize, appConfig.batchSize);
     // ModelGraph
     ModelGraph graph = buildSampleModelGraph();
 
