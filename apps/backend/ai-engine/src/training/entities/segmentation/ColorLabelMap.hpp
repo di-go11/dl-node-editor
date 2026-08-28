@@ -3,7 +3,8 @@
 #include <cstdint>
 #include <vector>
 
-struct ColorClassEntry;
+#include "training/entities/segmentation/ColorClassEntry.hpp"
+
 class RgbColor;
 
 class ColorLabelMap

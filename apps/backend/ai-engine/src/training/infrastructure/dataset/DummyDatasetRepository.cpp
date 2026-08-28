@@ -33,7 +33,7 @@ BatchData DummyDatasetRepository::makeDummyBatchData(const std::vector<size_t> &
 
     ImageData image;
     image.shape = shape;
-    image.values.assign(valueCount, 0.5f);
+    image.values.assign(valueCount, static_cast<uint8_t>(128)); // ダミー値(中間のグレー相当)
 
     BatchData batch;
     batch.values.push_back(image);

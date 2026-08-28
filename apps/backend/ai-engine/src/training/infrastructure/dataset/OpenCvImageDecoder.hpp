@@ -1,3 +1,5 @@
+#pragma once
+
 #include "training/application/interfaces/IImageDecoder.hpp"
 
 class OpenCvImageDecoder : public IImageDecoder

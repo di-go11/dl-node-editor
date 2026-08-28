@@ -51,3 +51,15 @@ set_property(TARGET ai_engine_app PROPERTY CXX_STANDARD 17)
 # これらは今回のような疎通確認コード(スパース演算・マルチGPU通信を使わない)では
 # 実行時にも参照されないため安全。
 target_link_options(ai_engine_app PRIVATE "-Wl,--allow-shlib-undefined")
+
+# 6. 画像デコード〜正規化〜クラスID変換パイプラインの疎通確認テスト
+add_executable(image_pipeline_test tests/image_pipeline_smoke_test.cpp)
+target_include_directories(image_pipeline_test PRIVATE
+	${CMAKE_CURRENT_SOURCE_DIR}/src
+	${CMAKE_CURRENT_SOURCE_DIR}
+	${TORCH_INCLUDE_DIRS}
+	${OpenCV_INCLUDE_DIRS}
+)
+target_link_libraries(image_pipeline_test PRIVATE ai_engine_lib "${TORCH_LIBRARIES}" ${OpenCV_LIBS})
+target_link_options(image_pipeline_test PRIVATE "-Wl,--allow-shlib-undefined")
+set_property(TARGET image_pipeline_test PROPERTY CXX_STANDARD 17)

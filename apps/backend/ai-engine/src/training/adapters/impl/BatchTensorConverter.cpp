@@ -10,7 +10,10 @@ std::vector<float> BatchTensorConverter::flattenValues(const BatchData &batchDat
 
     for (const auto &row : batchData.values)
     {
-        flattened.insert(flattened.end(), row.values.begin(), row.values.end());
+        for (uint8_t value : row.values)
+        {
+            flattened.push_back(static_cast<float>(value));
+        }
     }
 
     return flattened;
