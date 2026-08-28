@@ -15,7 +15,7 @@
 #include "training/infrastructure/torchFunc/ReLU.hpp"    // モデル全体の最終活性化用
 #include "training/infrastructure/readConfig/ConfigReader.hpp"
 
-#include "training/infrastructure/dataset/OpenCvImageDecoder.hpp"
+#include "training/infrastructure/image/OpenCvImageDecoder.hpp"
 #include "training/infrastructure/dataset/VocDatasetRepository.hpp"
 
 // adapters/application(具象クラス)

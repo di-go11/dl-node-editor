@@ -2,11 +2,11 @@
 #include <iostream>
 #include <string>
 
-#include "training/infrastructure/dataset/OpenCvImageDecoder.hpp"
-#include "training/adapters/impl/ImageNormalizer.hpp"
-#include "training/infrastructure/dataset/ColorMaskLabelConverter.hpp"
-#include "training/entities/segmentation/ColorLabelMap.hpp"
-#include "training/entities/domain-objects/RgbColor.hpp"
+#include "training/infrastructure/image/OpenCvImageDecoder.hpp"
+#include "training/application/impl/image/ImageNormalizer.hpp"
+#include "training/infrastructure/image/ColorMaskLabelConverter.hpp"
+#include "training/entities/image/ColorLabelMap.hpp"
+#include "training/entities/image/RgbColor.hpp"
 
 namespace
 {

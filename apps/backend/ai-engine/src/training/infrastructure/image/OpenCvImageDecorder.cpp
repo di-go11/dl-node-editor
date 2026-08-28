@@ -1,4 +1,4 @@
-#include "training/infrastructure/dataset/OpenCvImageDecoder.hpp"
+#include "training/infrastructure/image/OpenCvImageDecoder.hpp"
 #include <opencv2/opencv.hpp>
 #include <stdexcept>
 

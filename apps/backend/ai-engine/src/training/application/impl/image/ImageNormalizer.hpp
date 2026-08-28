@@ -1,7 +1,7 @@
 #pragma once
 
-#include "training/entities/domain-objects/ImageData.hpp"
-#include "training/entities/domain-objects/NormalizedImageData.hpp"
+#include "training/entities/image/ImageData.hpp"
+#include "training/entities/image/NormalizedImageData.hpp"
 
 // OpenCvImageDecoder等が返す0-255範囲の生の値(uint8_t)を持つImageDataを、
 // 0.0-1.0範囲に正規化したNormalizedImageDataへ変換する。

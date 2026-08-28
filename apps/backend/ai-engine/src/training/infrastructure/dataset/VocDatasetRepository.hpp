@@ -1,8 +1,8 @@
 #pragma once
 
 #include "training/application/interfaces/IDatasetRepository.hpp"
-#include "training/application/interfaces/IImageDecoder.hpp"
-#include "training/infrastructure/dataset/ColorMaskLabelConverter.hpp"
+#include "training/application/interfaces/image/IImageDecoder.hpp"
+#include "training/infrastructure/image/ColorMaskLabelConverter.hpp"
 
 #include <memory>
 #include <string>

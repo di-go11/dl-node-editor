@@ -1,4 +1,4 @@
-#include "training/entities/domain-objects/RgbColor.hpp"
+#include "training/entities/image/RgbColor.hpp"
 
 RgbColor::RgbColor(uint8_t r, uint8_t g, uint8_t b)
     : _r(r), _g(g), _b(b)

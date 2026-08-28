@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <vector>
 
-#include "training/entities/segmentation/ColorClassEntry.hpp"
+#include "training/entities/image/ColorClassEntry.hpp"
 
 class RgbColor;
 

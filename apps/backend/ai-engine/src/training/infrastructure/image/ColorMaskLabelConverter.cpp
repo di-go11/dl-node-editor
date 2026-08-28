@@ -1,5 +1,5 @@
-#include "training/infrastructure/dataset/ColorMaskLabelConverter.hpp"
-#include "training/entities/domain-objects/RgbColor.hpp"
+#include "training/infrastructure/image/ColorMaskLabelConverter.hpp"
+#include "training/entities/image/RgbColor.hpp"
 #include <stdexcept>
 
 ColorMaskLabelConverter::ColorMaskLabelConverter(const ColorLabelMap &labelMap) : _labelMap(labelMap) {}

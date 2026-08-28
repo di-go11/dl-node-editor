@@ -1,7 +1,7 @@
 #include "training/infrastructure/dataset/DummyDatasetRepository.hpp"
 
 #include "training/entities/domain-objects/BatchData.hpp"
-#include "training/entities/domain-objects/ImageData.hpp"
+#include "training/entities/image/ImageData.hpp"
 
 DummyDatasetRepository::DummyDatasetRepository(int batchCount)
     : _batchCount(batchCount), _currentBatch(0)

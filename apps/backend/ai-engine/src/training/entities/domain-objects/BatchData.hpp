@@ -1,7 +1,7 @@
 #pragma once
 
 #include <vector>
-#include "./ImageData.hpp"
+#include "training/entities/image/ImageData.hpp"
 
 struct BatchData
 {

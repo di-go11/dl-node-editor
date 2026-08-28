@@ -1,7 +1,7 @@
 #pragma once
 
-#include "training/entities/domain-objects/ImageData.hpp"
-#include "training/entities/segmentation/ColorLabelMap.hpp"
+#include "training/entities/image/ImageData.hpp"
+#include "training/entities/image/ColorLabelMap.hpp"
 
 class ColorMaskLabelConverter
 {

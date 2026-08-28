@@ -1,4 +1,4 @@
-#include "training/adapters/impl/ImageNormalizer.hpp"
+#include "training/application/impl/image/ImageNormalizer.hpp"
 
 NormalizedImageData ImageNormalizer::normalize(const ImageData &image)
 {
