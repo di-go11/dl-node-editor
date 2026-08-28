@@ -63,6 +63,24 @@ bool VocDatasetRepository::hasNext() const
     return _currentIndex < _imageIds.size();
 }
 
+namespace
+{
+    // JPEGImagesの拡張子はデータセットによって .jpg/.jpeg のどちらもあり得るため、
+    // 実在するファイルを探して解決する
+    std::string resolveImagePath(const fs::path &jpegImagesDir, const std::string &id)
+    {
+        for (const char *ext : {".jpg", ".jpeg"})
+        {
+            fs::path candidate = jpegImagesDir / (id + ext);
+            if (fs::exists(candidate))
+            {
+                return candidate.string();
+            }
+        }
+        throw std::runtime_error("Could not find image file for id: " + id + " (tried .jpg/.jpeg under " + jpegImagesDir.string() + ")");
+    }
+} // namespace
+
 TrainingBatch VocDatasetRepository::getNextBatch()
 {
     TrainingBatch batch;
@@ -73,7 +91,7 @@ TrainingBatch VocDatasetRepository::getNextBatch()
     {
         const std::string &id = _imageIds[i];
 
-        const std::string imagePath = (fs::path(_datasetRoot) / "JPEGImages" / (id + ".jpg")).string();
+        const std::string imagePath = resolveImagePath(fs::path(_datasetRoot) / "JPEGImages", id);
         const std::string maskPath = (fs::path(_datasetRoot) / "SegmentationClass" / (id + ".png")).string();
 
         ImageData image = _decoder->decode(imagePath);

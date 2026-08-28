@@ -16,20 +16,18 @@
 #include "training/infrastructure/readConfig/ConfigReader.hpp"
 
 #include "training/infrastructure/dataset/OpenCvImageDecoder.hpp"
+#include "training/infrastructure/dataset/VocDatasetRepository.hpp"
 
 // adapters/application(具象クラス)
 #include "training/adapters/impl/TorchModelTrainer.hpp"
 #include "training/application/impl/TrainModelUsecase.hpp"
-
-// 自作するダミー
-#include "training/infrastructure/dataset/DummyDatasetRepository.hpp"
 
 ModelGraph buildSampleModelGraph()
 {
     ModelGraph graph;
 
     Conv2DParams conv;
-    conv.inChannels = 1;
+    conv.inChannels = 3; // 実データ(VOC形式RGB画像)に合わせて3チャンネルに
     conv.outChannels = 4;
     conv.kernelSize = 3;
     conv.stride = 1;
@@ -69,7 +67,8 @@ int main(void)
 
     TrainModelUsecase usecase(param, appConfig, trainer);
 
-    DummyDatasetRepository dataset;
+    auto decoder = std::make_shared<OpenCvImageDecoder>();
+    VocDatasetRepository dataset(appConfig.datasetPath, decoder, param);
     usecase.execute(&dataset);
 
     std::cout << "training loop finished" << std::endl;
