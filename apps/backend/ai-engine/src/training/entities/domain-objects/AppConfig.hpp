@@ -6,6 +6,7 @@
 
 struct AppConfig
 {
+    std::string modelName;
     OptimizerConfig optimizer;
     ActivationConfig activation;
     std::string datasetPath; // 学習用画像・アノテーション画像が置かれているデータセットのルートディレクトリ

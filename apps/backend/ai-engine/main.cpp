@@ -14,7 +14,6 @@
 #include "training/infrastructure/torchFunc/MseLoss.hpp" // または CrossEntropy.hpp
 #include "training/infrastructure/torchFunc/ReLU.hpp"    // モデル全体の最終活性化用
 #include "training/infrastructure/readConfig/ConfigReader.hpp"
-#include "training/infrastructure/readConfig/DatasetPathProvider.hpp"
 
 #include "training/infrastructure/dataset/OpenCvImageDecoder.hpp"
 
@@ -51,10 +50,6 @@ int main(void)
 
     AppConfig appConfig = configReader.readAll(".config");
 
-    auto pathProvidor = std::make_shared<DatasetPathProvider>(appConfig);
-
-    std::string datasetPath = pathProvidor->getPath();
-
     // TrainParamの設定
     auto param = std::make_shared<TrainParam>(/*epochsize*/ 1, /*batchsize*/ 1);
     // ModelGraph
@@ -72,7 +67,7 @@ int main(void)
 
     auto trainer = std::make_shared<TorchModelTrainer>(model, loss, optimizer, activation);
 
-    TrainModelUsecase usecase(param, nullptr, trainer);
+    TrainModelUsecase usecase(param, appConfig, trainer);
 
     DummyDatasetRepository dataset;
     usecase.execute(&dataset);
