@@ -10,7 +10,7 @@ std::vector<float> BatchTensorConverter::flattenValues(const BatchData &batchDat
 
     for (const auto &row : batchData.values)
     {
-        for (uint8_t value : row.values)
+        for (uint8_t value : row.raw())
         {
             flattened.push_back(static_cast<float>(value));
         }
@@ -28,14 +28,14 @@ std::vector<int64_t> BatchTensorConverter::resolveShape(const BatchData &batchDa
 
     const auto &firstImage = batchData.values.front(); // values配列の最初の要素を参照(変数にコピーはしない)
 
-    if (!firstImage.shape.empty())
+    if (!firstImage.shape().empty())
     {
         std::vector<int64_t> resolvedShape;
-        resolvedShape.reserve(firstImage.shape.size() + 1);                     // (channels, height, width分の配列サイズ+1の確保) +1は最後尾に画像サイズを入れるため
+        resolvedShape.reserve(firstImage.shape().size() + 1);                   // (channels, height, width分の配列サイズ+1の確保) +1は最後尾に画像サイズを入れるため
         resolvedShape.push_back(static_cast<int64_t>(batchData.values.size())); // ベクトル(配列)の末尾(今回は配列の最初の方になる)にvaluesのサイズ(画像の枚数)のデータを保存
 
         std::size_t shapeProduct = 1;
-        for (const auto dimension : firstImage.shape)
+        for (const auto dimension : firstImage.shape())
         {
             resolvedShape.push_back(static_cast<int64_t>(dimension));
             shapeProduct *= dimension; // 画像のchannels*height*width
@@ -50,10 +50,10 @@ std::vector<int64_t> BatchTensorConverter::resolveShape(const BatchData &batchDa
         return resolvedShape;
     }
 
-    const auto firstRowSize = firstImage.values.size();
+    const auto firstRowSize = firstImage.raw().size();
     for (const auto &image : batchData.values)
     {
-        if (image.values.size() != firstRowSize)
+        if (image.raw().size() != firstRowSize)
         {
             throw std::invalid_argument("BatchData.values must be rectangular when shape is omitted");
         }

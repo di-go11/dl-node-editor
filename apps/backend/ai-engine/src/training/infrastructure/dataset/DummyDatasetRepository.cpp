@@ -3,6 +3,9 @@
 #include "training/entities/domain-objects/BatchData.hpp"
 #include "training/entities/image/ImageData.hpp"
 
+#include <utility>
+#include <vector>
+
 DummyDatasetRepository::DummyDatasetRepository(int batchCount)
     : _batchCount(batchCount), _currentBatch(0)
 {
@@ -31,12 +34,10 @@ BatchData DummyDatasetRepository::makeDummyBatchData(const std::vector<size_t> &
         valueCount *= dimension;
     }
 
-    ImageData image;
-    image.shape = shape;
-    image.values.assign(valueCount, static_cast<uint8_t>(128)); // ダミー値(中間のグレー相当)
+    ImageData image(shape, std::vector<uint8_t>(valueCount, static_cast<uint8_t>(128))); // ダミー値(中間のグレー相当)
 
     BatchData batch;
-    batch.values.push_back(image);
+    batch.values.push_back(std::move(image));
     batch.num_samples = static_cast<int>(batch.values.size());
     return batch;
 }
