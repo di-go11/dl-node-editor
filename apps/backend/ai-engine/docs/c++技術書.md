@@ -794,3 +794,257 @@ ImageData resize(const ImageData &input) const {
 | 呼び出し側のオブジェクトをその場で書き換える | `T&` |
 | 結果を呼び出し側へ返す | 値返し(RVO に任せる。`return std::move(local)` は書かない) |
 | 同サイズ出力を大量ループで使い回す(実測でボトルネックのときだけ) | `T& output` 出力引数 |
+
+## スマートポインタ(`unique_ptr` / `shared_ptr` と `make_unique` / `make_shared`)
+
+### 0. 用語の前提 — 「所有権(ownership)」
+
+「あるオブジェクトを**所有する**」とは、**そのオブジェクトを最終的に破棄(`delete`)する責任を持つ**こと。C++ には GC が無いので、動的確保(ヒープ上)したオブジェクトは「誰が所有者か」を常に1つに定めないと、
+
+- **メモリリーク**: 誰も `delete` しない
+- **二重解放**: 2人が `delete` する
+- **ダングリング参照**: `delete` 済みのアドレスを他方が使い続ける
+
+のいずれかが起きる。スマートポインタは「所有権を型で表現し、破棄を自動化する」ための道具。RAII(Resource Acquisition Is Initialization = リソースの確保・解放をオブジェクトの寿命に紐づける)の典型例。
+
+### 1. 生ポインタの何が問題か
+
+```c++
+TorchModel *p = new TorchModel(graph, builder);
+doSomething();     // ← ここで例外が飛ぶと下の delete に到達しない → リーク
+delete p;
+```
+
+`new` が返す `TorchModel*` は**ただのアドレスの数値**で、「所有権」の情報を持たない。誰が・いつ `delete` するかはコード規約でしか表現できず、例外・早期 return で簡単に破綻する。
+
+### 2. `std::unique_ptr<T>` — 単独所有
+
+`#include <memory>`
+
+「このオブジェクトの所有者は**常にちょうど1人**」を表す。
+
+```c++
+auto a = std::make_unique<TorchModel>(graph, builder);  // a が唯一の所有者
+auto b = a;              // ✗ コンパイルエラー(コピー禁止)
+auto c = std::move(a);   // ○ 所有権が c へ移動。a は nullptr になる(抜け殻)
+```
+
+| 性質 | 内容 |
+|---|---|
+| コピー | **禁止**(コピーコンストラクタ・コピー代入が `delete` 定義されている) |
+| ムーブ | 可能。所有権が移り、元は `nullptr` になる |
+| サイズ | ポインタ1個分(ステートレスなデリータなら)。生ポインタと同じ |
+| 実行時コスト | **ゼロ**。参照カウントもロックも無い |
+| 破棄 | `unique_ptr` 自身がスコープを抜ける / `reset()` された瞬間に対象を `delete` |
+
+**コピーできないこと自体が「所有者は1人」の保証**になっている。所有者が1人と確定しているから参照カウントが不要で、オーバーヘッドが無い。「生ポインタを安全にしただけのもの」と考えてよい。
+
+関数の戻り値で所有権を渡すのは自然にできる(ムーブ):
+
+```c++
+std::unique_ptr<IModel> createModel() {
+    return std::make_unique<TorchModel>(graph, builder);  // 所有権が呼び出し側へ移動
+}
+```
+
+### 3. `std::shared_ptr<T>` — 共有所有
+
+「このオブジェクトを**複数の主体が同時に所有**し、**最後の1人がいなくなったら**破棄する」を表す。
+
+```c++
+auto a = std::make_shared<TorchModel>(graph, builder);  // 参照カウント = 1
+{
+    auto b = a;          // コピー。同じ本体を指す。カウント = 2
+    b->train(/*...*/);   // 生ポインタと同じ感覚で -> が使える
+}                        // b が消える → カウント = 1(本体はまだ生きている。a が握っているから)
+a.reset();               // a が手放す → カウント = 0 → ここで初めて TorchModel が delete される
+```
+
+#### shared_ptr の内部構造
+
+`shared_ptr` は概念的に**2つのポインタ**を持つ小さなオブジェクト。
+
+```
+スタック                          ヒープ
+┌─────────────────┐
+│ model           │
+│  ┌────────────┐ │            ┌──────────────────┐
+│  │ objポインタ  │─┼──────────▶│  TorchModel 本体   │
+│  ├────────────┤ │            └──────────────────┘
+│  │ ctrlポインタ │─┼──────┐
+│  └────────────┘ │       │     ┌──────────────────┐
+└─────────────────┘       └────▶│ 制御ブロック        │
+                                │  strong count: 1  │  ← shared_ptr の数
+                                │  weak count:   0  │  ← weak_ptr の数
+                                │  デリータ(消し方)  │
+                                └──────────────────┘
+```
+
+| 操作 | strong count |
+|---|---|
+| `make_shared` / 新規構築 | 1 |
+| shared_ptr をコピー(代入・関数へ値渡し) | +1 |
+| shared_ptr が破棄される / `reset()` | −1 |
+| **カウントが 0 になった瞬間** | 制御ブロックのデリータが本体を `delete` |
+
+この「0 になったら消す」を **shared_ptr のデストラクタ**が行う。だから手動 `delete` が不要でリークしない。
+
+| 性質 | 内容 |
+|---|---|
+| コピー | **可能**(するたび strong count +1) |
+| サイズ | ポインタ2個分(本体 + 制御ブロック) |
+| 実行時コスト | 制御ブロックのヒープ確保。カウント増減は**アトミック操作**(スレッドセーフ) |
+| スレッド安全性 | **カウントの増減のみ**スレッドセーフ。**指す先のオブジェクト自体**への同時アクセスは別途保護が必要 |
+| 破棄 | 最後の shared_ptr が消えて strong count = 0 になった瞬間 |
+
+### 4. 「`shared_ptr` で包んで返す」とは
+
+`new TorchModel(...)` は生ポインタ(`TorchModel*`)= アドレスの数値を返す。所有権情報を持たない。
+
+`make_shared<TorchModel>(...)` は次の3つをやって、**`shared_ptr` という管理オブジェクトを返す**:
+
+1. ヒープに `TorchModel` 本体を構築する(コンストラクタ `TorchModel(graph, builder)` を呼ぶ)
+2. その本体を指すポインタ + 参照カウントを持つ「制御ブロック」を用意する
+3. 1 と 2 をまとめた `shared_ptr<TorchModel>` を組み立てて、それを戻り値として返す
+
+呼び出し側は生の `TorchModel*` ではなく、「使い終わったら自動で片付く・コピーで共有できるポインタ的オブジェクト」を受け取る。これが「包んで返す」の意味。
+
+### 5. `make_unique` / `make_shared` — 生 `new` を書かないための関数
+
+どちらも `<memory>` にある**関数テンプレート**。`make_shared<T>(args...)` の `<T>` が「生成する型」、`(args...)` が「その型のコンストラクタに渡す引数」。
+
+```c++
+// 生 new を使う書き方(非推奨)
+std::shared_ptr<TorchModel> a(new TorchModel(graph, builder));
+
+// make_shared(推奨)
+auto b = std::make_shared<TorchModel>(graph, builder);
+```
+
+`make_*` を使う理由:
+
+| 理由 | 説明 |
+|---|---|
+| **例外安全** | `f(std::shared_ptr<T>(new T), g())` で `new T` の後・`shared_ptr` 構築前に `g()` が例外を投げると `new T` がリーク。`make_shared` は1つの式に閉じるのでこの穴が無い |
+| **アロケーション回数** | `make_shared` は「本体」と「制御ブロック」を**1回のヒープ確保**でまとめて作る。`shared_ptr(new T)` は本体で1回・制御ブロックで1回の計2回 |
+| **`new` を書かない** | コード中から生 `new` / `delete` を排除でき、所有権管理を全てスマートポインタに一元化できる |
+| **記述量** | 型名を1回だけ書けばよい(`std::shared_ptr<LongTypeName>(new LongTypeName(...))` の重複が無い) |
+
+補足: `make_shared` の弱点は「本体と制御ブロックが同じメモリ塊なので、`weak_ptr` が生きている限り**本体のメモリも解放されない**」点。巨大オブジェクト + 長命な `weak_ptr` が同居する稀なケースでは `shared_ptr(new T)` を選ぶこともある。
+
+### 6. どう渡すか — 所有権の観点で決める(前章「引数の渡し方」と接続)
+
+判断軸は「**渡した先がそのオブジェクトを所有するか(呼び出しが終わった後も持ち続けるか)**」。「`std::move` を書くかどうか」で決めるのではない。
+
+| 渡した先の関係 | 渡し方 | 補足 |
+|---|---|---|
+| **借りるだけ**(呼び出しの間だけ使う。寿命に関与しない) | `const T&` / `T&` / `T*` ── **スマートポインタを渡さない** | 生成方法(スタック / `unique_ptr` / `shared_ptr`)と無関係。`sp` からは `*sp` / `sp.get()` で取り出す |
+| **単独所有を譲る**(以後その先だけが持ち主) | `std::unique_ptr<T>` を値で受け取り `std::move` で渡す | 呼び出し元は所有権を失う(`nullptr` になる) |
+| **共有所有**(呼び出し元も先も同時に持ち主) | `std::shared_ptr<T>` を値で受け取る(コピー、count +1) | 本当に複数の所有者が必要なときだけ |
+
+```c++
+void save(const IModel &model, const std::string &path);   // ← 借りるだけ。所有しない
+// 呼び出し側:
+auto model = std::make_shared<TorchModel>(graph, builder);
+store.save(*model, "weights.pt");   // shared_ptr を外して参照で渡す
+```
+
+「`std::move` を書かずに渡す」= 普通は**借りている**だけであって、その場合の正しい形は参照/ポインタ。`shared_ptr` を選ぶ理由は「move が面倒だから」ではなく「**複数の主体が同時に所有者である必要がある**から」。
+
+### 7. 選び方の指針
+
+> **デフォルトは `unique_ptr`。「このオブジェクトを複数の主体が同時に所有し、最後の1人まで生かす必要がある」と言えるときだけ `shared_ptr`。**
+
+理由:
+
+- `unique_ptr` の方が軽く(オーバーヘッドゼロ)、**所有関係=寿命がコードから読み取りやすい**
+- 「とりあえず `shared_ptr`」にすると、誰がいつ手放すのか追えなくなり、実質的にグローバル変数に近い管理不能状態に陥る
+- 後から「やはり共有したい」となったら `unique_ptr` → `shared_ptr` へ変換できる(**一方向**。逆は不可)
+
+```c++
+std::unique_ptr<TorchModel> u = std::make_unique<TorchModel>(graph, builder);
+std::shared_ptr<TorchModel> s = std::move(u);   // ○ 一方向の変換
+```
+
+### 8. `std::weak_ptr` — 循環参照を断つ
+
+`shared_ptr` 同士が互いを指すと、カウントが永遠に 0 にならず両方リークする。
+
+```c++
+struct Node {
+    std::shared_ptr<Node> next;
+    std::shared_ptr<Node> prev;   // A→B、B→A と shared_ptr で相互参照 → 両方カウント 1 のまま
+};
+```
+
+片方を `std::weak_ptr`(所有権を持たない・カウントを増やさない観測用ポインタ)にして輪を切る。使うときは `lock()` で一時的に `shared_ptr` へ昇格し、対象が生きているか確認する。
+
+```c++
+struct Node {
+    std::shared_ptr<Node> next;
+    std::weak_ptr<Node>   prev;   // 所有しない
+};
+
+if (auto p = node->prev.lock()) {   // 生きていれば shared_ptr、破棄済みなら nullptr
+    p->doSomething();
+}
+```
+
+`unique_ptr` は共有できないので、この問題自体が起きない。
+
+### 9. 不完全型とデストラクタ(pImpl・前方宣言との関係)
+
+前方宣言だけした型(不完全型)をスマートポインタのメンバに持つときの挙動が両者で異なる。
+
+| | `unique_ptr<T>` | `shared_ptr<T>` |
+|---|---|---|
+| 破棄時に `T` の完全定義が必要か | **必要**。デストラクタが実体化される地点で `T` の全貌が見えていないとコンパイルエラー | **不要**。デリータを制御ブロックに型消去して保持するため。ただし**生成時**には完全型が必要 |
+
+```c++
+// Foo.hpp
+class Impl;                       // 前方宣言(不完全型)
+class Foo {
+    std::unique_ptr<Impl> _impl;  // pImpl イディオム
+public:
+    Foo();
+    ~Foo();                       // ← 宣言のみ。ヘッダで = default にすると Impl 未定義でエラー
+};
+
+// Foo.cpp
+#include "Impl.hpp"               // ここで Impl の完全定義が見える
+Foo::Foo()  = default;
+Foo::~Foo() = default;            // .cpp 側なら OK
+```
+
+この「デストラクタを宣言だけしてヘッダに置き、`= default` は `.cpp` に書く」作法は pImpl の定番。本プロジェクトの [TorchModelTrainer.hpp](../src/training/adapters/impl/TorchModelTrainer.hpp) が `~TorchModelTrainer() override;` を宣言し [TorchModelTrainer.cpp](../src/training/adapters/impl/TorchModelTrainer.cpp) で `= default` しているのは、メンバが前方宣言型への `shared_ptr` であり厳密には必須ではないが、この作法に合わせた安全側の書き方。
+
+### 10. 本プロジェクトでの使用例
+
+[main.cpp](../main.cpp) は生成物を組み立てて注入するため `make_shared` を多用している。
+
+```c++
+auto model = std::make_shared<TorchModel>(graph, builder);      // count = 1
+std::vector<at::Tensor> params = model->parameters();           // main も model を使う
+auto optimizer = std::make_shared<AdamOptimizer>(params, 0.001);
+auto loss = std::make_shared<CrossEntropy>();
+auto trainer = std::make_shared<TorchModelTrainer>(model, loss, optimizer);
+//                                                 ↑ model をコピー → count = 2
+```
+
+[TorchModelTrainer.hpp](../src/training/adapters/impl/TorchModelTrainer.hpp) が `const std::shared_ptr<IModel> _model;` としてコピーを保持するので、`main` のローカル変数 `model` と trainer の `_model` が**同じ `TorchModel` を共有**する。`main` の `model` 変数が先に消えても trainer が握っている間は本体が生き残る。
+
+一方 [IModelStore](../src/training/application/interfaces/IModelStore.hpp) の `save(const IModel &model, ...)` はモデルを**借りるだけ**なので、スマートポインタは登場せず `const IModel&` で受ける(§6 の1行目)。
+
+設計を突き詰めれば、`model` は最終的に `trainer` だけが使うので `unique_ptr` でムーブ注入し「所有者は trainer 1人」と明示する形も取れる。現状の `shared_ptr` は「複数の生成物を段階的に組み立てて注入する」書きやすさを優先した選択。
+
+### 11. まとめ早見表
+
+| やりたいこと | 手段 |
+|---|---|
+| 動的確保オブジェクトの所有者を1人に固定 | `std::unique_ptr<T>` + `std::make_unique<T>(...)` |
+| 所有権を別の場所へ移す | `std::move(uptr)` |
+| 複数の主体で同時に所有し、最後の1人まで生かす | `std::shared_ptr<T>` + `std::make_shared<T>(...)` |
+| 所有せずに一時的に使うだけ | `const T&` / `T&` / `T*`(`*sp` / `sp.get()` で取り出す) |
+| shared_ptr の循環参照を断つ | 片方を `std::weak_ptr` にして `lock()` で使う |
+| 迷ったら | まず `unique_ptr`。後から `shared_ptr` へ変換できる |
+| 生 `new` / `delete` | **書かない**(スマートポインタ実装の内部など例外的な場面のみ) |
