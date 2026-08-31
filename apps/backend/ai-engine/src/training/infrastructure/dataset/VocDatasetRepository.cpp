@@ -1,5 +1,5 @@
 #include "training/infrastructure/dataset/VocDatasetRepository.hpp"
-#include "training/infrastructure/dataset/VocColorLabelMapFactory.hpp"
+#include "training/infrastructure/dataset/LabelMapFileReader.hpp"
 #include "training/entities/domain-objects/BatchData.hpp"
 #include "training/entities/domain-objects/TrainingBatch.hpp"
 #include "training/entities/domain-objects/TrainParam.hpp"
@@ -23,7 +23,7 @@ VocDatasetRepository::VocDatasetRepository(
       _decoder(decoder),
       _imagePreProcessor(imagePreProcessor),
       _maskPreProcessor(maskPreProcessor),
-      _labelConverter(VocColorLabelMapFactory::create()),
+      _labelConverter(LabelMapFileReader{}.read((fs::path(datasetRoot) / "labelmap.txt").string())),
       _batchSize(static_cast<int>(trainParam->getBatchSize())),
       _currentIndex(0)
 {

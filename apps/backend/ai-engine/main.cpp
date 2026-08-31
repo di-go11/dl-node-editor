@@ -11,33 +11,35 @@
 #include "training/infrastructure/torchFunc/TorchLayerBuilder.hpp"
 #include "training/infrastructure/torchModel/TorchModel.hpp"
 #include "training/infrastructure/torchFunc/AdamOptimizer.hpp"
-#include "training/infrastructure/torchFunc/MseLoss.hpp" // または CrossEntropy.hpp
-#include "training/infrastructure/torchFunc/ReLU.hpp"    // モデル全体の最終活性化用
+#include "training/infrastructure/torchFunc/CrossEntropy.hpp"
 #include "training/infrastructure/readConfig/ConfigReader.hpp"
 
 #include "training/infrastructure/image/OpenCvImageDecoder.hpp"
 #include "training/infrastructure/image/ResizePreprocessorFactory.hpp"
+#include "training/infrastructure/dataset/LabelMapFileReader.hpp"
 #include "training/infrastructure/dataset/VocDatasetRepository.hpp"
+
+#include <filesystem>
+#include <iostream>
 
 // adapters/application(具象クラス)
 #include "training/adapters/impl/TorchModelTrainer.hpp"
 #include "training/application/impl/TrainModelUsecase.hpp"
 
-ModelGraph buildSampleModelGraph()
+// numClasses = セグメンテーションのクラス数(labelmap.txt のエントリ数)。
+// 最終層は「クラス数チャンネルの生ロジット」を出力する。CrossEntropy が
+// 内部で log_softmax するため、末尾に活性化層は置かない。
+ModelGraph buildSampleModelGraph(int numClasses)
 {
     ModelGraph graph;
 
     Conv2DParams conv;
-    conv.inChannels = 3; // 実データ(VOC形式RGB画像)に合わせて3チャンネルに
-    conv.outChannels = 4;
+    conv.inChannels = 3; // 実データ(RGB画像)に合わせて3チャンネル
+    conv.outChannels = numClasses;
     conv.kernelSize = 3;
     conv.stride = 1;
     conv.padding = 1;
     graph.layers.push_back(LayersConfig{conv});
-
-    ActivationParams relu;
-    relu.activationType = ActivationType::ReLU;
-    graph.layers.push_back(LayersConfig{relu});
 
     return graph;
 }
@@ -51,8 +53,15 @@ int main(void)
 
     // TrainParamの設定(.configから取得。将来的にGUI入力にも置き換わる想定)
     auto param = std::make_shared<TrainParam>(appConfig.epochSize, appConfig.batchSize);
-    // ModelGraph
-    ModelGraph graph = buildSampleModelGraph();
+
+    // labelmap.txt からクラス数を決める(モデル出力チャンネル数の単一の参照元)。
+    const std::string labelMapPath =
+        (std::filesystem::path(appConfig.datasetPath) / "labelmap.txt").string();
+    const ColorLabelMap labelMap = LabelMapFileReader{}.read(labelMapPath);
+    const int numClasses = static_cast<int>(labelMap.entryCount());
+    std::cout << "numClasses = " << numClasses << std::endl;
+
+    ModelGraph graph = buildSampleModelGraph(numClasses);
 
     TorchLayerBuilder builder;
     auto model = std::make_shared<TorchModel>(graph, builder);
@@ -60,11 +69,9 @@ int main(void)
     std::vector<at::Tensor> params = model->parameters();
     auto optimizer = std::make_shared<AdamOptimizer>(params, /*learning rate*/ 0.001);
 
-    auto loss = std::make_shared<MseLoss>();
+    auto loss = std::make_shared<CrossEntropy>();
 
-    auto activation = std::make_shared<ReLU>();
-
-    auto trainer = std::make_shared<TorchModelTrainer>(model, loss, optimizer, activation);
+    auto trainer = std::make_shared<TorchModelTrainer>(model, loss, optimizer);
 
     TrainModelUsecase usecase(param, appConfig, trainer);
 

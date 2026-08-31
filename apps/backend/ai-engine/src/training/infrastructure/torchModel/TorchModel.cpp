@@ -4,7 +4,6 @@
 #include "training/adapters/interfaces/ILayerBuilders.hpp"
 #include "training/adapters/interfaces/ILoss.hpp"
 #include "training/adapters/interfaces/IOptimizer.hpp"
-#include "training/adapters/interfaces/IActivation.hpp"
 #include "training/entities/domain-objects/ModelGraph.hpp"
 
 #include <torch/torch.h>
@@ -18,8 +17,10 @@ TorchModel::TorchModel(const ModelGraph &graph, ILayerBuilder &builder)
     }
 }
 
-void TorchModel::train(at::Tensor &prediction, at::Tensor &target, ILoss &loss, IOptimizer &optimizer, IActivation &activationFn)
+void TorchModel::train(at::Tensor &prediction, at::Tensor &target, ILoss &loss, IOptimizer &optimizer)
 {
+    // 層間の活性化(ReLU など)は graph.layers に活性化層として含まれ、この forward
+    // ループで順に適用される。最終層は生ロジットを出力し、ここでは活性化を掛けない。
     at::Tensor current = prediction;
     at::Tensor next;
     for (auto &layer : _layers)
@@ -28,17 +29,16 @@ void TorchModel::train(at::Tensor &prediction, at::Tensor &target, ILoss &loss, 
         current = next;
     }
 
-    at::Tensor activated;
-    activationFn.activate(current, activated);
-
     at::Tensor lossValue;
-    loss.lossOut(activated, target, lossValue);
+    loss.lossOut(current, target, lossValue);
+
+    std::cout << "LOSS値:" << lossValue << std::endl;
 
     optimizer.resetGradients();
     lossValue.backward();
     optimizer.updateParmeters();
 
-    prediction = activated;
+    prediction = current;
 }
 
 std::vector<at::Tensor> TorchModel::parameters() const

@@ -5,5 +5,7 @@
 CrossEntropy::CrossEntropy() {}
 void CrossEntropy::lossOut(const torch::Tensor &predicted, const torch::Tensor &target, torch::Tensor &output)
 {
-    output = torch::nn::functional::cross_entropy(predicted, target);
+    namespace F = torch::nn::functional;
+    output = F::cross_entropy(
+        predicted, target, F::CrossEntropyFuncOptions().ignore_index(255));
 }

@@ -22,3 +22,8 @@ int ColorLabelMap::resolveClassId(const RgbColor &color) const
     }
     return -1; // Not found
 }
+
+size_t ColorLabelMap::entryCount() const
+{
+    return _entries.size();
+}

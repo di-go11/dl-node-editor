@@ -26,6 +26,12 @@ public:
             .reshape(resolvedShape);
     }
 
+    torch::Tensor convertTarget(const BatchData<ImageData> &batchData) const
+    {
+        torch::Tensor t = convert(batchData);  // [N,1,H,W] float
+        return t.squeeze(1).to(torch::kInt64); // [N,H,W] long
+    }
+
 private:
     // --- サンプル型に依らず「形状」「値列」を取り出すためのアクセサ ---
     // ImageData は raw()/shape() メソッド、NormalizedImageData は values/shape メンバ。
