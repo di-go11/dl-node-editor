@@ -9,7 +9,6 @@
 class TrainParam;
 class IModelTrainer;
 class IDatasetRepository;
-class BatchData;
 
 class TrainModelUsecase
 {
@@ -17,7 +16,6 @@ private:
     std::shared_ptr<TrainParam> _param;
     AppConfig _appConfig;
     std::shared_ptr<IModelTrainer> _trainer;
-    std::shared_ptr<BatchData> _batchData;
     std::shared_ptr<IDatasetRepository> _datasetRepository;
 
 public:

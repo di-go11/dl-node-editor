@@ -1,6 +1,6 @@
-#include "training/entities/segmentation/ColorClassEntry.hpp"
-#include "training/entities/segmentation/ColorLabelMap.hpp"
-#include "training/entities/domain-objects/RgbColor.hpp"
+#include "training/entities/image/ColorClassEntry.hpp"
+#include "training/entities/image/ColorLabelMap.hpp"
+#include "training/entities/image/RgbColor.hpp"
 
 // labelmap.txtからカラーとクラスIDの対応を保持する関数
 void ColorLabelMap::addEntry(const RgbColor &color, int classId)
@@ -21,4 +21,9 @@ int ColorLabelMap::resolveClassId(const RgbColor &color) const
         }
     }
     return -1; // Not found
+}
+
+size_t ColorLabelMap::entryCount() const
+{
+    return _entries.size();
 }

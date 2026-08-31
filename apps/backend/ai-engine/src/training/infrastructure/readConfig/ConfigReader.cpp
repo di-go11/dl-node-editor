@@ -185,6 +185,50 @@ AppConfig ConfigReader::readAll(const std::string &filePath)
                 }
                 appConfig.batchSize = static_cast<unsigned int>(parsedValue);
             }
+            else if (key == "input_width")
+            {
+                if (value.empty())
+                {
+                    throw std::runtime_error("input_width value is empty");
+                }
+                int parsedValue;
+                try
+                {
+                    parsedValue = std::stoi(value);
+                }
+                catch (...)
+                {
+                    throw std::runtime_error("input_width is not a number" + value);
+                }
+
+                if (parsedValue <= 0)
+                {
+                    throw std::runtime_error("input_width value must be greater than 0:" + value);
+                }
+                appConfig.input_width = static_cast<size_t>(parsedValue);
+            }
+            else if (key == "input_height")
+            {
+                if (value.empty())
+                {
+                    throw std::runtime_error("input_height value is empty");
+                }
+                int parsedValue;
+                try
+                {
+                    parsedValue = std::stoi(value);
+                }
+                catch (...)
+                {
+                    throw std::runtime_error("input_height is not a number" + value);
+                }
+
+                if (parsedValue <= 0)
+                {
+                    throw std::runtime_error("input_height value must be greater than 0:" + value);
+                }
+                appConfig.input_height = static_cast<size_t>(parsedValue);
+            }
             else
             {
                 throw std::runtime_error("Unknown config key: " + key);

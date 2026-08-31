@@ -1,6 +1,6 @@
 #pragma once
 
-#include "training/entities/domain-objects/ImageData.hpp"
+#include "training/entities/image/ImageData.hpp"
 #include <string>
 
 class IImageDecoder

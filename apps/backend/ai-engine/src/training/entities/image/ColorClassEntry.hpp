@@ -1,6 +1,6 @@
 #pragma once
 
-#include "training/entities/domain-objects/RgbColor.hpp"
+#include "training/entities/image/RgbColor.hpp"
 
 struct ColorClassEntry
 {

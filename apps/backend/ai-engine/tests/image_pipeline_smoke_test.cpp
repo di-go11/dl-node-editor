@@ -2,11 +2,11 @@
 #include <iostream>
 #include <string>
 
-#include "training/infrastructure/dataset/OpenCvImageDecoder.hpp"
-#include "training/adapters/impl/ImageNormalizer.hpp"
-#include "training/infrastructure/dataset/ColorMaskLabelConverter.hpp"
-#include "training/entities/segmentation/ColorLabelMap.hpp"
-#include "training/entities/domain-objects/RgbColor.hpp"
+#include "training/infrastructure/image/OpenCvImageDecoder.hpp"
+#include "training/application/impl/image/ImageNormalizer.hpp"
+#include "training/infrastructure/image/ColorMaskLabelConverter.hpp"
+#include "training/entities/image/ColorLabelMap.hpp"
+#include "training/entities/image/RgbColor.hpp"
 
 namespace
 {
@@ -57,9 +57,9 @@ int main()
 
     // ---------- 学習用画像: デコード + 正規化 ----------
     ImageData rawInput = decoder.decode(imagePath);
-    check(rawInput.shape.size() == 3 && rawInput.shape[0] == 3 && rawInput.shape[1] == 255 && rawInput.shape[2] == 255,
+    check(rawInput.shape().size() == 3 && rawInput.getChannels() == 3 && rawInput.getHeight() == 255 && rawInput.getWidth() == 255,
           "decode(training image): shape == {3,255,255}");
-    check(rawInput.values.size() == 3u * 255u * 255u,
+    check(rawInput.raw().size() == 3u * 255u * 255u,
           "decode(training image): values.size() == 3*255*255");
 
     NormalizedImageData normalized = ImageNormalizer::normalize(rawInput);
@@ -73,12 +73,12 @@ int main()
         }
     }
     check(allInRange, "normalize(): all values within [0.0, 1.0]");
-    check(normalized.shape == rawInput.shape, "normalize(): shape preserved");
-    check(normalized.values.size() == rawInput.values.size(), "normalize(): values size preserved");
+    check(normalized.shape == rawInput.shape(), "normalize(): shape preserved");
+    check(normalized.values.size() == rawInput.raw().size(), "normalize(): values size preserved");
 
     // ---------- アノテーション画像: デコード + クラスID変換 ----------
     ImageData rawMask = decoder.decode(maskPath);
-    check(rawMask.shape.size() == 3 && rawMask.shape[0] == 3 && rawMask.shape[1] == 255 && rawMask.shape[2] == 255,
+    check(rawMask.shape().size() == 3 && rawMask.getChannels() == 3 && rawMask.getHeight() == 255 && rawMask.getWidth() == 255,
           "decode(mask image): shape == {3,255,255}");
 
     ColorLabelMap labelMap;
@@ -89,14 +89,14 @@ int main()
     ColorMaskLabelConverter converter(labelMap);
     ImageData classMap = converter.convert(rawMask);
 
-    check(classMap.shape.size() == 3 && classMap.shape[0] == 1 && classMap.shape[1] == 255 && classMap.shape[2] == 255,
+    check(classMap.shape().size() == 3 && classMap.getChannels() == 1 && classMap.getHeight() == 255 && classMap.getWidth() == 255,
           "ColorMaskLabelConverter::convert(): shape == {1,255,255}");
-    check(classMap.values.size() == 255u * 255u,
+    check(classMap.raw().size() == 255u * 255u,
           "ColorMaskLabelConverter::convert(): values.size() == 255*255");
 
     auto classAt = [&](size_t y, size_t x) -> int
     {
-        return static_cast<int>(classMap.values[y * 255 + x]);
+        return static_cast<int>(classMap.at(0, y, x));
     };
 
     check(classAt(10, 50) == 1, "class at (y=10,x=50) in red region == 1");

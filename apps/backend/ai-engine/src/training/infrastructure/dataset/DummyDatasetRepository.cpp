@@ -1,16 +1,16 @@
 #include "training/infrastructure/dataset/DummyDatasetRepository.hpp"
 
 #include "training/entities/domain-objects/BatchData.hpp"
-#include "training/entities/domain-objects/ImageData.hpp"
+#include "training/entities/image/ImageData.hpp"
+#include "training/entities/image/NormalizedImageData.hpp"
+
+#include <cstdint>
+#include <utility>
+#include <vector>
 
 DummyDatasetRepository::DummyDatasetRepository(int batchCount)
     : _batchCount(batchCount), _currentBatch(0)
 {
-}
-
-BatchData *DummyDatasetRepository::getBatchData()
-{
-    return nullptr; // TrainModelUsecase::execute()では未使用のため疎通確認上は空実装で問題ない
 }
 
 void DummyDatasetRepository::reset()
@@ -23,20 +23,37 @@ bool DummyDatasetRepository::hasNext() const
     return _currentBatch < _batchCount;
 }
 
-BatchData DummyDatasetRepository::makeDummyBatchData(const std::vector<size_t> &shape)
+namespace
 {
-    size_t valueCount = 1;
-    for (auto dimension : shape)
+    size_t product(const std::vector<size_t> &shape)
     {
-        valueCount *= dimension;
+        size_t valueCount = 1;
+        for (auto dimension : shape)
+        {
+            valueCount *= dimension;
+        }
+        return valueCount;
     }
+} // namespace
 
-    ImageData image;
+BatchData<NormalizedImageData> DummyDatasetRepository::makeNormalizedBatch(const std::vector<size_t> &shape)
+{
+    NormalizedImageData image;
     image.shape = shape;
-    image.values.assign(valueCount, static_cast<uint8_t>(128)); // ダミー値(中間のグレー相当)
+    image.values.assign(product(shape), 0.5f); // ダミー値(正規化後の中間グレー相当)
 
-    BatchData batch;
-    batch.values.push_back(image);
+    BatchData<NormalizedImageData> batch;
+    batch.values.push_back(std::move(image));
+    batch.num_samples = static_cast<int>(batch.values.size());
+    return batch;
+}
+
+BatchData<ImageData> DummyDatasetRepository::makeImageBatch(const std::vector<size_t> &shape)
+{
+    ImageData image(shape, std::vector<uint8_t>(product(shape), static_cast<uint8_t>(128)));
+
+    BatchData<ImageData> batch;
+    batch.values.push_back(std::move(image));
     batch.num_samples = static_cast<int>(batch.values.size());
     return batch;
 }
@@ -44,8 +61,8 @@ BatchData DummyDatasetRepository::makeDummyBatchData(const std::vector<size_t> &
 TrainingBatch DummyDatasetRepository::getNextBatch()
 {
     TrainingBatch batch;
-    batch.input = makeDummyBatchData({1, 256, 256});  // Conv2D inChannels=1に対応
-    batch.target = makeDummyBatchData({4, 256, 256}); // Conv2D outChannels=4に対応
+    batch.input = makeNormalizedBatch({1, 256, 256}); // Conv2D inChannels=1に対応
+    batch.target = makeImageBatch({4, 256, 256});     // Conv2D outChannels=4に対応
     ++_currentBatch;
     return batch;
 }
