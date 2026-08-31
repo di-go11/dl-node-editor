@@ -305,6 +305,143 @@ struct ResizeParam {
 };
 ```
 
+## static
+
+`static` は `using` と同様、**綴りは同じだが「どこに書くか」で全く別の意味になる**キーワード。4つの機能に分かれる。
+
+| # | 使い方 | 書く場所 | 意味 |
+|---|---|---|---|
+| (a) | static メンバ関数 | クラス定義内の関数 | インスタンス(`this`)に属さない関数。メンバ変数に触れない |
+| (b) | static メンバ変数 | クラス定義内の変数 | クラスに1つだけ存在する変数(インスタンスごとではない) |
+| (c) | static ローカル変数 | 関数本体内の変数 | 初回通過時に1度だけ初期化され、以降も値を保持し続ける |
+| (d) | 内部リンケージ指定 | ファイルスコープの関数・変数 | その翻訳単位(`.cpp`)の中だけで可視。他ファイルから不可視 |
+
+補足: `static_cast` / `static_assert` は綴りに `static` を含むが、上記とは無関係の別キーワード。
+
+### (a) static メンバ関数 — `this` を持たない関数
+
+```c++
+class BatchTensorConverter {
+    static const std::vector<std::size_t> &sampleShape(const ImageData &sample) {
+        return sample.shape();   // 引数だけを見る。BatchTensorConverter のメンバには触れない
+    }
+};
+```
+
+通常のメンバ関数は隠れ引数として `this`(そのオブジェクトのアドレス)を受け取る。`static` を付けると**`this` を受け取らない**関数になる。
+
+| 性質 | 内容 |
+|---|---|
+| 非 static メンバへのアクセス | **不可**(メンバ変数・非 static メンバ関数を使うとコンパイルエラー) |
+| 呼び出し方 | `BatchTensorConverter::sampleShape(x)`(インスタンス経由 `conv.sampleShape(x)` も文法上は可だがオブジェクトは使われない) |
+| `virtual` | **不可**。多態は `this` の実型に基づくため。純粋仮想 `= 0` も不可 |
+| 末尾 `const` | **付けられない**。`this` が無く「オブジェクトを変更しない」という概念自体が存在しない |
+
+#### 何のために使うか
+
+- **ファクトリ関数**(`static Foo create(...)`): オブジェクトがまだ無い段階で呼ぶ
+- **状態非依存の内部ヘルパー**: 「メンバに触れない」ことを**コンパイラに保証させる**(最小権限の原則。コメントで書くだけでは後から破られる)
+- static メンバ関数からは static メンバ関数しか呼べない(呼ぶ対象のオブジェクトが無いため)。結果、ヘルパー階層が連鎖的に static になる
+
+#### static にするかの判断フロー
+
+```
+その関数はメンバ変数を…
+├─ 変更する                              → 非 static・非 const
+├─ 読むだけ                              → 非 static・const   ★static ではない
+└─ まったく触れない
+   ├─ virtual / override が必要          → 非 static(static は多態不可)
+   ├─ 公開APIでオブジェクトの振る舞いとして見せたい
+   │   / インターフェースでモック差し替えしたい → 非 static
+   └─ それ以外(内部ヘルパー等)          → static
+```
+
+`const`(メンバを読むが変更しない)と `static`(メンバに一切触れない)の混同に注意。「変更しないから」で `static` にすると、実はメンバを読んでいたときにエラーになる。
+
+本プロジェクトの [BatchTensorConverter](../src/training/adapters/impl/BatchTensorConverter.hpp) の `private static` ヘルパー群(`sampleShape` / `appendValues` / `flattenValues` 等)は「内部専用・メンバに触れない・多態不要」の3条件が揃った例。
+
+### (b) static メンバ変数 — クラスに1つだけの変数
+
+```c++
+class Counter {
+public:
+    Counter()  { ++_alive; }
+    ~Counter() { --_alive; }
+    static int alive() { return _alive; }
+private:
+    inline static int _alive = 0;   // C++17: ヘッダ内で定義まで完結できる
+};
+```
+
+- インスタンスごとではなく**クラス全体で1つ**の記憶域。全オブジェクトが共有する
+- **C++17 より前**: クラス内は「宣言」だけで、どこか1つの `.cpp` に「定義」`int Counter::_alive = 0;` を書く必要がある(ODR: One Definition Rule)。書き忘れるとリンクエラー
+- **C++17 の `inline static`**: ヘッダ内で定義まで完結できる。`static constexpr` は暗黙で `inline`(定数はこれが定番)
+
+```c++
+class ImageConfig {
+    static constexpr int kMaxChannels = 4;   // 宣言=定義。.cpp 不要
+};
+```
+
+- 用途: 定数、全インスタンス共有のカウンタ・キャッシュ、シングルトンの実体
+- 注意: 異なる翻訳単位にまたがる名前空間スコープの static オブジェクトは**初期化順序が未規定**(static initialization order fiasco)。定数以外の複雑な static は、次の (c) の関数内 static に寄せると初期化順序を制御できる
+
+### (c) 関数内 static ローカル変数 — 一度だけ初期化して保持
+
+```c++
+const Config &defaultConfig() {
+    static const Config instance = loadConfigFromFile();  // 最初の呼び出し時に1度だけ実行
+    return instance;                                       // 2回目以降は既存を返す
+}
+```
+
+- 記憶域はプログラム起動〜終了まで存在するが、**初期化は制御が初めてその宣言を通過したとき**に行われる(遅延初期化)
+- 破棄はプログラム終了時(構築と逆順)
+- **C++11 以降、この初期化はスレッドセーフ**であることが保証される(複数スレッドが同時に初回呼び出ししても初期化は1回だけ、他方は完了を待つ)。いわゆる magic static
+
+```c++
+// Meyers' Singleton
+class Logger {
+public:
+    static Logger &instance() {
+        static Logger inst;   // 初回 instance() 呼び出し時に構築、以降同じものを返す
+        return inst;
+    }
+private:
+    Logger() = default;
+};
+```
+
+- 用途: シングルトン、高コストな値の遅延初期化・キャッシュ
+- 注意: 関数が**隠れた状態**を持つことになる。呼び出し順で挙動が変わる/テスト間で状態が持ち越されるため、多用しない
+
+### (d) 内部リンケージの static — その `.cpp` 限定にする
+
+```c++
+// Foo.cpp
+static int helperCount = 0;                // この .cpp の中だけで見える
+static void logInternal(const char *msg);  // 他の .cpp からは参照・リンクできない
+```
+
+- 名前空間スコープ(グローバル)の関数・変数に付けると**内部リンケージ**になり、その翻訳単位限定になる
+- 目的: 他ファイルの同名シンボルとの衝突を防ぐ、実装詳細を外に漏らさない
+- **ヘッダには書かない**。include した各 `.cpp` がそれぞれ別の実体を持ってしまう
+- 現代C++では**無名名前空間**が推奨されることが多い(型にも使える、テンプレートと相性が良い)。本プロジェクトの [TorchLayerBuilder.cpp](../src/training/infrastructure/torchFunc/TorchLayerBuilder.cpp) の `Overloaded` は無名名前空間側に置かれている。関数・変数単体なら `static` でも実用上十分
+
+### まとめ
+
+| 場面 | 使う static |
+|---|---|
+| クラスに属すが特定インスタンスに属さない関数(ファクトリ、状態非依存ヘルパー) | (a) static メンバ関数 |
+| 全インスタンスで共有する値・定数 | (b) static メンバ変数(C++17 は `inline static` / `static constexpr`) |
+| 関数をまたいで保持する値・遅延初期化・シングルトン | (c) 関数内 static ローカル変数 |
+| その `.cpp` 内だけで使う関数・変数 | (d) 内部リンケージ(型を含むなら無名名前空間) |
+
+迷いやすい対比:
+
+- 「メンバを**読むだけ**」→ `static` ではなく末尾 `const`
+- 「`.cpp` 限定にしたい**型**」→ `static` ではなく無名名前空間
+
 ## 参照を返す関数 / 値を返す関数 と const
 
 `ImageData`(entities層)のアクセサ設計を例に整理する。
