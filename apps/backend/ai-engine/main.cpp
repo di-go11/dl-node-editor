@@ -16,6 +16,7 @@
 #include "training/infrastructure/readConfig/ConfigReader.hpp"
 
 #include "training/infrastructure/image/OpenCvImageDecoder.hpp"
+#include "training/infrastructure/image/ResizePreprocessorFactory.hpp"
 #include "training/infrastructure/dataset/VocDatasetRepository.hpp"
 
 // adapters/application(具象クラス)
@@ -68,7 +69,19 @@ int main(void)
     TrainModelUsecase usecase(param, appConfig, trainer);
 
     auto decoder = std::make_shared<OpenCvImageDecoder>();
-    VocDatasetRepository dataset(appConfig.datasetPath, decoder, param);
+
+    // 画像・マスク共通のジオメトリ。補間/パディングだけ用途別に切り替える。
+    ResizePreprocessorFactory::Geometry geometry;
+    geometry.width = appConfig.input_width;
+    geometry.height = appConfig.input_height;
+    geometry.aspectRatioPolicy = LetterboxPolicy{};
+    ResizePreprocessorFactory preprocessorFactory(geometry);
+
+    auto imagePreProcessor = preprocessorFactory.forImage();
+    auto maskPreProcessor = preprocessorFactory.forMask(/*ignoreIndex=*/255);
+
+    VocDatasetRepository dataset(
+        appConfig.datasetPath, decoder, imagePreProcessor, maskPreProcessor, param);
     usecase.execute(&dataset);
 
     std::cout << "training loop finished" << std::endl;

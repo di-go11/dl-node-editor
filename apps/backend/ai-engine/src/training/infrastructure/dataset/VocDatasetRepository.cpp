@@ -3,20 +3,26 @@
 #include "training/entities/domain-objects/BatchData.hpp"
 #include "training/entities/domain-objects/TrainingBatch.hpp"
 #include "training/entities/domain-objects/TrainParam.hpp"
+#include "training/application/impl/image/ImageNormalizer.hpp"
 
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
+#include <utility>
 
 namespace fs = std::filesystem;
 
 VocDatasetRepository::VocDatasetRepository(
     const std::string &datasetRoot,
     const std::shared_ptr<IImageDecoder> &decoder,
+    const std::shared_ptr<IImagePreprocessor> &imagePreProcessor,
+    const std::shared_ptr<IImagePreprocessor> &maskPreProcessor,
     const std::shared_ptr<TrainParam> &trainParam)
     : _datasetRoot(datasetRoot),
       _decoder(decoder),
+      _imagePreProcessor(imagePreProcessor),
+      _maskPreProcessor(maskPreProcessor),
       _labelConverter(VocColorLabelMapFactory::create()),
       _batchSize(static_cast<int>(trainParam->getBatchSize())),
       _currentIndex(0)
@@ -46,11 +52,6 @@ std::vector<std::string> VocDatasetRepository::loadImageIds(const std::string &l
         ids.push_back(line.substr(start, end - start + 1));
     }
     return ids;
-}
-
-BatchData *VocDatasetRepository::getBatchData()
-{
-    return nullptr; // TrainModelUsecase::execute()では未使用のため空実装
 }
 
 void VocDatasetRepository::reset()
@@ -92,14 +93,18 @@ TrainingBatch VocDatasetRepository::getNextBatch()
         const std::string &id = _imageIds[i];
 
         const std::string imagePath = resolveImagePath(fs::path(_datasetRoot) / "JPEGImages", id);
-        const std::string maskPath = (fs::path(_datasetRoot) / "SegmentationClass" / (id + ".png")).string();
+        const std::string maskPath = (fs::path(_datasetRoot) / "SegmentationClassP" / (id + ".png")).string();
 
         ImageData image = _decoder->decode(imagePath);
         ImageData colorMask = _decoder->decode(maskPath);
         ImageData classMask = _labelConverter.convert(colorMask);
 
-        batch.input.values.push_back(image);
-        batch.target.values.push_back(classMask);
+        // リサイズは uint8 の ImageData に対して行い、その後で入力だけ正規化する。
+        ImageData resizedImage = _imagePreProcessor->process(image);
+        ImageData resizedMask = _maskPreProcessor->process(classMask);
+
+        batch.input.values.push_back(ImageNormalizer::normalize(resizedImage)); // → NormalizedImageData
+        batch.target.values.push_back(std::move(resizedMask));                  // ImageData のまま
     }
 
     batch.input.num_samples = static_cast<int>(batch.input.values.size());

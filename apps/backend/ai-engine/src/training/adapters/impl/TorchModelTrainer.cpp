@@ -5,6 +5,8 @@
 
 #include "../../entities/domain-objects/TrainParam.hpp"
 #include "../../entities/domain-objects/BatchData.hpp"
+#include "../../entities/image/ImageData.hpp"
+#include "../../entities/image/NormalizedImageData.hpp"
 
 #include "../interfaces/IModel.hpp"
 #include "../interfaces/ILoss.hpp"
@@ -25,7 +27,10 @@ TorchModelTrainer::TorchModelTrainer(
 
 TorchModelTrainer::~TorchModelTrainer() = default;
 
-void TorchModelTrainer::train(BatchData &inputBatchData, BatchData &targetBatchData, TrainParam &trainParam)
+void TorchModelTrainer::train(
+    BatchData<NormalizedImageData> &inputBatchData,
+    BatchData<ImageData> &targetBatchData,
+    TrainParam &trainParam)
 {
     BatchTensorConverter converter;
 

@@ -3,6 +3,7 @@
 #include "training/application/interfaces/IDatasetRepository.hpp"
 #include "training/application/interfaces/image/IImageDecoder.hpp"
 #include "training/infrastructure/image/ColorMaskLabelConverter.hpp"
+#include "training/application/interfaces/image/IImagePreprocessor.hpp"
 
 #include <memory>
 #include <string>
@@ -19,12 +20,16 @@ class VocDatasetRepository : public IDatasetRepository
 {
 public:
     // バッチ数はtrainParam.getBatchSize()から取得する(.config、将来的にはGUI入力が単一の参照元)
+    // 画像用・マスク用で前処理器を分けて受け取る。
+    // 幾何変換(出力サイズ・アスペクト比ポリシー)は両者で揃え、
+    // 補間方法・パディング値だけを変えること(ResizePreprocessorFactory 参照)。
     VocDatasetRepository(
         const std::string &datasetRoot,
         const std::shared_ptr<IImageDecoder> &decoder,
+        const std::shared_ptr<IImagePreprocessor> &imagePreProcessor,
+        const std::shared_ptr<IImagePreprocessor> &maskPreProcessor,
         const std::shared_ptr<TrainParam> &trainParam);
 
-    BatchData *getBatchData() override;
     void reset() override;
     bool hasNext() const override;
     TrainingBatch getNextBatch() override;
@@ -34,6 +39,8 @@ private:
 
     std::string _datasetRoot;
     std::shared_ptr<IImageDecoder> _decoder;
+    std::shared_ptr<IImagePreprocessor> _imagePreProcessor; // 画像用
+    std::shared_ptr<IImagePreprocessor> _maskPreProcessor;  // ラベル用
     ColorMaskLabelConverter _labelConverter;
     int _batchSize;
 

@@ -7,7 +7,6 @@ class IModel;
 class ILoss;
 class IOptimizer;
 class IActivation;
-class BatchData;
 class TrainParam;
 
 class TorchModelTrainer : public IModelTrainer
@@ -26,5 +25,8 @@ public:
         const std::shared_ptr<IActivation> &activation);
     ~TorchModelTrainer() override;
 
-    void train(BatchData &inputBatchData, BatchData &targetBatchData, TrainParam &trainParam) override;
+    void train(
+        BatchData<NormalizedImageData> &inputBatchData,
+        BatchData<ImageData> &targetBatchData,
+        TrainParam &trainParam) override;
 };
