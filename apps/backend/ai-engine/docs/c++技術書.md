@@ -1185,3 +1185,122 @@ auto trainer = std::make_shared<TorchModelTrainer>(model, loss, optimizer);
 | shared_ptr の循環参照を断つ | 片方を `std::weak_ptr` にして `lock()` で使う |
 | 迷ったら | まず `unique_ptr`。後から `shared_ptr` へ変換できる |
 | 生 `new` / `delete` | **書かない**(スマートポインタ実装の内部など例外的な場面のみ) |
+
+## 抽象クラスを返す関数と `unique_ptr`(ファクトリ)
+
+「関数の戻り値をインターフェース(抽象クラス)にしたい」場面 —— 典型的には**ファクトリ**(生成の責務を1か所に集約する関数/クラス)—— では、戻り値は値ではなく `std::unique_ptr<IBase>` になる。その理由と考え方。
+
+### 1. 「静的な型」と「動的な型」
+
+```c++
+std::unique_ptr<ILayer> build(const LayersConfig &config);
+```
+
+| | 何 | いつ決まる |
+|---|---|---|
+| **静的な型(static type)** | `std::unique_ptr<ILayer>` —— シグネチャに書いた型 | **コンパイル時。固定**。変わらない |
+| **動的な型(dynamic type)** | そのポインタが実際に指すオブジェクトの正体(`TorchConv2DLayer` か `TorchPoolingLayer` か…) | **実行時**。関数を呼ぶまで分からない |
+
+「戻り値の型が実行時に決まる」とは**静的な型が変わる**という意味ではない(それは不可能)。**同じ `unique_ptr<IBase>` という箱に、実行時どの具象クラスが入るかが変わる**という意味。
+
+### 2. なぜ値で返せないのか —— ポインタが必須の2つの理由
+
+```c++
+ILayer build(const LayersConfig &config);   // ✗ そもそもコンパイルできない
+```
+
+1. **抽象クラスはインスタンス化できない**。純粋仮想関数(`= 0`)を1つでも持つ型は、その型の値・一時オブジェクト・関数引数・戻り値を作れない。
+2. **具象型ごとにサイズもレイアウトも違う**。`TorchConv2DLayer` と `TorchPoolingLayer` は `sizeof` が異なる。関数の戻り値の型は1つ・サイズも1つに決まっている必要があり、「複数の具象型のどれか」を同一サイズで表現できるのは**基底クラスへのポインタ**だけ(ポインタのサイズは指す先の型に依らず一定)。
+
+結論: オブジェクトは**ヒープに置き、基底クラスへのポインタを返す**しかない。
+
+### 3. なぜ `shared_ptr` ではなく `unique_ptr` か
+
+ファクトリが返すオブジェクトは「**今作ったばかりで、まだ誰も所有していない**」。それを呼び出し側へ**単独所有のまま手渡す**(所有権の移動)だけなので、単独所有 = `unique_ptr` が正しい既定。
+
+- 参照カウントも制御ブロックも要らない(オーバーヘッドなし)
+- 呼び出し側が受け取った後、共有が必要になったら `std::shared_ptr<ILayer> sp = std::move(uptr);` で**一方向に変換できる**
+- 最初から `shared_ptr` で返すと、共有が不要な呼び出し側にまでコストを押し付ける
+
+> ファクトリの戻り値は `unique_ptr<IBase>`。共有するかどうかは**受け取った側が決める**。
+
+### 4. 一般形
+
+「戻り値の動的な型が実行時に決まるファクトリ」は必ずこの形になる。
+
+```c++
+std::unique_ptr<IBase> create(/* 実行時の値 */) {
+    switch (/* 実行時の値 */) {                       // if / switch / std::visit / 文字列比較 など
+    case A: return std::make_unique<ConcreteA>(/*...*/);
+    case B: return std::make_unique<ConcreteB>(/*...*/);
+    }
+}
+```
+
+動的な型が確定する瞬間は、**分岐が確定して `make_unique<具象クラス>` が実行される瞬間**。「実行時の値」の正体は状況により:
+
+- `enum`(`OptimizerType::Adam` / `SGD` …)
+- 文字列(設定ファイルの `"adam"`)
+- `std::variant` のアクティブな要素
+- パースした設定ノード、ファイル/通信から来た型コード
+- GUI の選択
+
+いずれも「コンパイル時には確定せず、データとして与えられる」もの。
+
+### 5. 本プロジェクトの例 —— `TorchLayerBuilder`
+
+[TorchLayerBuilder.cpp](../src/training/infrastructure/torchFunc/TorchLayerBuilder.cpp) は `LayersConfig`(内部は `std::variant<Conv2DParams, PoolingParams, ...>`)を受け取り、`std::visit` + オーバーロードセットで分岐して具象レイヤーを生成する。
+
+```c++
+std::shared_ptr<ILayer> TorchLayerBuilder::build(const LayersConfig &config)
+{
+    return std::visit(
+        Overloaded{
+            [](const Conv2DParams &p) -> std::shared_ptr<ILayer> {
+                return std::make_shared<TorchConv2DLayer>(p);   // ← ここで動的な型が確定
+            },
+            [](const PoolingParams &p) -> std::shared_ptr<ILayer> {
+                return std::make_shared<TorchPoolingLayer>(p);
+            },
+            // ... BatchNorm / Linear / Activation
+        },
+        config.params);
+}
+```
+
+`variant` が実行時に保持している型(= モデル定義でユーザーが選んだ層種)が、どの具象クラスを `make` するかを決める。コンパイル時には「この層が Conv か Pooling か」は分からない。
+
+現状は戻り値・要素とも `shared_ptr<ILayer>` だが、**生成して呼び出し側(`TorchModel` の層リスト)へ渡すだけ**なら `unique_ptr<ILayer>` で足りる。各層を複数箇所で共有する必要が出た段階で `shared_ptr` に上げればよい(§3)。
+
+### 6. 逆に、ファクトリが要らない場合
+
+呼び出す場所で**具象型がコンパイル時に分かっている**なら、ファクトリもポインタも不要。値で直接作る。
+
+```c++
+TorchConv2DLayer layer(convParams);   // Conv だと確定しているならこれでよい(スタック・値)
+```
+
+ファクトリ(と `unique_ptr<IBase>` 戻り値)が必要になるのは、「生成すべき具象型がコード上で確定せず、データで与えられる」ときだけ。
+
+### 7. 補足 —— スライシングの復習
+
+抽象でない基底クラスでも、値で受けると危険。
+
+```c++
+class Base { public: virtual void f(); };
+class Derived : public Base { int _extra; public: void f() override; };
+
+Base makeBad() { return Derived{}; }   // Derived の _extra が切り落とされ、Base 部分だけコピーされる
+Base b = makeBad();                    // b.f() は Base::f() を呼ぶ(動的束縛が効かない)
+```
+
+これが**オブジェクトスライシング**。多態を保ったまま返す/渡すには、値ではなく**ポインタか参照**が必要 —— 所有権を移すなら `unique_ptr<Base>`、借りるだけなら `Base&` / `const Base&`。
+
+### 8. まとめ
+
+| 状況 | 戻り値の型 |
+|---|---|
+| 生成すべき具象型がデータで決まる(ファクトリ) | `std::unique_ptr<IBase>` |
+| 生成した多態オブジェクトを共有所有させたい | いったん `unique_ptr<IBase>` で返し、受け取り側が `shared_ptr` へ変換 |
+| 具象型がコンパイル時に確定している | 具象型の**値**(スタック)。ファクトリ不要 |
+| 既存の多態オブジェクトを所有を移さず返す | `IBase&` / `IBase*`(寿命は別途保証) |
