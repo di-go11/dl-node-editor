@@ -11,3 +11,8 @@ std::vector<at::Tensor> TorchBatchNormLayer::parameters() const
 {
     return _module->parameters();
 }
+
+void TorchBatchNormLayer::setTrain(bool trainingMode)
+{
+    _module->train(trainingMode);
+}

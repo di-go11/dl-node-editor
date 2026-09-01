@@ -11,3 +11,8 @@ std::vector<at::Tensor> TorchConv2DLayer::parameters() const
 {
     return _module->parameters();
 }
+
+void TorchConv2DLayer::setTrain(bool trainingMode)
+{
+    _module->train(trainingMode);
+}

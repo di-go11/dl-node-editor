@@ -29,3 +29,9 @@ std::vector<at::Tensor> TorchPoolingLayer::parameters() const
     return std::visit([](auto &module)
                        { return module->parameters(); }, _module);
 }
+
+void TorchPoolingLayer::setTrain(bool trainingMode)
+{
+    std::visit([trainingMode](auto &module)
+               { module->train(trainingMode); }, _module);
+}

@@ -24,7 +24,9 @@
 
 // adapters/application(具象クラス)
 #include "training/adapters/impl/TorchModelTrainer.hpp"
+#include "training/infrastructure/torchModel/TorchModelEvaluator.hpp"
 #include "training/application/impl/TrainModelUsecase.hpp"
+#include "training/application/impl/TrainingDatasets.hpp"
 
 // numClasses = セグメンテーションのクラス数(labelmap.txt のエントリ数)。
 // 最終層は「クラス数チャンネルの生ロジット」を出力する。CrossEntropy が
@@ -72,8 +74,9 @@ int main(void)
     auto loss = std::make_shared<CrossEntropy>();
 
     auto trainer = std::make_shared<TorchModelTrainer>(model, loss, optimizer);
+    auto evaluator = std::make_shared<TorchModelEvaluator>(*model, *loss, numClasses);
 
-    TrainModelUsecase usecase(param, appConfig, trainer);
+    TrainModelUsecase usecase(param, appConfig, trainer, evaluator);
 
     auto decoder = std::make_shared<OpenCvImageDecoder>();
 
@@ -87,9 +90,18 @@ int main(void)
     auto imagePreProcessor = preprocessorFactory.forImage();
     auto maskPreProcessor = preprocessorFactory.forMask(/*ignoreIndex=*/255);
 
-    VocDatasetRepository dataset(
+    // TODO: validation は現状 train と同じ split を使っている。
+    //       VocDatasetRepository に train.txt / val.txt の切替を追加したら差し替える。
+    auto trainDataset = std::make_shared<VocDatasetRepository>(
         appConfig.datasetPath, decoder, imagePreProcessor, maskPreProcessor, param);
-    usecase.execute(&dataset);
+    auto validationDataset = std::make_shared<VocDatasetRepository>(
+        appConfig.datasetPath, decoder, imagePreProcessor, maskPreProcessor, param);
+
+    TrainingDatasets datasets;
+    datasets.trainDataset = trainDataset;
+    datasets.validationDataset = validationDataset;
+
+    usecase.execute(datasets);
 
     std::cout << "training loop finished" << std::endl;
 

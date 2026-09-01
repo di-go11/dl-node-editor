@@ -11,6 +11,7 @@ public:
     explicit TorchBatchNormLayer(const BatchNormParams &params);
     void forward(const at::Tensor &input, at::Tensor &output) override;
     std::vector<at::Tensor> parameters() const override;
+    void setTrain(bool trainingMode) override;
 
 private:
     torch::nn::BatchNorm2d _module;

@@ -1,17 +1,15 @@
 #pragma once
 
-#include "training/entities/domain-objects/BatchData.hpp"
-#include "training/entities/image/ImageData.hpp"
-#include "training/entities/image/NormalizedImageData.hpp"
-
-class TrainParam;
+struct EpochMetrics;
+class IDatasetRepository;
 
 class IModelTrainer
 {
 public:
     virtual ~IModelTrainer() = default;
-    virtual void train(
-        BatchData<NormalizedImageData> &inputBatchData,
-        BatchData<ImageData> &targetBatchData,
-        TrainParam &trainParam) = 0;
+
+    // 学習データを1周(1エポック)学習し、その間の集計結果を返す。
+    // バッチ分割・テンソル変換・train モード設定は実装側の責務。
+    // IModelEvaluator::evaluate と対称(どちらも「データセット1周」の粒度)。
+    virtual EpochMetrics trainOneEpoch(IDatasetRepository &trainData) = 0;
 };
