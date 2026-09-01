@@ -2,27 +2,42 @@
 
 #include "../../entities/domain-objects/TrainParam.hpp"
 #include "../../entities/domain-objects/EpochMetrics.hpp"
+#include "training/application/impl/TrainingDatasets.hpp"
+#include "training/application/impl/BestMetricTracker.hpp"
 #include "../interfaces/IModelTrainer.hpp"
 #include "training/application/interfaces/IModelEvaluator.hpp"
-#include "training/application/impl/TrainingDatasets.hpp"
+#include "training/application/interfaces/IModelStore.hpp"
 
+#include <exception>
+#include <filesystem>
 #include <iostream>
 
 TrainModelUsecase::TrainModelUsecase(const std::shared_ptr<TrainParam> &param,
                                      const AppConfig &appConfig,
                                      const std::shared_ptr<IModelTrainer> &trainer,
-                                     const std::shared_ptr<IModelEvaluator> &evaluator)
+                                     const std::shared_ptr<IModelEvaluator> &evaluator,
+                                     const std::shared_ptr<IModel> &model,
+                                     const std::shared_ptr<IModelStore> &modelStore)
     : _param(param),
       _appConfig(appConfig),
       _trainer(trainer),
-      _evaluator(evaluator) {}
+      _evaluator(evaluator),
+      _model(model),
+      _modelStore(modelStore) {}
+
+std::string TrainModelUsecase::checkpointPath() const
+{
+    const std::string name = _appConfig.modelName.empty() ? "model" : _appConfig.modelName;
+    return (std::filesystem::path(_appConfig.outputDir) / (name + "_best.pt")).string();
+}
 
 void TrainModelUsecase::execute(const TrainingDatasets &datasets)
 {
+    // validation mIoU(大きいほど良い)を監視し、更新されたエポックだけ重みを保存する。
+    BestMetricTracker bestMiou(MetricMode::Max);
+
     for (unsigned int epoch = 0; epoch < _param->getEpochSize(); ++epoch)
     {
-        // train / validation はどちらも「データセット1周」の粒度で対称。
-        // バッチ分割・reset・テンソル変換は trainer / evaluator の内部責務。
         const EpochMetrics trainMetrics = _trainer->trainOneEpoch(*datasets.trainDataset);
         const EpochMetrics valMetrics = _evaluator->evaluate(*datasets.validationDataset);
 
@@ -32,5 +47,21 @@ void TrainModelUsecase::execute(const TrainingDatasets &datasets)
                   << " | val_pixel_acc=" << valMetrics.pixelAccuracy
                   << " | val_mIoU=" << valMetrics.meanIoU
                   << std::endl;
+
+        if (bestMiou.update(valMetrics.meanIoU))
+        {
+            const std::string path = checkpointPath();
+            try
+            {
+                _modelStore->save(*_model, path);
+                std::cout << "  -> best updated (val_mIoU=" << bestMiou.best()
+                          << "), checkpoint saved: " << path << std::endl;
+            }
+            catch (const std::exception &e)
+            {
+                // 保存に失敗しても学習は継続する。
+                std::cerr << "  -> checkpoint save failed: " << e.what() << std::endl;
+            }
+        }
     }
 }
