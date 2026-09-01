@@ -16,3 +16,13 @@ void SGDOptimizer::updateParmeters()
 {
     _optim->step();
 }
+
+void SGDOptimizer::saveState(const std::string &filePath)
+{
+    torch::save(*_optim, filePath);
+}
+
+void SGDOptimizer::loadState(const std::string &filePath)
+{
+    torch::load(*_optim, filePath);
+}

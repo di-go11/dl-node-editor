@@ -16,3 +16,13 @@ void AdamWOptimizer::updateParmeters()
 {
     _optim->step();
 }
+
+void AdamWOptimizer::saveState(const std::string &filePath)
+{
+    torch::save(*_optim, filePath);
+}
+
+void AdamWOptimizer::loadState(const std::string &filePath)
+{
+    torch::load(*_optim, filePath);
+}
