@@ -11,3 +11,8 @@ std::vector<at::Tensor> TorchLinearLayer::parameters() const
 {
     return _module->parameters();
 }
+
+void TorchLinearLayer::setTrain(bool trainingMode)
+{
+    _module->train(trainingMode);
+}

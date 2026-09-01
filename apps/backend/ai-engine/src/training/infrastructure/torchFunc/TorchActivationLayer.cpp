@@ -37,3 +37,8 @@ std::vector<at::Tensor> TorchActivationLayer::parameters() const
 {
     return {};
 }
+
+void TorchActivationLayer::setTrain(bool /*trainingMode*/)
+{
+    // 活性化層は状態を持たないため train/eval の切替は不要
+}
