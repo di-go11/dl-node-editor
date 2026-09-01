@@ -19,7 +19,14 @@ class TorchModel : public IModel
 public:
     TorchModel(const ModelGraph &graph, ILayerBuilder &builder);
 
-    void train(at::Tensor &prediction, at::Tensor &target, ILoss &loss, IOptimizer &optimizer) override;
+    at::Tensor forward(const at::Tensor &input) override;
+
+    void trainStep(at::Tensor &input, at::Tensor &target, ILoss &loss, IOptimizer &optimizer) override;
+
+    void setTrain() override;
+    void setEval() override;
+
+    /* void train(at::Tensor &prediction, at::Tensor &target, ILoss &loss, IOptimizer &optimizer) override;*/
 
     std::vector<at::Tensor> parameters() const;
 
