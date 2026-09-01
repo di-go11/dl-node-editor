@@ -6,6 +6,7 @@
 #include "training/entities/domain-objects/ModelGraph.hpp"
 #include "training/entities/domain-objects/Conv2DParams.hpp"
 #include "training/entities/domain-objects/ActivationParams.hpp"
+#include "training/entities/domain-objects/DatasetSplit.hpp"
 
 // infrastructure(具象クラス)
 #include "training/infrastructure/torchFunc/TorchLayerBuilder.hpp"
@@ -90,12 +91,13 @@ int main(void)
     auto imagePreProcessor = preprocessorFactory.forImage();
     auto maskPreProcessor = preprocessorFactory.forMask(/*ignoreIndex=*/255);
 
-    // TODO: validation は現状 train と同じ split を使っている。
-    //       VocDatasetRepository に train.txt / val.txt の切替を追加したら差し替える。
+    //
+    DatasetSplit trainsplit = DatasetSplit::Train;
+    DatasetSplit valsplit = DatasetSplit::Validation;
     auto trainDataset = std::make_shared<VocDatasetRepository>(
-        appConfig.datasetPath, decoder, imagePreProcessor, maskPreProcessor, param);
+        appConfig.datasetPath, decoder, imagePreProcessor, maskPreProcessor, param, trainsplit);
     auto validationDataset = std::make_shared<VocDatasetRepository>(
-        appConfig.datasetPath, decoder, imagePreProcessor, maskPreProcessor, param);
+        appConfig.datasetPath, decoder, imagePreProcessor, maskPreProcessor, param, valsplit);
 
     TrainingDatasets datasets;
     datasets.trainDataset = trainDataset;

@@ -5,6 +5,8 @@
 #include "training/infrastructure/image/ColorMaskLabelConverter.hpp"
 #include "training/application/interfaces/image/IImagePreprocessor.hpp"
 
+#include "training/entities/domain-objects/DatasetSplit.hpp"
+
 #include <memory>
 #include <string>
 #include <vector>
@@ -28,7 +30,8 @@ public:
         const std::shared_ptr<IImageDecoder> &decoder,
         const std::shared_ptr<IImagePreprocessor> &imagePreProcessor,
         const std::shared_ptr<IImagePreprocessor> &maskPreProcessor,
-        const std::shared_ptr<TrainParam> &trainParam);
+        const std::shared_ptr<TrainParam> &trainParam,
+        DatasetSplit split);
 
     void reset() override;
     bool hasNext() const override;

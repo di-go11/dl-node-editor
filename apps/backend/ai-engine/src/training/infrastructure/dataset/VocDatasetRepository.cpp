@@ -3,6 +3,7 @@
 #include "training/entities/domain-objects/BatchData.hpp"
 #include "training/entities/domain-objects/TrainingBatch.hpp"
 #include "training/entities/domain-objects/TrainParam.hpp"
+
 #include "training/application/impl/image/ImageNormalizer.hpp"
 
 #include <algorithm>
@@ -18,7 +19,8 @@ VocDatasetRepository::VocDatasetRepository(
     const std::shared_ptr<IImageDecoder> &decoder,
     const std::shared_ptr<IImagePreprocessor> &imagePreProcessor,
     const std::shared_ptr<IImagePreprocessor> &maskPreProcessor,
-    const std::shared_ptr<TrainParam> &trainParam)
+    const std::shared_ptr<TrainParam> &trainParam,
+    DatasetSplit split)
     : _datasetRoot(datasetRoot),
       _decoder(decoder),
       _imagePreProcessor(imagePreProcessor),
@@ -27,7 +29,22 @@ VocDatasetRepository::VocDatasetRepository(
       _batchSize(static_cast<int>(trainParam->getBatchSize())),
       _currentIndex(0)
 {
-    const std::string listPath = (fs::path(_datasetRoot) / "ImageSets" / "Segmentation" / "train.txt").string();
+    const char *listName = nullptr;
+    switch (split)
+    {
+    case DatasetSplit::Train:
+        listName = "train.txt";
+        break;
+    case DatasetSplit::Validation:
+        listName = "val.txt";
+        break;
+    case DatasetSplit::Test:
+        listName = "test.txt";
+        break;
+    default:
+        throw std::invalid_argument("Invalid DatasetSplit value");
+    }
+    const std::string listPath = (fs::path(_datasetRoot) / "ImageSets" / "Segmentation" / listName).string();
     _imageIds = loadImageIds(listPath);
 }
 
