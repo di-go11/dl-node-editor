@@ -27,4 +27,6 @@ public:
     SGDOptimizer(std::vector<at::Tensor> &parameters, double learningRate, double momentum = 0.9, double weight_decay = 1e-4, bool nesterov = false);
     void resetGradients() override;
     void updateParmeters() override;
+    void saveState(const std::string &filePath) override;
+    void loadState(const std::string &filePath) override;
 };

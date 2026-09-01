@@ -27,4 +27,6 @@ public:
     AdamOptimizer(std::vector<at::Tensor> &parameters, double learningRate, double beta1 = 0.9, double beta2 = 0.999, double eps = 1e-8, double weight_decay = 0.0);
     void resetGradients() override;
     void updateParmeters() override;
+    void saveState(const std::string &filePath) override;
+    void loadState(const std::string &filePath) override;
 };
