@@ -11,6 +11,7 @@ struct AppConfig
     OptimizerConfig optimizer;
     ActivationConfig activation;
     std::string datasetPath; // 学習用画像・アノテーション画像が置かれているデータセットのルートディレクトリ
+    std::string outputDir = "models"; // チェックポイント(ベストモデルの重み)の保存先ディレクトリ
     unsigned int epochSize = 1;
     unsigned int batchSize = 1;
     size_t input_width = 256;
