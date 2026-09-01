@@ -1,0 +1,30 @@
+#pragma once
+
+// 監視するメトリクスの「良い方向」。
+//   Max: 大きいほど良い(mIoU, accuracy など)
+//   Min: 小さいほど良い(loss など)
+enum class MetricMode
+{
+    Max,
+    Min
+};
+
+// これまでに観測した最良値を保持し、更新されたかどうかを判定する。
+// TrainModelUsecase がベストモデルのチェックポイント保存を判断するために使う。
+class BestMetricTracker
+{
+public:
+    explicit BestMetricTracker(MetricMode mode);
+
+    // value がこれまでのベストを更新したら true(初回は常に true)。
+    // NaN は「更新なし」として false を返し、ベストも更新しない。
+    bool update(double value);
+
+    double best() const;
+    bool hasBest() const;
+
+private:
+    MetricMode _mode;
+    double _bestValue;
+    bool _hasBest;
+};
