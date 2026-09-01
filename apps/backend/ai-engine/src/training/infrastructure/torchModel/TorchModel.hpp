@@ -21,7 +21,7 @@ public:
 
     at::Tensor forward(const at::Tensor &input) override;
 
-    void trainStep(at::Tensor &input, at::Tensor &target, ILoss &loss, IOptimizer &optimizer) override;
+    at::Tensor trainStep(at::Tensor &input, at::Tensor &target, ILoss &loss, IOptimizer &optimizer) override;
 
     void setTrain() override;
     void setEval() override;

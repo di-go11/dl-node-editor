@@ -53,7 +53,7 @@ at::Tensor TorchModel::forward(const at::Tensor &input)
     return current;
 }
 
-void TorchModel::trainStep(at::Tensor &input, at::Tensor &target, ILoss &loss, IOptimizer &optimizer)
+at::Tensor TorchModel::trainStep(at::Tensor &input, at::Tensor &target, ILoss &loss, IOptimizer &optimizer)
 {
     at::Tensor prediction = forward(input); // forwardの再利用
 
@@ -63,6 +63,24 @@ void TorchModel::trainStep(at::Tensor &input, at::Tensor &target, ILoss &loss, I
     optimizer.resetGradients();  // 勾配リセット
     lossValue.backward();        // 勾配計算
     optimizer.updateParmeters(); // パラメータ更新
+
+    return lossValue.detach(); // 集計・ログ用(計算グラフからは切り離す)
+}
+
+void TorchModel::setTrain()
+{
+    for (auto &layer : _layers)
+    {
+        layer->setTrain(true);
+    }
+}
+
+void TorchModel::setEval()
+{
+    for (auto &layer : _layers)
+    {
+        layer->setTrain(false);
+    }
 }
 
 std::vector<at::Tensor> TorchModel::parameters() const
