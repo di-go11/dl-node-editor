@@ -75,3 +75,15 @@ target_include_directories(image_resize_test PRIVATE
 target_link_libraries(image_resize_test PRIVATE ai_engine_lib "${TORCH_LIBRARIES}" ${OpenCV_LIBS})
 target_link_options(image_resize_test PRIVATE "-Wl,--allow-shlib-undefined")
 set_property(TARGET image_resize_test PROPERTY CXX_STANDARD 17)
+
+# 8. validation(TorchModelEvaluator)の loss / pixel accuracy / mIoU 集計テスト
+add_executable(model_evaluator_test tests/model_evaluator_test.cpp)
+target_include_directories(model_evaluator_test PRIVATE
+	${CMAKE_CURRENT_SOURCE_DIR}/src
+	${CMAKE_CURRENT_SOURCE_DIR}
+	${TORCH_INCLUDE_DIRS}
+	${OpenCV_INCLUDE_DIRS}
+)
+target_link_libraries(model_evaluator_test PRIVATE ai_engine_lib "${TORCH_LIBRARIES}" ${OpenCV_LIBS})
+target_link_options(model_evaluator_test PRIVATE "-Wl,--allow-shlib-undefined")
+set_property(TARGET model_evaluator_test PROPERTY CXX_STANDARD 17)
