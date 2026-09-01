@@ -139,6 +139,14 @@ AppConfig ConfigReader::readAll(const std::string &filePath)
                 }
                 appConfig.datasetPath = value;
             }
+            else if (key == "output_dir")
+            {
+                if (value.empty())
+                {
+                    throw std::runtime_error("output_dir value is empty");
+                }
+                appConfig.outputDir = value;
+            }
             else if (key == "epoch_size")
             {
                 if (value.empty())

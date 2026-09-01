@@ -87,3 +87,15 @@ target_include_directories(model_evaluator_test PRIVATE
 target_link_libraries(model_evaluator_test PRIVATE ai_engine_lib "${TORCH_LIBRARIES}" ${OpenCV_LIBS})
 target_link_options(model_evaluator_test PRIVATE "-Wl,--allow-shlib-undefined")
 set_property(TARGET model_evaluator_test PROPERTY CXX_STANDARD 17)
+
+# 9. ベストモデルの自動チェックポイント保存(BestMetricTracker / TrainModelUsecase)テスト
+add_executable(best_checkpoint_test tests/best_checkpoint_test.cpp)
+target_include_directories(best_checkpoint_test PRIVATE
+	${CMAKE_CURRENT_SOURCE_DIR}/src
+	${CMAKE_CURRENT_SOURCE_DIR}
+	${TORCH_INCLUDE_DIRS}
+	${OpenCV_INCLUDE_DIRS}
+)
+target_link_libraries(best_checkpoint_test PRIVATE ai_engine_lib "${TORCH_LIBRARIES}" ${OpenCV_LIBS})
+target_link_options(best_checkpoint_test PRIVATE "-Wl,--allow-shlib-undefined")
+set_property(TARGET best_checkpoint_test PROPERTY CXX_STANDARD 17)

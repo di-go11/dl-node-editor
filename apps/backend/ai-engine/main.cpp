@@ -11,6 +11,7 @@
 // infrastructure(具象クラス)
 #include "training/infrastructure/torchFunc/TorchLayerBuilder.hpp"
 #include "training/infrastructure/torchModel/TorchModel.hpp"
+#include "training/infrastructure/torchModel/TorchModelStore.hpp"
 #include "training/infrastructure/torchFunc/AdamOptimizer.hpp"
 #include "training/infrastructure/torchFunc/CrossEntropy.hpp"
 #include "training/infrastructure/readConfig/ConfigReader.hpp"
@@ -76,8 +77,9 @@ int main(void)
 
     auto trainer = std::make_shared<TorchModelTrainer>(model, loss, optimizer);
     auto evaluator = std::make_shared<TorchModelEvaluator>(*model, *loss, numClasses);
+    auto modelStore = std::make_shared<TorchModelStore>();
 
-    TrainModelUsecase usecase(param, appConfig, trainer, evaluator);
+    TrainModelUsecase usecase(param, appConfig, trainer, evaluator, model, modelStore);
 
     auto decoder = std::make_shared<OpenCvImageDecoder>();
 
