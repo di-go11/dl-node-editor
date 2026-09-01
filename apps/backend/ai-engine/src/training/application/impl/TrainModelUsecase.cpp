@@ -1,35 +1,36 @@
 #include "./TrainModelUsecase.hpp"
-#include "../../entities/domain-objects/TrainParam.hpp"
-#include "../interfaces/IDatasetRepository.hpp"
-#include "../interfaces/IModelTrainer.hpp"
-#include "../../entities/domain-objects/BatchData.hpp"
-#include "training/entities/domain-objects/TrainingBatch.hpp"
 
-#include <memory>
-#include <vector>
+#include "../../entities/domain-objects/TrainParam.hpp"
+#include "../../entities/domain-objects/EpochMetrics.hpp"
+#include "../interfaces/IModelTrainer.hpp"
+#include "training/application/interfaces/IModelEvaluator.hpp"
+#include "training/application/impl/TrainingDatasets.hpp"
+
+#include <iostream>
 
 TrainModelUsecase::TrainModelUsecase(const std::shared_ptr<TrainParam> &param,
                                      const AppConfig &appConfig,
-                                     const std::shared_ptr<IModelTrainer> &trainer)
+                                     const std::shared_ptr<IModelTrainer> &trainer,
+                                     const std::shared_ptr<IModelEvaluator> &evaluator)
     : _param(param),
       _appConfig(appConfig),
-      _trainer(trainer) {}
+      _trainer(trainer),
+      _evaluator(evaluator) {}
 
-void TrainModelUsecase::execute(IDatasetRepository *dataset)
+void TrainModelUsecase::execute(const TrainingDatasets &datasets)
 {
-    // Here you can implement the logic to execute the training process
-    // using the provided dataset, training parameters, and model trainer.
-    // For example:
-    // 1. Load the dataset using the dataset repository.
-    // 2. Configure the model using the training parameters.
-    // 3. Start the training process using the model trainer.
-    for (int epoch = 0; epoch < _param->getEpochSize(); ++epoch)
+    for (unsigned int epoch = 0; epoch < _param->getEpochSize(); ++epoch)
     {
-        dataset->reset();
-        while (dataset->hasNext())
-        {
-            TrainingBatch batch = dataset->getNextBatch();
-            _trainer->train(batch.input, batch.target, *_param);
-        }
+        // train / validation はどちらも「データセット1周」の粒度で対称。
+        // バッチ分割・reset・テンソル変換は trainer / evaluator の内部責務。
+        const EpochMetrics trainMetrics = _trainer->trainOneEpoch(*datasets.trainDataset);
+        const EpochMetrics valMetrics = _evaluator->evaluate(*datasets.validationDataset);
+
+        std::cout << "epoch " << epoch
+                  << " | train_loss=" << trainMetrics.loss
+                  << " | val_loss=" << valMetrics.loss
+                  << " | val_pixel_acc=" << valMetrics.pixelAccuracy
+                  << " | val_mIoU=" << valMetrics.meanIoU
+                  << std::endl;
     }
 }

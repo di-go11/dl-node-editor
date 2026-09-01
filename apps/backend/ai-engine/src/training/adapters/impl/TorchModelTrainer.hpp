@@ -6,7 +6,8 @@
 class IModel;
 class ILoss;
 class IOptimizer;
-class TrainParam;
+class IDatasetRepository;
+struct EpochMetrics;
 
 class TorchModelTrainer : public IModelTrainer
 {
@@ -22,8 +23,5 @@ public:
         const std::shared_ptr<IOptimizer> &optimizer);
     ~TorchModelTrainer() override;
 
-    void train(
-        BatchData<NormalizedImageData> &inputBatchData,
-        BatchData<ImageData> &targetBatchData,
-        TrainParam &trainParam) override;
+    EpochMetrics trainOneEpoch(IDatasetRepository &trainData) override;
 };
