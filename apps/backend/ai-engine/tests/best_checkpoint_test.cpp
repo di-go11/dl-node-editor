@@ -6,9 +6,8 @@
 
 #include <torch/torch.h>
 
-#include "training/adapters/interfaces/IModel.hpp"
 #include "training/entities/domain-objects/TrainingBatch.hpp"
-#include "training/application/interfaces/IModelStore.hpp"
+#include "training/application/interfaces/ICheckpointStore.hpp"
 #include "training/application/interfaces/IModelTrainer.hpp"
 #include "training/application/interfaces/IModelEvaluator.hpp"
 #include "training/application/interfaces/IDatasetRepository.hpp"
@@ -32,27 +31,17 @@ void check(bool condition, const std::string &message)
     }
 }
 
-class FakeModel : public IModel
-{
-public:
-    at::Tensor forward(const at::Tensor &) override { return {}; }
-    at::Tensor trainStep(at::Tensor &, at::Tensor &, ILoss &, IOptimizer &) override { return {}; }
-    void setTrain() override {}
-    void setEval() override {}
-};
-
-class FakeModelStore : public IModelStore
+class FakeCheckpointStore : public ICheckpointStore
 {
 public:
     int saveCount = 0;
-    std::vector<std::string> savedPaths;
+    std::vector<unsigned int> savedEpochs;
 
-    void save(const IModel &, const std::string &path) override
+    void saveBest(unsigned int epoch) override
     {
         ++saveCount;
-        savedPaths.push_back(path);
+        savedEpochs.push_back(epoch);
     }
-    void load(IModel &, const std::string &) override {}
 };
 
 class FakeDataset : public IDatasetRepository
@@ -102,10 +91,9 @@ int runUsecase(const std::vector<double> &valMious)
 
     auto trainer = std::make_shared<FakeTrainer>();
     auto evaluator = std::make_shared<FakeEvaluator>(valMious);
-    auto model = std::make_shared<FakeModel>();
-    auto store = std::make_shared<FakeModelStore>();
+    auto store = std::make_shared<FakeCheckpointStore>();
 
-    TrainModelUsecase usecase(param, appConfig, trainer, evaluator, model, store);
+    TrainModelUsecase usecase(param, appConfig, trainer, evaluator, store);
 
     TrainingDatasets datasets;
     datasets.trainDataset = std::make_shared<FakeDataset>();

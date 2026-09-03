@@ -1,4 +1,5 @@
 #include "training/infrastructure/torchFunc/AdamWOptimizer.hpp"
+#include "training/infrastructure/torchModel/TorchCheckpointArchive.hpp"
 
 #include <torch/torch.h>
 
@@ -17,12 +18,12 @@ void AdamWOptimizer::updateParmeters()
     _optim->step();
 }
 
-void AdamWOptimizer::saveState(const std::string &filePath)
+void AdamWOptimizer::writeTo(ICheckpointWriter &archive) const
 {
-    torch::save(*_optim, filePath);
+    _optim->save(toTorchArchive(archive));
 }
 
-void AdamWOptimizer::loadState(const std::string &filePath)
+void AdamWOptimizer::readFrom(ICheckpointReader &archive)
 {
-    torch::load(*_optim, filePath);
+    _optim->load(toTorchArchive(archive));
 }

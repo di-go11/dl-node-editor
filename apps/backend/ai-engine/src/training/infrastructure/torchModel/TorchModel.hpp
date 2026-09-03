@@ -23,6 +23,9 @@ public:
 
     at::Tensor trainStep(at::Tensor &input, at::Tensor &target, ILoss &loss, IOptimizer &optimizer) override;
 
+    void writeTo(ICheckpointWriter &archive) const override;
+    void readFrom(ICheckpointReader &archive) override;
+
     void setTrain() override;
     void setEval() override;
 

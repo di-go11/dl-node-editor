@@ -5,8 +5,12 @@
 #include "training/adapters/interfaces/ILoss.hpp"
 #include "training/adapters/interfaces/IOptimizer.hpp"
 #include "training/entities/domain-objects/ModelGraph.hpp"
+#include "training/infrastructure/torchModel/TorchCheckpointArchive.hpp"
 
 #include <torch/torch.h>
+
+#include <stdexcept>
+#include <string>
 
 TorchModel::TorchModel(const ModelGraph &graph, ILayerBuilder &builder)
 {
@@ -65,6 +69,45 @@ at::Tensor TorchModel::trainStep(at::Tensor &input, at::Tensor &target, ILoss &l
     optimizer.updateParmeters(); // パラメータ更新
 
     return lossValue.detach(); // 集計・ログ用(計算グラフからは切り離す)
+}
+
+void TorchModel::writeTo(ICheckpointWriter &archive) const
+{
+    torch::serialize::OutputArchive &out = toTorchArchive(archive);
+
+    const std::vector<at::Tensor> params = parameters();
+    out.write("model_param_count", torch::tensor(static_cast<int64_t>(params.size())));
+    for (std::size_t i = 0; i < params.size(); ++i)
+    {
+        out.write("model_param_" + std::to_string(i), params[i]);
+    }
+}
+
+void TorchModel::readFrom(ICheckpointReader &archive)
+{
+    torch::serialize::InputArchive &in = toTorchArchive(archive);
+
+    std::vector<at::Tensor> current = parameters();
+
+    at::Tensor countTensor;
+    in.read("model_param_count", countTensor);
+    const auto storedCount = static_cast<std::size_t>(countTensor.item<int64_t>());
+    if (storedCount != current.size())
+    {
+        throw std::runtime_error(
+            "TorchModel::readFrom: parameter count mismatch (archive=" +
+            std::to_string(storedCount) + ", model=" + std::to_string(current.size()) + ")");
+    }
+
+    // parameters() が返すテンソルはモデル内部と記憶域を共有しているため、
+    // copy_ で値を書き戻すとモデルの重みが更新される。
+    torch::NoGradGuard noGrad;
+    for (std::size_t i = 0; i < current.size(); ++i)
+    {
+        at::Tensor loaded;
+        in.read("model_param_" + std::to_string(i), loaded);
+        current[i].copy_(loaded);
+    }
 }
 
 void TorchModel::setTrain()
