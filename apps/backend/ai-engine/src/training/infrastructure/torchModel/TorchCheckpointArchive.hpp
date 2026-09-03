@@ -8,7 +8,7 @@
 
 // ICheckpointWriter / ICheckpointReader の libtorch 実装。
 //
-// infrastructure 層の各実装(TorchModel / *Optimizer / TorchModelStore)だけが
+// infrastructure 層の各実装(TorchModel / *Optimizer / TorchCheckpointStore)だけが
 // この具象型を知り、torch::serialize::*Archive にアクセスする。
 // adapters / application 層は不透明ハンドルとしてしか扱わない。
 
