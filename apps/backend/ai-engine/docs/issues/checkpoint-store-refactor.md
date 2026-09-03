@@ -74,7 +74,8 @@ public:
 ## 残課題
 
 - `TorchCheckpointStore::saveBest` の書き出しはあるが、チェックポイントからの **読み戻し (resume)** 経路は未実装
-- 旧 `IModelStore` / `TorchModelStore` は未使用になった（推論時の重みロード用に残すか要判断）
+- 旧 `IModelStore` / `TorchModelStore` は `ICheckpointStore` に置き換わり削除済み。
+  推論時の重みのみロードが必要になったら、`IModel::readFrom` を使う軽量パスを別途用意する
 - `TorchCheckpointArchive.hpp` が `infrastructure/torchModel/` に置かれているが `torchFunc/` の Optimizer からも参照している。より中立な infra 位置への移動を検討
 
 ## 関連
