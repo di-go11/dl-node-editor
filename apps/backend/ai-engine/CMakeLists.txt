@@ -99,3 +99,18 @@ target_include_directories(best_checkpoint_test PRIVATE
 target_link_libraries(best_checkpoint_test PRIVATE ai_engine_lib "${TORCH_LIBRARIES}" ${OpenCV_LIBS})
 target_link_options(best_checkpoint_test PRIVATE "-Wl,--allow-shlib-undefined")
 set_property(TARGET best_checkpoint_test PROPERTY CXX_STANDARD 17)
+
+# 10. TorchCheckpointStore の save→load ラウンドトリップ(実 TorchModel + AdamOptimizer)テスト
+add_executable(checkpoint_roundtrip_test tests/checkpoint_roundtrip_test.cpp)
+target_include_directories(checkpoint_roundtrip_test PRIVATE
+	${CMAKE_CURRENT_SOURCE_DIR}/src
+	${CMAKE_CURRENT_SOURCE_DIR}
+	${TORCH_INCLUDE_DIRS}
+	${OpenCV_INCLUDE_DIRS}
+)
+target_link_libraries(checkpoint_roundtrip_test PRIVATE ai_engine_lib "${TORCH_LIBRARIES}" ${OpenCV_LIBS})
+target_link_options(checkpoint_roundtrip_test PRIVATE "-Wl,--allow-shlib-undefined")
+set_property(TARGET checkpoint_roundtrip_test PROPERTY CXX_STANDARD 17)
+# テストが生成する .pt は tests/ 配下の一時ディレクトリに閉じ込める(実行後に削除)
+target_compile_definitions(checkpoint_roundtrip_test PRIVATE
+	CHECKPOINT_TEST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/checkpoint_roundtrip_tmp")

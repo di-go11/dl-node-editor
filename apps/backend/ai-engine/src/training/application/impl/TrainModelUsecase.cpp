@@ -43,7 +43,7 @@ void TrainModelUsecase::execute(const TrainingDatasets &datasets)
         {
             try
             {
-                _checkpointStore->saveBest(epoch);
+                _checkpointStore->saveBest({epoch, bestMiou.best()});
                 std::cout << "  -> best updated (val_mIoU=" << bestMiou.best() << ")" << std::endl;
             }
             catch (const std::exception &e)

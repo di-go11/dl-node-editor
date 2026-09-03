@@ -7,6 +7,7 @@
 #include <torch/torch.h>
 
 #include "training/entities/domain-objects/TrainingBatch.hpp"
+#include "training/entities/domain-objects/CheckpointMeta.hpp"
 #include "training/application/interfaces/ICheckpointStore.hpp"
 #include "training/application/interfaces/IModelTrainer.hpp"
 #include "training/application/interfaces/IModelEvaluator.hpp"
@@ -34,14 +35,27 @@ void check(bool condition, const std::string &message)
 class FakeCheckpointStore : public ICheckpointStore
 {
 public:
-    int saveCount = 0;
+    int saveCount = 0; // saveBest の呼び出し回数(Usecase の保存判断を検証する)
+    int saveLastCount = 0;
     std::vector<unsigned int> savedEpochs;
+    CheckpointMeta lastSaved;
 
-    void saveBest(unsigned int epoch) override
+    void saveBest(const CheckpointMeta &meta) override
     {
         ++saveCount;
-        savedEpochs.push_back(epoch);
+        savedEpochs.push_back(meta.epoch);
+        lastSaved = meta;
     }
+
+    void saveLast(const CheckpointMeta &meta) override
+    {
+        ++saveLastCount;
+        lastSaved = meta;
+    }
+
+    CheckpointMeta loadBest() override { return lastSaved; }
+    CheckpointMeta loadLast() override { return lastSaved; }
+    CheckpointMeta loadFrom(const std::string &) override { return lastSaved; }
 };
 
 class FakeDataset : public IDatasetRepository
