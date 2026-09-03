@@ -6,30 +6,21 @@
 #include "training/application/impl/BestMetricTracker.hpp"
 #include "../interfaces/IModelTrainer.hpp"
 #include "training/application/interfaces/IModelEvaluator.hpp"
-#include "training/application/interfaces/IModelStore.hpp"
+#include "training/application/interfaces/ICheckpointStore.hpp"
 
 #include <exception>
-#include <filesystem>
 #include <iostream>
 
 TrainModelUsecase::TrainModelUsecase(const std::shared_ptr<TrainParam> &param,
                                      const AppConfig &appConfig,
                                      const std::shared_ptr<IModelTrainer> &trainer,
                                      const std::shared_ptr<IModelEvaluator> &evaluator,
-                                     const std::shared_ptr<IModel> &model,
-                                     const std::shared_ptr<IModelStore> &modelStore)
+                                     const std::shared_ptr<ICheckpointStore> &checkpointStore)
     : _param(param),
       _appConfig(appConfig),
       _trainer(trainer),
       _evaluator(evaluator),
-      _model(model),
-      _modelStore(modelStore) {}
-
-std::string TrainModelUsecase::checkpointPath() const
-{
-    const std::string name = _appConfig.modelName.empty() ? "model" : _appConfig.modelName;
-    return (std::filesystem::path(_appConfig.outputDir) / (name + "_best.pt")).string();
-}
+      _checkpointStore(checkpointStore) {}
 
 void TrainModelUsecase::execute(const TrainingDatasets &datasets)
 {
@@ -50,12 +41,10 @@ void TrainModelUsecase::execute(const TrainingDatasets &datasets)
 
         if (bestMiou.update(valMetrics.meanIoU))
         {
-            const std::string path = checkpointPath();
             try
             {
-                _modelStore->save(*_model, path);
-                std::cout << "  -> best updated (val_mIoU=" << bestMiou.best()
-                          << "), checkpoint saved: " << path << std::endl;
+                _checkpointStore->saveBest(epoch);
+                std::cout << "  -> best updated (val_mIoU=" << bestMiou.best() << ")" << std::endl;
             }
             catch (const std::exception &e)
             {

@@ -9,6 +9,8 @@ namespace at
 
 class ILoss;
 class IOptimizer;
+class ICheckpointWriter;
+class ICheckpointReader;
 
 class IModel
 {
@@ -23,6 +25,11 @@ public:
     // 学習の1ステップ。内部でforwardを呼び出し、その後loss計算、勾配計算、パラメータ更新を行う。学習時に使用される。
     // 戻り値は更新前(backward前)に計算した loss テンソル(集計・ログ用)。
     virtual at::Tensor trainStep(at::Tensor &input, at::Tensor &target, ILoss &loss, IOptimizer &optimizer) = 0;
+
+    // モデル重みを archive へ書き出す / archive から復元する。
+    // archive の実体・フォーマットは infrastructure 層(libtorch)が握る。
+    virtual void writeTo(ICheckpointWriter &archive) const = 0;
+    virtual void readFrom(ICheckpointReader &archive) = 0;
 
     // BatchNorm 等の挙動を切り替える
     virtual void setTrain() = 0;

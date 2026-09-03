@@ -45,6 +45,8 @@ public:
     {
         return torch::tensor(0.0);
     }
+    void writeTo(ICheckpointWriter &) const override {}
+    void readFrom(ICheckpointReader &) override {}
     void setTrain() override { ++setTrainCalls; }
     void setEval() override { ++setEvalCalls; }
 

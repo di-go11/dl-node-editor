@@ -1,4 +1,5 @@
 #include "training/infrastructure/torchFunc/SGDOptimizer.hpp"
+#include "training/infrastructure/torchModel/TorchCheckpointArchive.hpp"
 
 #include <torch/torch.h>
 
@@ -17,12 +18,12 @@ void SGDOptimizer::updateParmeters()
     _optim->step();
 }
 
-void SGDOptimizer::saveState(const std::string &filePath)
+void SGDOptimizer::writeTo(ICheckpointWriter &archive) const
 {
-    torch::save(*_optim, filePath);
+    _optim->save(toTorchArchive(archive));
 }
 
-void SGDOptimizer::loadState(const std::string &filePath)
+void SGDOptimizer::readFrom(ICheckpointReader &archive)
 {
-    torch::load(*_optim, filePath);
+    _optim->load(toTorchArchive(archive));
 }

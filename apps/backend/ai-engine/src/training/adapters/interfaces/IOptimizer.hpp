@@ -1,13 +1,18 @@
 #pragma once
 
-#include <string>
+class ICheckpointWriter;
+class ICheckpointReader;
 
 class IOptimizer
 {
 public:
     virtual ~IOptimizer() = default;
-    virtual void resetGradients() = 0;                       // 勾配リセット
-    virtual void updateParmeters() = 0;                      // パラメータ更新
-    virtual void saveState(const std::string &filePath) = 0; // Optimizer の状態を保存
-    virtual void loadState(const std::string &filePath) = 0; // Optimizer の状態を読み込み
+    virtual void resetGradients() = 0;  // 勾配リセット
+    virtual void updateParmeters() = 0; // パラメータ更新
+
+    // Optimizer の内部状態(exp_avg / exp_avg_sq / step / momentum_buffer 等)を
+    // archive へ書き出す / archive から復元する。
+    // archive の実体・フォーマットは infrastructure 層(libtorch)が握る。
+    virtual void writeTo(ICheckpointWriter &archive) const = 0;
+    virtual void readFrom(ICheckpointReader &archive) = 0;
 };

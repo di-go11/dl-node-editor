@@ -37,12 +37,16 @@
 - 推論用途（重みのみ）と学習再開用途（フル）を呼び分けられる API にする
 
 ## タスク
-- [ ] `IModel` に `writeTo` / `readFrom` を追加、`TorchModel` で実装
-- [ ] `TorchModelStore` から `dynamic_cast` を除去し IModel 経由に変更
-- [ ] `IOptimizer` に `writeTo` / `readFrom` を追加、各 Optimizer 実装で libtorch に委譲
-- [ ] チェックポイント（model + optimizer + 進捗メタ）を 1 archive にまとめる Store / Usecase
-- [ ] 重み側と Optimizer 側のパラメータ列挙順の一致を保証（名前付き archive の検討）
-- [ ] テスト
+- [x] `IModel` に `writeTo` / `readFrom` を追加、`TorchModel` で実装
+- [x] `TorchModelStore` から `dynamic_cast` を除去し IModel 経由に変更
+- [x] `IOptimizer` に `writeTo` / `readFrom` を追加、各 Optimizer 実装で libtorch に委譲
+      （adapters 層に `torch::serialize::*Archive` を出さないため `ICheckpointWriter/Reader`
+       の不透明ハンドルを噛ませ、infrastructure の `TorchCheckpointArchive` で libtorch に変換）
+- [x] チェックポイント（model + optimizer + 進捗メタ）を 1 archive にまとめる Store
+      （`TorchCheckpointStore::saveBest` / 別 issue: checkpoint-store-refactor.md）
+- [x] 重み側のパラメータは名前付きキー（`model_param_N` + count）で書き出し
+      （Optimizer 側は libtorch の `Optimizer::save/load` に委譲）
+- [ ] テスト（save → 復元後に重み・`exp_avg` 等が一致 / 数ステップの連続性）
   - 保存 → 復元後に重み・`exp_avg` 等が一致すること
   - 数ステップ学習して挙動が連続すること
   - 構造復元（ModelGraph）と重みロードの結合

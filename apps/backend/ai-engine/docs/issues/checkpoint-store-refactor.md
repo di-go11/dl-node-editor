@@ -63,13 +63,19 @@ public:
 
 ## タスク
 
-- [ ] `ICheckpointStore`（application/interfaces）
-- [ ] `TorchCheckpointStore`（infrastructure）: 重み + optimizer 状態 + epoch
-- [ ] `TrainModelUsecase` の DI を `ICheckpointStore` に置換、`IModel`/`IModelStore` 依存を除去
-- [ ] main.cpp の配線
-- [ ] `best_checkpoint_test` を `FakeCheckpointStore`（`saveBest` の呼び出し回数を記録）に更新
+- [x] `ICheckpointStore`（application/interfaces）
+- [x] `TorchCheckpointStore`（infrastructure）: 重み + optimizer 状態 + epoch を 1 archive に
+- [x] `TrainModelUsecase` の DI を `ICheckpointStore` に置換、`IModel`/`IModelStore` 依存を除去
+- [x] main.cpp の配線
+- [x] `best_checkpoint_test` を `FakeCheckpointStore`（`saveBest` の呼び出し回数・epoch を記録）に更新
 - [ ] save→load で optimizer の `exp_avg` 等が復元されることのテスト
-- [ ] `clean-arch-lint` で application→adapters 依存が消えたことを確認
+- [x] `clean-arch-lint` で application→adapters 依存が消えたことを確認
+
+## 残課題
+
+- `TorchCheckpointStore::saveBest` の書き出しはあるが、チェックポイントからの **読み戻し (resume)** 経路は未実装
+- 旧 `IModelStore` / `TorchModelStore` は未使用になった（推論時の重みロード用に残すか要判断）
+- `TorchCheckpointArchive.hpp` が `infrastructure/torchModel/` に置かれているが `torchFunc/` の Optimizer からも参照している。より中立な infra 位置への移動を検討
 
 ## 関連
 
