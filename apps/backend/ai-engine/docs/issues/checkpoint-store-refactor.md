@@ -68,12 +68,15 @@ public:
 - [x] `TrainModelUsecase` の DI を `ICheckpointStore` に置換、`IModel`/`IModelStore` 依存を除去
 - [x] main.cpp の配線
 - [x] `best_checkpoint_test` を `FakeCheckpointStore`（`saveBest` の呼び出し回数・epoch を記録）に更新
-- [ ] save→load で optimizer の `exp_avg` 等が復元されることのテスト
+- [x] save→load で optimizer の `exp_avg` 等が復元されることのテスト（`tests/checkpoint_roundtrip_test.cpp`。実 `TorchModel` + `AdamOptimizer` で重み・optimizer 状態・epoch の復元、`loadFrom(任意パス)`、存在しないファイルの例外を検証）
 - [x] `clean-arch-lint` で application→adapters 依存が消えたことを確認
 
 ## 残課題
 
-- `TorchCheckpointStore::saveBest` の書き出しはあるが、チェックポイントからの **読み戻し (resume)** 経路は未実装
+- `ICheckpointStore` に `loadBest()` / `loadLast()` / `loadFrom(path)` と `saveLast()` を追加し、
+  `TorchCheckpointStore` で実装済み。戻り値は `CheckpointMeta`(epoch + bestMetric)、
+  best / last はファイルを分離(`_best.pt` / `_last.pt`)。roundtrip テストで検証済み。
+  ただし **resume ユースケース(学習再開のブートストラップ / GUI からの .pt 選択)は未配線** → training-resume.md
 - 旧 `IModelStore` / `TorchModelStore` は `ICheckpointStore` に置き換わり削除済み。
   推論時の重みのみロードが必要になったら、`IModel::readFrom` を使う軽量パスを別途用意する
 - `TorchCheckpointArchive.hpp` が `infrastructure/torchModel/` に置かれているが `torchFunc/` の Optimizer からも参照している。より中立な infra 位置への移動を検討

@@ -46,10 +46,13 @@
       （`TorchCheckpointStore::saveBest` / 別 issue: checkpoint-store-refactor.md）
 - [x] 重み側のパラメータは名前付きキー（`model_param_N` + count）で書き出し
       （Optimizer 側は libtorch の `Optimizer::save/load` に委譲）
-- [ ] テスト（save → 復元後に重み・`exp_avg` 等が一致 / 数ステップの連続性）
-  - 保存 → 復元後に重み・`exp_avg` 等が一致すること
-  - 数ステップ学習して挙動が連続すること
-  - 構造復元（ModelGraph）と重みロードの結合
+- [x] テスト（save → 復元後に重み・`exp_avg` 等が一致 / 数ステップの連続性）
+      → `tests/checkpoint_roundtrip_test.cpp`（実 `TorchModel` + `AdamOptimizer`）
+  - [x] 保存 → 復元後に重みが一致すること
+  - [x] 数ステップ学習して挙動が連続すること（復元後に同一ステップを踏むと重みが一致
+        = Adam の `exp_avg` / `exp_avg_sq` / `step` が復元されている）
+  - [ ] 構造復元（ModelGraph のシリアライズ）と重みロードの結合 → 別途（現状は
+        呼び出し側が同一構造のモデルを構築する前提。`model_param_count` 不一致で例外）
 
 ## 依存 / 順序
 `IModelStore` の重み保存機能（ModelSave ブランチ）をベースに進める。
