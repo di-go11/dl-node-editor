@@ -4,15 +4,18 @@
 // entities
 #include "training/entities/domain-objects/TrainParam.hpp"
 #include "training/entities/domain-objects/ModelGraph.hpp"
+#include "training/entities/domain-objects/ModelGraphFingerprint.hpp"
 #include "training/entities/domain-objects/Conv2DParams.hpp"
 #include "training/entities/domain-objects/ActivationParams.hpp"
 #include "training/entities/domain-objects/DatasetSplit.hpp"
 
 // infrastructure(具象クラス)
 #include "training/infrastructure/torchFunc/TorchLayerBuilder.hpp"
+#include "training/infrastructure/torchFunc/TorchOptimizerFactory.hpp"
 #include "training/infrastructure/torchModel/TorchModel.hpp"
+#include "training/infrastructure/torchModel/TorchModelFactory.hpp"
 #include "training/infrastructure/torchModel/TorchCheckpointStore.hpp"
-#include "training/infrastructure/torchFunc/AdamOptimizer.hpp"
+#include "training/infrastructure/torchModel/CheckpointModelLoader.hpp"
 #include "training/infrastructure/torchFunc/CrossEntropy.hpp"
 #include "training/infrastructure/readConfig/ConfigReader.hpp"
 
@@ -24,11 +27,16 @@
 #include <filesystem>
 #include <iostream>
 
+// adapters(インタフェース)
+#include "training/adapters/interfaces/IModel.hpp"
+#include "training/adapters/interfaces/IOptimizer.hpp"
+
 // adapters/application(具象クラス)
 #include "training/adapters/impl/TorchModelTrainer.hpp"
 #include "training/infrastructure/torchModel/TorchModelEvaluator.hpp"
 #include "training/application/impl/TrainModelUsecase.hpp"
 #include "training/application/impl/TrainingDatasets.hpp"
+#include "training/application/impl/TrainingResumeState.hpp"
 
 // numClasses = セグメンテーションのクラス数(labelmap.txt のエントリ数)。
 // 最終層は「クラス数チャンネルの生ロジット」を出力する。CrossEntropy が
@@ -65,19 +73,77 @@ int main(void)
     const int numClasses = static_cast<int>(labelMap.entryCount());
     std::cout << "numClasses = " << numClasses << std::endl;
 
-    ModelGraph graph = buildSampleModelGraph(numClasses);
+    // モデル / Optimizer の生成口。checkpoint からの再構築(CheckpointModelLoader)も
+    // 同じ factory を使うため、cold start 側もここを通しておく。
+    auto modelFactory = std::make_shared<TorchModelFactory>();
+    auto optimizerFactory = std::make_shared<TorchOptimizerFactory>();
 
-    TorchLayerBuilder builder;
-    auto model = std::make_shared<TorchModel>(graph, builder);
+    // ---- 再開元の決定 ----
+    // 1. resume_from が指定されていればそれを使う(GUI のファイル選択結果もここに入る)
+    // 2. 指定がなくても <modelName>_last.pt があれば自動で再開する
+    // 3. どちらもなければ cold start
+    const std::string modelFileName = appConfig.modelName.empty() ? "model" : appConfig.modelName;
+    const std::string autoResumePath =
+        (std::filesystem::path(appConfig.outputDir) / (modelFileName + "_last.pt")).string();
 
-    std::vector<at::Tensor> params = model->parameters();
-    auto optimizer = std::make_shared<AdamOptimizer>(params, /*learning rate*/ 0.001);
+    std::string resumePath;
+    if (!appConfig.resumeFrom.empty())
+    {
+        resumePath = appConfig.resumeFrom;
+    }
+    else if (std::filesystem::exists(autoResumePath))
+    {
+        resumePath = autoResumePath;
+    }
+
+    ModelGraph graph;
+    std::shared_ptr<IModel> model;
+    std::shared_ptr<IOptimizer> optimizer;
+    std::vector<at::Tensor> params;
+    TrainingResumeState resumeState; // 既定値 = cold start
+
+    if (!resumePath.empty())
+    {
+        // 再開: checkpoint から構造ごと組み直す。保存時と同じ ModelGraph を
+        // ここで手組みする必要はない(CheckpointModelLoader が構造を復元する)。
+        std::cout << "resume from: " << resumePath << std::endl;
+
+        CheckpointModelLoader loader(modelFactory, optimizerFactory);
+        RestoredCheckpoint restored = loader.load(resumePath, appConfig.optimizer);
+
+        graph = restored.graph;
+        model = restored.model;
+        optimizer = restored.optimizer;
+        params = restored.parameters;
+
+        // meta.epoch は「最後に完了したエポック」なので次はその翌エポックから。
+        resumeState.startEpoch = restored.meta.epoch + 1u;
+        resumeState.initialBest = restored.meta.bestMetric;
+        resumeState.hasInitialBest = true;
+
+        // 復元した構造が現在のデータセット(クラス数)と食い違っていないか確認する。
+        // 不一致でも学習自体は走ってしまうが、評価指標が意味を成さなくなるため警告する。
+        if (modelGraphFingerprint(graph) != modelGraphFingerprint(buildSampleModelGraph(numClasses)))
+        {
+            std::cerr << "[warn] checkpoint のモデル構造が現在の設定"
+                         "(numClasses=" << numClasses << ")から組む構造と異なります。"
+                         "意図した checkpoint か確認してください。" << std::endl;
+        }
+    }
+    else
+    {
+        // cold start: 構造を組み、そこからモデル・Optimizer を作る。
+        graph = buildSampleModelGraph(numClasses);
+        model = modelFactory->create(graph);
+        params = model->parameters();
+        optimizer = optimizerFactory->create(params, appConfig.optimizer);
+    }
 
     auto loss = std::make_shared<CrossEntropy>();
 
     auto trainer = std::make_shared<TorchModelTrainer>(model, loss, optimizer);
     auto evaluator = std::make_shared<TorchModelEvaluator>(*model, *loss, numClasses);
-    auto checkpointStore = std::make_shared<TorchCheckpointStore>(model, optimizer, appConfig.outputDir, appConfig.modelName);
+    auto checkpointStore = std::make_shared<TorchCheckpointStore>(model, optimizer, appConfig.outputDir, appConfig.modelName, graph);
 
     TrainModelUsecase usecase(param, appConfig, trainer, evaluator, checkpointStore);
 
@@ -105,7 +171,7 @@ int main(void)
     datasets.trainDataset = trainDataset;
     datasets.validationDataset = validationDataset;
 
-    usecase.execute(datasets);
+    usecase.execute(datasets, resumeState);
 
     std::cout << "training loop finished" << std::endl;
 

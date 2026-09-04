@@ -46,10 +46,31 @@
       （`TorchCheckpointStore::saveBest` / 別 issue: checkpoint-store-refactor.md）
 - [x] 重み側のパラメータは名前付きキー（`model_param_N` + count）で書き出し
       （Optimizer 側は libtorch の `Optimizer::save/load` に委譲）
-- [ ] テスト（save → 復元後に重み・`exp_avg` 等が一致 / 数ステップの連続性）
-  - 保存 → 復元後に重み・`exp_avg` 等が一致すること
-  - 数ステップ学習して挙動が連続すること
-  - 構造復元（ModelGraph）と重みロードの結合
+- [x] テスト（save → 復元後に重み・`exp_avg` 等が一致 / 数ステップの連続性）
+      → `tests/checkpoint_roundtrip_test.cpp`（実 `TorchModel` + `AdamOptimizer`）
+  - [x] 保存 → 復元後に重みが一致すること
+  - [x] 数ステップ学習して挙動が連続すること（復元後に同一ステップを踏むと重みが一致
+        = Adam の `exp_avg` / `exp_avg_sq` / `step` が復元されている）
+  - [x] アーキテクチャ検証（ModelGraph フィンガープリント）→ `modelGraphFingerprint`
+        （entities の純粋関数、FNV-1a）を checkpoint に `model_graph_fingerprint` として
+        書き、`loadFrom` で現モデルの graph と照合。不一致は `runtime_error`、
+        fingerprint キーの無い旧 .pt は警告のみ（後方互換）。
+        テスト: `checkpoint_roundtrip_test`（不一致で例外 / 旧形式は読める）
+  - [x] 構造復元（ModelGraph のシリアライズと再構築）と重みロードの結合
+        → `ModelGraphArchive` で `ModelGraph` を checkpoint の `model_graph`
+        セクションに保存し、`CheckpointModelLoader` が
+        「構造を読む → `IModelFactory` でモデル構築 → `IOptimizerFactory` で
+        optimizer 構築 → 重み/状態を注入」を一気通貫で行う。
+        呼び出し側は `.pt` のパスと `OptimizerConfig` だけを渡せばよい。
+        テスト: `tests/checkpoint_rebuild_test.cpp`
+        詳細: `docs/checkpoint-rebuild.md`
+
+### 残った穴（別 issue へ）
+- optimizer 種別を checkpoint に記録していないため、Adam で保存した `.pt` を
+  SGD として読んでも検出できない
+- `AppConfig` が `OptimizerConfig` を基底の値で持つためスライシングが起き、
+  `beta1` / `momentum` などの派生フィールドが factory まで届かない
+- 学習再開（開始 epoch / tracker の復元）そのものは training-resume.md の担当
 
 ## 依存 / 順序
 `IModelStore` の重み保存機能（ModelSave ブランチ）をベースに進める。

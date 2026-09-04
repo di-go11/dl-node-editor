@@ -1,15 +1,114 @@
 #include "training/infrastructure/readConfig/ConfigReader.hpp"
 
 #include <fstream>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <iostream>
+
+namespace
+{
+    double parseDouble(const std::string &value, const std::string &key)
+    {
+        if (value.empty())
+        {
+            throw std::runtime_error(key + " value is empty");
+        }
+        try
+        {
+            return std::stod(value);
+        }
+        catch (...)
+        {
+            throw std::runtime_error(key + " value is not a number: " + value);
+        }
+    }
+
+    bool parseBool(const std::string &value, const std::string &key)
+    {
+        if (value == "true" || value == "True" || value == "1")
+        {
+            return true;
+        }
+        if (value == "false" || value == "False" || value == "0")
+        {
+            return false;
+        }
+        throw std::runtime_error(key + " value must be true or false: " + value);
+    }
+
+    // 設定ファイルは行順が自由なので(optimizer_type が learning_rate より後に
+    // 書かれていてもよい)、パース中は種別と各ハイパーパラメータを個別に受け取り、
+    // 全行を読み終えてから OptimizerConfig(variant)を組み立てる。
+    // 未指定(nullopt)のフィールドは各 Config 構造体の既定値のままにする。
+    struct OptimizerFields
+    {
+        OptimizerType type = OptimizerType::Adam;
+        std::optional<double> learningRate;
+        std::optional<double> weightDecay;
+        std::optional<double> beta1;
+        std::optional<double> beta2;
+        std::optional<double> eps;
+        std::optional<double> momentum;
+        std::optional<bool> nesterov;
+    };
+
+    // 指定されていれば上書きする。
+    void applyIfSet(double &target, const std::optional<double> &source)
+    {
+        if (source.has_value())
+        {
+            target = *source;
+        }
+    }
+
+    OptimizerConfig buildOptimizerConfig(const OptimizerFields &fields)
+    {
+        switch (fields.type)
+        {
+        case OptimizerType::Adam:
+        {
+            AdamOptimizerConfig c;
+            applyIfSet(c.learningRate, fields.learningRate);
+            applyIfSet(c.weightDecay, fields.weightDecay);
+            applyIfSet(c.beta1, fields.beta1);
+            applyIfSet(c.beta2, fields.beta2);
+            applyIfSet(c.eps, fields.eps);
+            return c;
+        }
+        case OptimizerType::AdamW:
+        {
+            AdamWOptimizerConfig c;
+            applyIfSet(c.learningRate, fields.learningRate);
+            applyIfSet(c.weightDecay, fields.weightDecay);
+            applyIfSet(c.beta1, fields.beta1);
+            applyIfSet(c.beta2, fields.beta2);
+            return c;
+        }
+        case OptimizerType::SGD:
+        {
+            SGDOptimizerConfig c;
+            applyIfSet(c.learningRate, fields.learningRate);
+            applyIfSet(c.weightDecay, fields.weightDecay);
+            applyIfSet(c.momentum, fields.momentum);
+            if (fields.nesterov.has_value())
+            {
+                c.nesterov = *fields.nesterov;
+            }
+            return c;
+        }
+        }
+
+        throw std::runtime_error("buildOptimizerConfig: 未知の OptimizerType");
+    }
+} // namespace
 
 ConfigReader::ConfigReader() {}
 
 AppConfig ConfigReader::readAll(const std::string &filePath)
 {
     AppConfig appConfig;
+    OptimizerFields optimizerFields;
     std::ifstream file(filePath);
 
     if (!file.is_open())
@@ -47,15 +146,15 @@ AppConfig ConfigReader::readAll(const std::string &filePath)
             {
                 if (value == "Adam")
                 {
-                    appConfig.optimizer.type = OptimizerType::Adam;
+                    optimizerFields.type = OptimizerType::Adam;
                 }
                 else if (value == "SGD")
                 {
-                    appConfig.optimizer.type = OptimizerType::SGD;
+                    optimizerFields.type = OptimizerType::SGD;
                 }
                 else if (value == "AdamW")
                 {
-                    appConfig.optimizer.type = OptimizerType::AdamW;
+                    optimizerFields.type = OptimizerType::AdamW;
                 }
                 else
                 {
@@ -106,7 +205,7 @@ AppConfig ConfigReader::readAll(const std::string &filePath)
                 {
                     throw std::runtime_error("Learning rate value is out of range (0.0 - 1.0): " + value);
                 }
-                appConfig.optimizer.learningRate = parsedValue;
+                optimizerFields.learningRate = parsedValue;
             }
             else if (key == "weight_decay")
             {
@@ -129,7 +228,7 @@ AppConfig ConfigReader::readAll(const std::string &filePath)
                 {
                     throw std::runtime_error("Weight decay value must not be negative: " + value);
                 }
-                appConfig.optimizer.weightDecay = parsedValue;
+                optimizerFields.weightDecay = parsedValue;
             }
             else if (key == "dataset_path")
             {
@@ -146,6 +245,78 @@ AppConfig ConfigReader::readAll(const std::string &filePath)
                     throw std::runtime_error("output_dir value is empty");
                 }
                 appConfig.outputDir = value;
+            }
+            // ---- Optimizer 種別ごとのハイパーパラメータ ----
+            // 指定しなければ各 Config 構造体の既定値が使われる。
+            // 選択中の optimizer_type に関係ないキーを書いても無視される
+            // (例: Adam を選んで momentum を書いても効かない)。
+            else if (key == "beta1" || key == "beta2")
+            {
+                const double parsedValue = parseDouble(value, key);
+                if (parsedValue < 0.0 || parsedValue >= 1.0)
+                {
+                    throw std::runtime_error(key + " value is out of range [0.0, 1.0): " + value);
+                }
+                (key == "beta1" ? optimizerFields.beta1 : optimizerFields.beta2) = parsedValue;
+            }
+            else if (key == "eps")
+            {
+                const double parsedValue = parseDouble(value, key);
+                if (parsedValue <= 0.0)
+                {
+                    throw std::runtime_error("eps value must be greater than 0: " + value);
+                }
+                optimizerFields.eps = parsedValue;
+            }
+            else if (key == "momentum")
+            {
+                const double parsedValue = parseDouble(value, key);
+                if (parsedValue < 0.0)
+                {
+                    throw std::runtime_error("momentum value must not be negative: " + value);
+                }
+                optimizerFields.momentum = parsedValue;
+            }
+            else if (key == "nesterov")
+            {
+                optimizerFields.nesterov = parseBool(value, key);
+            }
+            else if (key == "model_name")
+            {
+                if (value.empty())
+                {
+                    throw std::runtime_error("model_name value is empty");
+                }
+                // チェックポイントのファイル名(<modelName>_best.pt / _last.pt)に使われる。
+                appConfig.modelName = value;
+            }
+            else if (key == "resume_from")
+            {
+                // 空を許す(= 自動判定)。値があればその .pt から再開する。
+                appConfig.resumeFrom = value;
+            }
+            else if (key == "save_last_every")
+            {
+                if (value.empty())
+                {
+                    throw std::runtime_error("save_last_every value is empty");
+                }
+
+                int parsedValue;
+                try
+                {
+                    parsedValue = std::stoi(value);
+                }
+                catch (...)
+                {
+                    throw std::runtime_error("save_last_every value is not a number: " + value);
+                }
+
+                if (parsedValue < 0)
+                {
+                    throw std::runtime_error("save_last_every value must not be negative: " + value);
+                }
+                appConfig.saveLastEvery = static_cast<unsigned int>(parsedValue);
             }
             else if (key == "epoch_size")
             {
@@ -247,6 +418,10 @@ AppConfig ConfigReader::readAll(const std::string &filePath)
             throw std::runtime_error("Error parsing config line at " + std::to_string(lineNumber) + ": " + e.what());
         }
     }
+
+    // 全行を読み終えてから種別に応じた Config を組み立てる。
+    appConfig.optimizer = buildOptimizerConfig(optimizerFields);
+
     return appConfig;
 }
 

@@ -45,6 +45,7 @@ public:
     {
         return torch::tensor(0.0);
     }
+    std::vector<at::Tensor> parameters() const override { return {}; } // 評価テストでは未使用
     void writeTo(ICheckpointWriter &) const override {}
     void readFrom(ICheckpointReader &) override {}
     void setTrain() override { ++setTrainCalls; }

@@ -7,6 +7,11 @@ BestMetricTracker::BestMetricTracker(MetricMode mode)
 {
 }
 
+BestMetricTracker::BestMetricTracker(MetricMode mode, double initialBest)
+    : _mode(mode), _bestValue(initialBest), _hasBest(true)
+{
+}
+
 bool BestMetricTracker::update(double value)
 {
     if (std::isnan(value))

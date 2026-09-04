@@ -4,6 +4,7 @@
 #include <string>
 
 #include "training/entities/domain-objects/AppConfig.hpp"
+#include "training/application/impl/TrainingResumeState.hpp"
 
 // インターフェース、クラスの前方宣言
 class TrainParam;
@@ -30,5 +31,7 @@ public:
 
     ~TrainModelUsecase() = default;
 
-    void execute(const TrainingDatasets &datasets);
+    // resume を省略すると cold start(epoch 0 から、ベスト値なし)。
+    // 中断・再開する場合は合成層が checkpoint から組み立てた開始状態を渡す。
+    void execute(const TrainingDatasets &datasets, const TrainingResumeState &resume = {});
 };

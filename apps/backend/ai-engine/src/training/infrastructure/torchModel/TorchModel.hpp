@@ -31,7 +31,7 @@ public:
 
     /* void train(at::Tensor &prediction, at::Tensor &target, ILoss &loss, IOptimizer &optimizer) override;*/
 
-    std::vector<at::Tensor> parameters() const;
+    std::vector<at::Tensor> parameters() const override;
 
 private:
     std::vector<std::shared_ptr<ILayer>> _layers;
