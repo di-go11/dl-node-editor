@@ -2,6 +2,7 @@
 
 #include <torch/serialize.h>
 
+#include "training/entities/domain-objects/LayersParamsFields.hpp"
 #include "training/entities/domain-objects/ModelGraph.hpp"
 
 // ModelGraph(モデル構造の内部表現)を libtorch の archive に書き出す / 読み戻す。
@@ -10,19 +11,9 @@
 // プリミティブ(int64 / double のスカラーテンソル)で直接書く。これにより
 // 「重み + optimizer 状態 + 構造」を 1 ファイルに閉じ込められる。
 //
-// libtorch 依存はこの infrastructure 層に閉じる。adapters / application 層は
-// ModelGraph(entities)だけを扱う。
-
-// archive 内の層種タグ。値は永続化されるため決して変更しない(追加は末尾に)。
-// LayersParams(std::variant)の alternative と 1:1 で対応する。
-enum class LayerKind : int64_t
-{
-    Conv2D = 0,
-    Pooling = 1,
-    BatchNorm = 2,
-    Linear = 3,
-    Activation = 4,
-};
+// どのフィールドを書くかは entities の LayersParamsFields.hpp に一元化してあり
+// (LayerKind もそちらで定義)、ここは「訪問された値を archive の型に載せ替える」
+// だけを担当する。libtorch 依存はこの infrastructure 層に閉じる。
 
 // このフォーマットのバージョン。*Params にフィールドを足す等で
 // レイアウトが変わったら上げる。読み側は不一致を例外にする。

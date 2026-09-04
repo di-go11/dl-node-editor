@@ -24,6 +24,12 @@
 #define MODEL_GRAPH_ARCHIVE_TEST_DIR "model_graph_archive_tmp"
 #endif
 
+// Conv2D(in=3, out=21, k=3, s=1, p=1) 1 層のみのグラフの fingerprint。
+// 正規化文字列 "v1;layers=1:[0]conv2d|3|21|3|1|1" の FNV-1a(64bit)。
+// フィールド列挙を LayersParamsFields.hpp へ集約する前の実装が出していた値であり、
+// 過去に保存した .pt との互換を保つため変えてはいけない。
+#define EXPECTED_SIMPLE_FINGERPRINT "47f17d6aca1c1936"
+
 namespace
 {
 int failureCount = 0;
@@ -98,6 +104,27 @@ int main()
         torch::serialize::InputArchive archive;
         archive.load_from(path.string());
         restored = readModelGraph(archive);
+    }
+
+    // ---- fingerprint の後方互換 ----
+    // fingerprint は checkpoint に記録され、復元時に照合される。文字列フォーマットが
+    // 変わると過去の .pt がすべて読めなくなるため、既知のグラフに対する値を固定する。
+    // フィールド列挙を LayersParamsFields.hpp に集約するリファクタでも
+    // この値が変わらないことを確認した。
+    {
+        ModelGraph simple;
+        Conv2DParams conv;
+        conv.inChannels = 3;
+        conv.outChannels = 21;
+        conv.kernelSize = 3;
+        conv.stride = 1;
+        conv.padding = 1;
+        simple.layers.push_back(LayersConfig{conv});
+
+        const std::string fp = modelGraphFingerprint(simple);
+        std::cout << "  (fingerprint of Conv2D(3,21,3,1,1) = " << fp << ")" << std::endl;
+        check(fp == EXPECTED_SIMPLE_FINGERPRINT,
+              "既知グラフの fingerprint が変わっていない(過去の .pt との互換)");
     }
 
     check(restored.layers.size() == original.layers.size(), "層数が一致する");

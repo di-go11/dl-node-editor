@@ -7,30 +7,41 @@
 // 各 Optimizer はデストラクタを .cpp 側に閉じ込めているため、
 // ここで <torch/torch.h> を include する必要はない(libtorch を知らずに生成できる)。
 
-#include <stdexcept>
-#include <string>
+#include <variant>
+
+namespace
+{
+    // TorchLayerBuilder と同じ、variant を型ごとに分岐させるための補助。
+    template <class... Ts>
+    struct Overloaded : Ts...
+    {
+        using Ts::operator()...;
+    };
+    template <class... Ts>
+    Overloaded(Ts...) -> Overloaded<Ts...>;
+}
 
 std::shared_ptr<IOptimizer> TorchOptimizerFactory::create(std::vector<at::Tensor> &parameters,
                                                           const OptimizerConfig &config)
 {
-    switch (config.type)
-    {
-    case OptimizerType::Adam:
-        // beta1 / beta2 / eps はコンストラクタ既定値。weight_decay のみ config から。
-        return std::make_shared<AdamOptimizer>(parameters, config.learningRate,
-                                               /*beta1=*/0.9, /*beta2=*/0.999,
-                                               /*eps=*/1e-8, config.weightDecay);
-    case OptimizerType::AdamW:
-        return std::make_shared<AdamWOptimizer>(parameters, config.learningRate,
-                                                /*beta1=*/0.9, /*beta2=*/0.999,
-                                                config.weightDecay);
-    case OptimizerType::SGD:
-        return std::make_shared<SGDOptimizer>(parameters, config.learningRate,
-                                              /*momentum=*/0.9, config.weightDecay,
-                                              /*nesterov=*/false);
-    }
-
-    throw std::runtime_error(
-        "TorchOptimizerFactory::create: 未知の OptimizerType (" +
-        std::to_string(static_cast<int>(config.type)) + ")");
+    // variant の全 alternative を扱うため、種別を足し忘れるとコンパイルエラーになる。
+    return std::visit(
+        Overloaded{
+            [&](const AdamOptimizerConfig &c) -> std::shared_ptr<IOptimizer>
+            {
+                return std::make_shared<AdamOptimizer>(parameters, c.learningRate,
+                                                       c.beta1, c.beta2, c.eps, c.weightDecay);
+            },
+            [&](const AdamWOptimizerConfig &c) -> std::shared_ptr<IOptimizer>
+            {
+                return std::make_shared<AdamWOptimizer>(parameters, c.learningRate,
+                                                        c.beta1, c.beta2, c.weightDecay);
+            },
+            [&](const SGDOptimizerConfig &c) -> std::shared_ptr<IOptimizer>
+            {
+                return std::make_shared<SGDOptimizer>(parameters, c.learningRate,
+                                                      c.momentum, c.weightDecay, c.nesterov);
+            },
+        },
+        config);
 }

@@ -1,22 +1,18 @@
 #include "training/infrastructure/torchModel/ModelGraphArchive.hpp"
 
-#include "training/entities/domain-objects/ActivationConfig.hpp"
-#include "training/entities/domain-objects/ActivationType.hpp"
-#include "training/entities/domain-objects/LayersConfig.hpp"
-#include "training/entities/domain-objects/PoolingType.hpp"
-
 #include <torch/torch.h>
 
 #include <cstdint>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <variant>
 
 namespace
 {
 // LayersParams の alternative が増減したらここで気付けるようにする。
-// 増やした場合は LayerKind への追加、write/read の分岐追加、
-// kModelGraphArchiveVersion のインクリメントが必要。
+// 増やした場合は LayersParamsFields.hpp(LayerKind・フィールド列挙)の更新と、
+// 下の readLayer の分岐追加、kModelGraphArchiveVersion のインクリメントが必要。
 static_assert(std::variant_size_v<LayersParams> == 5,
               "LayersParams の要素数が変わりました。ModelGraphArchive の対応を更新してください。");
 
@@ -66,53 +62,63 @@ void writeLayer(torch::serialize::OutputArchive &out, std::size_t index, const L
     const Writer w{out, layerPrefix(index)};
 
     std::visit(
-        [&](const auto &p)
+        [&w](const auto &p)
         {
-            using T = std::decay_t<decltype(p)>;
+            w.i64("kind", static_cast<int64_t>(layerKindOf(p)));
 
-            if constexpr (std::is_same_v<T, Conv2DParams>)
-            {
-                w.i64("kind", static_cast<int64_t>(LayerKind::Conv2D));
-                w.i64("in_channels", p.inChannels);
-                w.i64("out_channels", p.outChannels);
-                w.i64("kernel_size", p.kernelSize);
-                w.i64("stride", p.stride);
-                w.i64("padding", p.padding);
-            }
-            else if constexpr (std::is_same_v<T, PoolingParams>)
-            {
-                w.i64("kind", static_cast<int64_t>(LayerKind::Pooling));
-                w.i64("pooling_type", static_cast<int64_t>(p.type));
-                w.i64("kernel_size", p.kernelSize);
-                w.i64("stride", p.stride);
-                w.i64("padding", p.padding);
-            }
-            else if constexpr (std::is_same_v<T, BatchNormParams>)
-            {
-                w.i64("kind", static_cast<int64_t>(LayerKind::BatchNorm));
-                w.i64("num_features", p.numFeatures);
-                w.f64("eps", p.eps);
-                w.f64("momentum", p.momentum);
-            }
-            else if constexpr (std::is_same_v<T, LinearParams>)
-            {
-                w.i64("kind", static_cast<int64_t>(LayerKind::Linear));
-                w.i64("in_features", p.inFeatures);
-                w.i64("out_features", p.outFeatures);
-                w.i64("bias", p.bias ? 1 : 0);
-            }
-            else if constexpr (std::is_same_v<T, ActivationParams>)
-            {
-                w.i64("kind", static_cast<int64_t>(LayerKind::Activation));
-                w.i64("activation_type", static_cast<int64_t>(p.activationType));
-                w.i64("dim", p.dim);
-            }
-            else
-            {
-                static_assert(sizeof(T) == 0, "未対応の LayersParams 型です");
-            }
+            // フィールドの列挙は entities 側(visitLayerFields)に任せ、
+            // ここは値の型ごとの載せ替えだけを行う。
+            visitLayerFields(p,
+                             [&w](const char *name, const auto &value)
+                             {
+                                 using V = std::decay_t<decltype(value)>;
+                                 if constexpr (std::is_same_v<V, double>)
+                                 {
+                                     w.f64(name, value);
+                                 }
+                                 else if constexpr (std::is_same_v<V, bool>)
+                                 {
+                                     w.i64(name, value ? 1 : 0);
+                                 }
+                                 else if constexpr (std::is_enum_v<V>)
+                                 {
+                                     w.i64(name, static_cast<int64_t>(value));
+                                 }
+                                 else
+                                 {
+                                     w.i64(name, static_cast<int64_t>(value));
+                                 }
+                             });
         },
         layer.params);
+}
+
+// 同じフィールド列挙を「代入する側」から使う。
+// visitLayerFields に非 const の Params を渡すとメンバへの可変参照が来るため、
+// そこへ archive から読んだ値を書き込む。
+template <class Params>
+Params readParams(const Reader &r)
+{
+    Params p;
+    visitLayerFields(p,
+                     [&r](const char *name, auto &value)
+                     {
+                         using V = std::decay_t<decltype(value)>;
+                         if constexpr (std::is_same_v<V, double>)
+                         {
+                             value = r.f64(name);
+                         }
+                         else if constexpr (std::is_same_v<V, bool>)
+                         {
+                             value = (r.i64(name) != 0);
+                         }
+                         else
+                         {
+                             // 整数・enum とも int64 から復元する
+                             value = static_cast<V>(r.i64(name));
+                         }
+                     });
+    return p;
 }
 
 LayersConfig readLayer(torch::serialize::InputArchive &in, std::size_t index)
@@ -123,47 +129,15 @@ LayersConfig readLayer(torch::serialize::InputArchive &in, std::size_t index)
     switch (kind)
     {
     case LayerKind::Conv2D:
-    {
-        Conv2DParams p;
-        p.inChannels = r.i64("in_channels");
-        p.outChannels = r.i64("out_channels");
-        p.kernelSize = r.i64("kernel_size");
-        p.stride = r.i64("stride");
-        p.padding = r.i64("padding");
-        return LayersConfig{p};
-    }
+        return LayersConfig{readParams<Conv2DParams>(r)};
     case LayerKind::Pooling:
-    {
-        PoolingParams p;
-        p.type = static_cast<PoolingType>(r.i64("pooling_type"));
-        p.kernelSize = r.i64("kernel_size");
-        p.stride = r.i64("stride");
-        p.padding = r.i64("padding");
-        return LayersConfig{p};
-    }
+        return LayersConfig{readParams<PoolingParams>(r)};
     case LayerKind::BatchNorm:
-    {
-        BatchNormParams p;
-        p.numFeatures = r.i64("num_features");
-        p.eps = r.f64("eps");
-        p.momentum = r.f64("momentum");
-        return LayersConfig{p};
-    }
+        return LayersConfig{readParams<BatchNormParams>(r)};
     case LayerKind::Linear:
-    {
-        LinearParams p;
-        p.inFeatures = r.i64("in_features");
-        p.outFeatures = r.i64("out_features");
-        p.bias = r.i64("bias") != 0;
-        return LayersConfig{p};
-    }
+        return LayersConfig{readParams<LinearParams>(r)};
     case LayerKind::Activation:
-    {
-        ActivationConfig p;
-        p.activationType = static_cast<ActivationType>(r.i64("activation_type"));
-        p.dim = static_cast<int>(r.i64("dim"));
-        return LayersConfig{p};
-    }
+        return LayersConfig{readParams<ActivationConfig>(r)};
     }
 
     throw std::runtime_error(

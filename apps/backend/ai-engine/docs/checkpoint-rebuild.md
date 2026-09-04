@@ -94,7 +94,8 @@ optimizer はコンストラクタで「更新対象パラメータ」を受け�
 
 | ファイル | 層 | 役割 |
 |---|---|---|
-| `infrastructure/torchModel/ModelGraphArchive.{hpp,cpp}` | infrastructure | `ModelGraph` ⇄ torch archive。`LayerKind` / `format_version` |
+| `entities/domain-objects/LayersParamsFields.hpp` | entities | 層パラメータのフィールド定義を集約（`LayerKind` / `visitLayerFields`）。ハッシュ・書き出し・読み込みの唯一の源（§5.6） |
+| `infrastructure/torchModel/ModelGraphArchive.{hpp,cpp}` | infrastructure | `ModelGraph` ⇄ torch archive。`format_version` |
 | `adapters/interfaces/IModelFactory.hpp` | adapters | `ModelGraph` → `IModel` のポート |
 | `adapters/interfaces/IOptimizerFactory.hpp` | adapters | `(parameters, OptimizerConfig)` → `IOptimizer` のポート |
 | `infrastructure/torchModel/TorchModelFactory.{hpp,cpp}` | infrastructure | `IModelFactory` の libtorch 実装（`TorchLayerBuilder` を内包） |
@@ -111,6 +112,9 @@ optimizer はコンストラクタで「更新対象パラメータ」を受け�
 | `adapters/interfaces/IModel.hpp` | `virtual std::vector<at::Tensor> parameters() const = 0;` を追加 | Loader が `IModel` 越しに optimizer を組むために必要。`IModel` は既に `at::Tensor` を露出しているので新たな依存は増えない |
 | `adapters/interfaces/IOptimizer.hpp` | `virtual OptimizerType type() const = 0;` を追加 | checkpoint に種別を記録し、取り違えを検出するため（§5.4） |
 | `entities/domain-objects/OptimizerTypeName.hpp` | 新規。`optimizerTypeName()` | 種別の永続化・表示用の名前 |
+| `entities/domain-objects/OptimizerConfig.hpp` | 継承 → `std::variant` へ | スライシングで `beta1` / `momentum` が factory に届かなかった（§5.5） |
+| `infrastructure/readConfig/ConfigReader.cpp` | optimizer 設定を全行読了後に組み立て。`beta1` / `beta2` / `eps` / `momentum` / `nesterov` キーを追加 | 行順に依存せず variant を作るため |
+| `entities/domain-objects/ModelGraphFingerprint.cpp` | フィールド列挙を `visitLayerFields` に委譲 | 3 か所の重複を解消（§5.6） |
 | `infrastructure/torchModel/TorchModel.hpp` | `parameters()` に `override` を付与 | 実装は既存のまま |
 | `infrastructure/torchModel/TorchCheckpointStore.cpp` | 読み書きを `CheckpointArchiveIO` に委譲。約 50 行 → 約 10 行 | Store と Loader でレイアウトを二重定義しないため |
 | `main.cpp` | model / optimizer を factory 経由に。optimizer は `appConfig.optimizer` から生成 | cold start と再構築で同じ生成口を通す |
@@ -175,7 +179,67 @@ A なら実体そのものが答えるのでズレようがない。
 int の enum 値ではなく文字列にしたのは、enum の並び替えで
 過去の `.pt` が壊れないようにするため。エラーメッセージもそのまま読める。
 
-### 5.5 Optimizer のデストラクタを `.cpp` へ移した
+### 5.5 `OptimizerConfig` を継承から `std::variant` へ
+
+当初は継承だった。
+
+```cpp
+struct OptimizerConfig { OptimizerType type; double learningRate; double weightDecay; };
+struct AdamOptimizerConfig : OptimizerConfig { double beta1, beta2, eps; };
+```
+
+しかし `AppConfig` が `OptimizerConfig optimizer;` と **基底の値で** 保持していたため
+スライシングが起き、`beta1` / `momentum` は factory に届かないまま捨てられていた。
+しかも `OptimizerConfig` に仮想関数が無いので `dynamic_cast` で拾い直すこともできない。
+
+→ 同じリポジトリ内で既に使われている `LayersParams`（層パラメータ）と同じ
+`std::variant` 方式に揃えた。
+
+```cpp
+using OptimizerConfig = std::variant<AdamOptimizerConfig, AdamWOptimizerConfig, SGDOptimizerConfig>;
+```
+
+- 各構造体は独立し、種別固有のフィールドだけを持つ（`learningRate` / `weightDecay` は各々が持つ）
+- `TorchOptimizerFactory` は `TorchLayerBuilder` と同じ `std::visit` + `Overloaded` で分岐
+- 種別を足すと `std::visit` が全 alternative を要求するため、**対応漏れがコンパイルエラーになる**
+- 種別だけ欲しい箇所のために `optimizerTypeOf(const OptimizerConfig&)` を entities に用意
+
+`ConfigReader` は行順が自由（`optimizer_type` が `learning_rate` より後でもよい）なので、
+パース中は `std::optional` のフィールド集合に貯め、全行読了後に variant を組み立てる。
+
+### 5.6 fingerprint とシリアライザのフィールド列挙を 1 か所に
+
+`ModelGraphFingerprint`（entities・ハッシュ計算）と `ModelGraphArchive`
+（infrastructure・書き出し／読み込み）が、それぞれ独立に全フィールドを列挙していた。
+層のパラメータを 1 つ増やすと **3 か所**（ハッシュ・write・read）を直す必要があり、
+片方の更新漏れが起きやすい。
+
+→ entities に `LayersParamsFields.hpp` を置き、フィールド定義を 1 回だけ書く。
+
+```cpp
+template <class Params, class F>
+void visitLayerFields(Params &p, F &&f)   // const / 非 const の両方で使える
+{
+    if constexpr (std::is_same_v<T, Conv2DParams>) {
+        f("in_channels", p.inChannels);
+        ...
+    }
+}
+```
+
+- **fingerprint**: 訪問して値を正規化文字列へ連結
+- **write**: 訪問して `layer_{i}_<name>` のテンソルへ書く
+- **read**: 「非 const の `Params`」を訪問し、来た可変参照へ archive の値を代入する
+
+`LayerKind` と層種タグ（`"conv2d"` 等）も同ファイルへ移し、
+「どんな層があるか」の定義も 1 か所にした。
+
+**後方互換**: フィールドの並び順・区切り文字を保ったため、fingerprint の文字列は
+バイト単位で以前と同一。既知グラフに対する値
+（`Conv2D(3,21,3,1,1)` → `47f17d6aca1c1936`）を
+`model_graph_archive_test` に固定し、過去の `.pt` が読めなくなる変更を検出できるようにした。
+
+### 5.7 Optimizer のデストラクタを `.cpp` へ移した
 
 factory を作った時点で `TorchOptimizerFactory.cpp` が
 `invalid application of 'sizeof' to incomplete type 'torch::optim::Adam'`
@@ -201,7 +265,7 @@ include していたためたまたま通っていた。
 （破棄コードは `make_shared` した TU に埋め込まれる）。
 問題になるのは「具象型を生成・破棄する TU」だけ。
 
-### 5.6 `IModel::parameters()` を純粋仮想にした影響
+### 5.8 `IModel::parameters()` を純粋仮想にした影響
 
 `IModel` の実装は `TorchModel` と、テストの `FakeModel`(`model_evaluator_test.cpp`) の 2 つ。
 両方に実装を追加済み。今後 `IModel` を実装するクラスは `parameters()` が必須になる。
@@ -243,9 +307,7 @@ include していたためたまたま通っていた。
 
 | 項目 | 内容 |
 |---|---|
-| **`OptimizerConfig` の派生フィールドが届かない** | `AppConfig` は `OptimizerConfig` を基底の値で持つため、`AdamOptimizerConfig::beta1` などはスライシングで消える。factory は `type` / `learningRate` / `weightDecay` のみ使い、残りはコンストラクタ既定値。`std::variant` 化か多相化が要検討 |
 | **`format_version` の移行パス** | 現在は不一致なら例外。旧版を読む必要が出たら version 別の読み分けが要る |
-| **fingerprint とシリアライザのフィールド列挙が重複** | `ModelGraphFingerprint`（entities、libtorch 非依存）と `ModelGraphArchive`（infrastructure）が同じフィールドを別々に列挙している。層を追加すると両方の更新が必要（`static_assert` で検出はされる） |
 | **resume 本体は未実装** | `TrainModelUsecase` は依然 epoch 0 から回る。開始 epoch の受け渡しと `BestMetricTracker` の初期化は `docs/issues/training-resume.md` の担当 |
 
 ---
