@@ -77,7 +77,7 @@ int main(void)
 
     auto trainer = std::make_shared<TorchModelTrainer>(model, loss, optimizer);
     auto evaluator = std::make_shared<TorchModelEvaluator>(*model, *loss, numClasses);
-    auto checkpointStore = std::make_shared<TorchCheckpointStore>(model, optimizer, appConfig.outputDir, appConfig.modelName);
+    auto checkpointStore = std::make_shared<TorchCheckpointStore>(model, optimizer, appConfig.outputDir, appConfig.modelName, graph);
 
     TrainModelUsecase usecase(param, appConfig, trainer, evaluator, checkpointStore);
 

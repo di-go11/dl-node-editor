@@ -29,6 +29,7 @@
 #include "training/infrastructure/torchFunc/AdamOptimizer.hpp"
 #include "training/infrastructure/torchFunc/CrossEntropy.hpp"
 #include "training/infrastructure/torchFunc/TorchLayerBuilder.hpp"
+#include "training/infrastructure/torchModel/TorchCheckpointArchive.hpp"
 #include "training/infrastructure/torchModel/TorchCheckpointStore.hpp"
 #include "training/infrastructure/torchModel/TorchModel.hpp"
 
@@ -139,7 +140,7 @@ int main()
     const unsigned int savedEpoch = 7;
     const double savedBestMetric = 0.7314; // 復元されるか確認するための識別可能な値
     {
-        TorchCheckpointStore store(src.model, src.optimizer, dir.string(), "roundtrip");
+        TorchCheckpointStore store(src.model, src.optimizer, dir.string(), "roundtrip", graph);
         store.saveBest(CheckpointMeta{savedEpoch, savedBestMetric});
     }
     const std::filesystem::path ptPath = dir / "roundtrip_best.pt";
@@ -151,7 +152,7 @@ int main()
 
     CheckpointMeta loaded;
     {
-        TorchCheckpointStore store(dst.model, dst.optimizer, dir.string(), "roundtrip");
+        TorchCheckpointStore store(dst.model, dst.optimizer, dir.string(), "roundtrip", graph);
         loaded = store.loadBest();
     }
     check(loaded.epoch == savedEpoch, "loadBest が保存時の epoch を返す");
@@ -170,7 +171,7 @@ int main()
     Bundle dst2 = makeBundle(graph, builder, 0.05);
     CheckpointMeta fromPath;
     {
-        TorchCheckpointStore store(dst2.model, dst2.optimizer, "unused_dir", "unused_name");
+        TorchCheckpointStore store(dst2.model, dst2.optimizer, "unused_dir", "unused_name", graph);
         fromPath = store.loadFrom(ptPath.string());
     }
     check(fromPath.epoch == savedEpoch, "loadFrom(任意パス) が epoch を返す");
@@ -182,7 +183,7 @@ int main()
     trainSteps(other, input, target, 2);
     const std::vector<at::Tensor> otherParams = snapshot(other.params);
     {
-        TorchCheckpointStore store(other.model, other.optimizer, dir.string(), "roundtrip");
+        TorchCheckpointStore store(other.model, other.optimizer, dir.string(), "roundtrip", graph);
         store.saveLast(CheckpointMeta{20, 0.5});
     }
     check(std::filesystem::exists(dir / "roundtrip_last.pt"), "saveLast は _last.pt を生成する");
@@ -191,8 +192,8 @@ int main()
     Bundle resumeBest = makeBundle(graph, builder, 0.05);
     Bundle resumeLast = makeBundle(graph, builder, 0.05);
     {
-        TorchCheckpointStore storeBest(resumeBest.model, resumeBest.optimizer, dir.string(), "roundtrip");
-        TorchCheckpointStore storeLast(resumeLast.model, resumeLast.optimizer, dir.string(), "roundtrip");
+        TorchCheckpointStore storeBest(resumeBest.model, resumeBest.optimizer, dir.string(), "roundtrip", graph);
+        TorchCheckpointStore storeLast(resumeLast.model, resumeLast.optimizer, dir.string(), "roundtrip", graph);
         const CheckpointMeta b = storeBest.loadBest();
         const CheckpointMeta l = storeLast.loadLast();
         check(b.epoch == savedEpoch, "loadBest は _best.pt(epoch 7)を読む");
@@ -206,7 +207,7 @@ int main()
     try
     {
         Bundle d = makeBundle(graph, builder, 0.05);
-        TorchCheckpointStore store(d.model, d.optimizer, "unused_dir", "unused_name");
+        TorchCheckpointStore store(d.model, d.optimizer, "unused_dir", "unused_name", graph);
         store.loadFrom((dir / "does_not_exist.pt").string());
     }
     catch (const std::runtime_error &)
@@ -214,6 +215,61 @@ int main()
         threw = true;
     }
     check(threw, "loadFrom は存在しないファイルで std::runtime_error を投げる");
+
+    // ---- 異常系: モデル構造(fingerprint)不一致 ----
+    // roundtrip_best.pt は numClasses=2 の graph で保存されている。
+    // 別構造(numClasses=3)の model/graph で読むと fingerprint 照合で弾かれる。
+    {
+        const ModelGraph otherGraph = makeGraph(numClasses + 1);
+        Bundle mism = makeBundle(otherGraph, builder, 0.05);
+        TorchCheckpointStore store(mism.model, mism.optimizer, dir.string(), "roundtrip", otherGraph);
+        bool mismThrew = false;
+        try
+        {
+            store.loadBest();
+        }
+        catch (const std::runtime_error &)
+        {
+            mismThrew = true;
+        }
+        check(mismThrew, "loadBest はモデル構造が一致しない checkpoint で std::runtime_error を投げる");
+    }
+
+    // ---- 後方互換: fingerprint キーの無い旧形式 checkpoint は警告のみで読める ----
+    {
+        const std::filesystem::path legacyPath = dir / "legacy.pt";
+        {
+            // fingerprint を書かずに model/optimizer/epoch/best_metric だけの archive を作る。
+            Bundle legacySrc = makeBundle(graph, builder, 0.05);
+            trainSteps(legacySrc, input, target, 2);
+            torch::serialize::OutputArchive archive;
+            torch::serialize::OutputArchive modelArchive;
+            TorchCheckpointWriter modelWriter(modelArchive);
+            legacySrc.model->writeTo(modelWriter);
+            archive.write("model", modelArchive);
+            torch::serialize::OutputArchive optimArchive;
+            TorchCheckpointWriter optimWriter(optimArchive);
+            legacySrc.optimizer->writeTo(optimWriter);
+            archive.write("optimizer", optimArchive);
+            archive.write("epoch", torch::tensor(static_cast<int64_t>(3)));
+            archive.write("best_metric", torch::tensor(0.25, torch::kFloat64));
+            archive.save_to(legacyPath.string());
+        }
+        Bundle legacyDst = makeBundle(graph, builder, 0.05);
+        TorchCheckpointStore store(legacyDst.model, legacyDst.optimizer, "unused_dir", "unused_name", graph);
+        bool legacyThrew = false;
+        CheckpointMeta legacyMeta;
+        try
+        {
+            legacyMeta = store.loadFrom(legacyPath.string());
+        }
+        catch (const std::runtime_error &)
+        {
+            legacyThrew = true;
+        }
+        check(!legacyThrew && legacyMeta.epoch == 3u,
+              "fingerprint の無い旧形式 checkpoint は例外にならず読める(構造チェックはスキップ)");
+    }
 
     std::filesystem::remove_all(dir); // 後片付け
 

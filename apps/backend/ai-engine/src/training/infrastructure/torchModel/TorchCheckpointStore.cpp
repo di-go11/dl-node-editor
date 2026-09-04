@@ -2,17 +2,23 @@
 #include "training/adapters/interfaces/IModel.hpp"
 #include "training/adapters/interfaces/IOptimizer.hpp"
 #include "training/infrastructure/torchModel/TorchCheckpointArchive.hpp"
+#include "training/entities/domain-objects/ModelGraphFingerprint.hpp"
 #include <torch/torch.h>
 #include <filesystem>
+#include <iostream>
 #include <stdexcept>
 #include <utility>
 
-
 TorchCheckpointStore::TorchCheckpointStore(std::shared_ptr<IModel> model,
                                            std::shared_ptr<IOptimizer> optimizer,
-                                           std::string outputDir, std::string modelName)
-    : _model(std::move(model)), _optimizer(std::move(optimizer)),
-      _outputDir(std::move(outputDir)), _modelName(std::move(modelName)) {}
+                                           std::string outputDir,
+                                           std::string modelName,
+                                           ModelGraph modelGraph)
+    : _model(std::move(model)),
+      _optimizer(std::move(optimizer)),
+      _outputDir(std::move(outputDir)),
+      _modelName(std::move(modelName)),
+      _modelGraph(std::move(modelGraph)) {}
 
 std::string TorchCheckpointStore::checkpointPath(CheckpointKind kind) const
 {
@@ -47,6 +53,9 @@ void TorchCheckpointStore::writeCheckpoint(const std::string &path, const Checkp
     archive.write("epoch", torch::tensor(static_cast<int64_t>(meta.epoch)));
     // torch::tensor(double) は float32 になり精度が落ちるため kFloat64 を明示する。
     archive.write("best_metric", torch::tensor(meta.bestMetric, torch::kFloat64));
+
+    archive.write("model_graph_fingerprint", c10::IValue(modelGraphFingerprint(_modelGraph)));
+
     archive.save_to(path);
 }
 
@@ -72,6 +81,23 @@ CheckpointMeta TorchCheckpointStore::loadFrom(const std::string &checkpointPath)
 
     torch::serialize::InputArchive archive;
     archive.load_from(checkpointPath);
+
+    // モデル構造の照合
+
+    c10::IValue fingerprintIValue;
+    if (archive.try_read("model_graph_fingerprint", fingerprintIValue))
+    {
+        const std::string stored = fingerprintIValue.toStringRef();
+        const std::string current = modelGraphFingerprint(_modelGraph);
+        if (stored != current)
+        {
+            throw std::runtime_error("TorchCheckpointStore::loadFrom: model graph fingerprint mismatch. (checkpoint=" + stored + ", current=" + current + ")");
+        }
+    }
+    else
+    {
+        std::cerr << "[warn] checkpoint に fingerprint がありません（旧形式）。構造チェックをスキップします\n";
+    }
 
     torch::serialize::InputArchive modelArchive;
     archive.read("model", modelArchive);
