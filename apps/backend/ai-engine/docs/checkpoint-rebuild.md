@@ -72,12 +72,13 @@ optimizer はコンストラクタで「更新対象パラメータ」を受け�
 | `model_graph_fingerprint` | string (IValue) | 構造のハッシュ。照合用 | **Phase 1** |
 | `model_graph` | nested archive | 構造そのもの。再構築用 | **Phase 2** |
 | `optimizer_type` | string (IValue) | `Adam` / `AdamW` / `SGD`。取り違え検出用 | **Phase 2** |
+| `rng_state_cpu` | uint8 tensor | CPU 乱数生成器の状態。学習再開の再現性用（§5.9） | **Phase 2** |
 
 `model_graph` セクションの中身（`ModelGraphArchive`）:
 
 | キー | 内容 |
 |---|---|
-| `format_version` | int64。`*Params` のレイアウトが変わったら上げる |
+| `format_version` | int64。キー名・構成が変わったら上げる。読み側は「現行超 = 読めない / 現行未満 = version 別に読み分け（現在 v1 のみ）」で分岐（§5.10） |
 | `layer_count` | int64 |
 | `layer_{i}_kind` | int64。`LayerKind`（0=Conv2D, 1=Pooling, 2=BatchNorm, 3=Linear, 4=Activation） |
 | `layer_{i}_<field>` | 各 `*Params` のフィールド。int64 / float64 のスカラーテンソル |
@@ -115,6 +116,9 @@ optimizer はコンストラクタで「更新対象パラメータ」を受け�
 | `entities/domain-objects/OptimizerConfig.hpp` | 継承 → `std::variant` へ | スライシングで `beta1` / `momentum` が factory に届かなかった（§5.5） |
 | `infrastructure/readConfig/ConfigReader.cpp` | optimizer 設定を全行読了後に組み立て。`beta1` / `beta2` / `eps` / `momentum` / `nesterov` キーを追加 | 行順に依存せず variant を作るため |
 | `entities/domain-objects/ModelGraphFingerprint.cpp` | フィールド列挙を `visitLayerFields` に委譲 | 3 か所の重複を解消（§5.6） |
+| `infrastructure/torchModel/CheckpointArchiveIO.{hpp,cpp}` | `rng_state_cpu` の読み書き、`restoreCpuRngStateIfPresent()` | 学習再開の再現性（§5.9） |
+| `infrastructure/torchModel/CheckpointModelLoader.{hpp,cpp}` | `RestoredCheckpoint::rngStateRestored`、load の最後で RNG 復元 | 再開経路でのみ乱数状態を戻す（§5.9） |
+| `infrastructure/torchModel/ModelGraphArchive.cpp` | `format_version` を新旧で分岐 | 移行ポリシーの明示（§5.10） |
 | `infrastructure/torchModel/TorchModel.hpp` | `parameters()` に `override` を付与 | 実装は既存のまま |
 | `infrastructure/torchModel/TorchCheckpointStore.cpp` | 読み書きを `CheckpointArchiveIO` に委譲。約 50 行 → 約 10 行 | Store と Loader でレイアウトを二重定義しないため |
 | `main.cpp` | model / optimizer を factory 経由に。optimizer は `appConfig.optimizer` から生成 | cold start と再構築で同じ生成口を通す |
@@ -270,6 +274,44 @@ include していたためたまたま通っていた。
 `IModel` の実装は `TorchModel` と、テストの `FakeModel`(`model_evaluator_test.cpp`) の 2 つ。
 両方に実装を追加済み。今後 `IModel` を実装するクラスは `parameters()` が必須になる。
 
+### 5.9 CPU 乱数状態の保存を先に配線した
+
+厳密な「同じ軌跡での学習再開」には、保存時点の乱数生成器の状態が要る。
+
+現在の学習ループには乱数を消費する箇所が**まだ無い**（データシャッフルも dropout も
+データ拡張も未実装）ため、これは今すぐ効く機能ではない。それでも先に入れたのは:
+
+- 後から足すと「実は再開が非再現だった」と気付いてからの retrofit になる
+- コストが小さい（`archive.write("rng_state_cpu", currentCpuRngState())` の 1 行、数 KB）
+- 研究用途では再現性の優先度が高い
+
+**restore は再開経路（`CheckpointModelLoader::load`）でのみ行う。**
+`TorchCheckpointStore::loadFrom`（推論目的で重みだけ読む経路）でグローバルな
+乱数状態を書き換えるのは副作用として不適切なため触らない。
+`load()` 内では「モデル生成 → …→ `restoreCpuRngStateIfPresent`」の順で、
+モデル生成が消費した分も最後の restore で保存時の状態へ戻る。
+
+GPU 生成器の状態は含めていない（GPU 学習が未対応。対応時に `rng_state_cuda` を足す）。
+
+`RestoredCheckpoint::rngStateRestored` で「復元できたか（＝旧 checkpoint でないか）」を
+呼び出し側に伝える。
+
+### 5.10 `format_version` の運用ポリシーを明示した
+
+以前は「現行と不一致なら即例外」だった。読み側を次の方針で分けた:
+
+| archive の version | 挙動 |
+|---|---|
+| 現行より新しい | 読めない（レイアウト不明）。ai-engine の更新を促すエラー |
+| 現行より古い | version ごとに読み分ける。**現在は v1 のみなので該当なし**（例外） |
+| 現行と一致 | 通常読み込み |
+
+v2 を導入するときは「v1 の read パスを残したまま v2 の分岐を足す」。
+`model_graph_archive_test` に **v1 の archive キー集合を固定するテスト**を追加し、
+`format_version` を上げずにレイアウトを壊す変更をコンパイル後に検出できるようにした
+（`Conv2D` 1 層 → `{format_version, layer_count, layer_0_kind, layer_0_in_channels,
+layer_0_out_channels, layer_0_kernel_size, layer_0_stride, layer_0_padding}`）。
+
 ---
 
 ## 6. テスト
@@ -281,7 +323,8 @@ include していたためたまたま通っていた。
 | 全 5 層種のラウンドトリップ | Conv2D / BatchNorm / Activation / Pooling / Linear を含む `ModelGraph` を書き → 読み戻して fingerprint 一致 |
 | 個別フィールド検証 | `Conv2DParams` の各値、`BatchNormParams` の double、enum（`ActivationType` / `PoolingType`）、`LinearParams::bias` |
 | 空グラフ | `layer_count = 0` のラウンドトリップ |
-| 異常系 | `format_version` 不一致で `runtime_error` |
+| フォーマット固定 | `Conv2D` 1 層の archive キー集合が既知の値と一致（レイアウト非破壊） |
+| 異常系 | 現行より新しい `format_version` で `runtime_error` |
 
 ### `tests/checkpoint_rebuild_test.cpp`
 
@@ -295,6 +338,9 @@ include していたためたまたま通っていた。
 | meta の復元 | `epoch` / `bestMetric` |
 | 異常系 | 存在しないファイル → `runtime_error` |
 | 異常系 | `model_graph` を含まない（構造保存前の）`.pt` → 明示的な `runtime_error` |
+| 異常系 | optimizer 種別の取り違え（Adam 保存 → SGD 読み）→ `runtime_error` |
+| 乱数状態の復元 | ロード後に引く乱数列が保存時の続きと一致 |
+| 旧形式互換 | `rng_state_cpu` を持たない archive は警告のみ・続行可能 |
 
 ### 既存テストへの影響
 
@@ -307,8 +353,17 @@ include していたためたまたま通っていた。
 
 | 項目 | 内容 |
 |---|---|
-| **`format_version` の移行パス** | 現在は不一致なら例外。旧版を読む必要が出たら version 別の読み分けが要る |
-| **resume 本体は未実装** | `TrainModelUsecase` は依然 epoch 0 から回る。開始 epoch の受け渡しと `BestMetricTracker` の初期化は `docs/issues/training-resume.md` の担当 |
+| **LR スケジューラの状態** | スケジューラ機能そのものが未実装。実装時に checkpoint へ進行状態を足す |
+| **GPU 乱数状態** | `rng_state_cpu` のみ保存。GPU 学習対応時に `rng_state_cuda` を追加 |
+| **`OptimizerConfig` の派生を跨ぐ再開** | 保存時 Adam の checkpoint を config で AdamW 指定して読むと `optimizer_type` 照合で弾かれる（正しい挙動）。「同じ状態を別 optimizer に引き継ぐ」ことは想定しない |
+| **出力ディレクトリ運用** | resume は同じ `output_dir` に追記する。`best.pt` は旧ベストを引き継ぐので悪化時は上書きされない。別 run として切り分けたい場合は `output_dir` を分ける運用 |
+
+### 解決済み（履歴）
+
+- 構造の再構築（§全体） / optimizer 種別の記録（§5.4） /
+  `OptimizerConfig` スライシング（§5.5） / フィールド列挙の重複（§5.6） /
+  CPU 乱数状態（§5.9） / `format_version` の運用ポリシー（§5.10）
+- resume 本体（開始 epoch・`saveLast`・tracker 引き継ぎ）→ `docs/issues/training-resume.md`
 
 ---
 

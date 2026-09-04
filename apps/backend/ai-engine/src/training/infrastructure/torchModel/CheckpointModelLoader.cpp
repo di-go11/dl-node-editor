@@ -50,5 +50,9 @@ RestoredCheckpoint CheckpointModelLoader::load(const std::string &checkpointPath
     //    graph は checkpoint 由来なので fingerprint 照合は必ず通る(自己整合性の確認)。
     restored.meta = readCheckpointArchive(archive, *restored.model, *restored.optimizer, restored.graph);
 
+    // 5. 乱数状態をプロセスのグローバル生成器へ復元する。
+    //    これは学習再開の経路(=このクラス)でのみ行う。
+    restored.rngStateRestored = restoreCpuRngStateIfPresent(archive);
+
     return restored;
 }

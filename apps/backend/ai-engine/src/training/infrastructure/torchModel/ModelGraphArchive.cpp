@@ -162,12 +162,27 @@ ModelGraph readModelGraph(torch::serialize::InputArchive &archive)
     at::Tensor versionTensor;
     archive.read("format_version", versionTensor);
     const int64_t version = versionTensor.item<int64_t>();
-    if (version != kModelGraphArchiveVersion)
+
+    // バージョン運用の方針:
+    //   - version > 現行 : 新しい ai-engine が書いた checkpoint。レイアウトが
+    //     分からないので読めない。ユーザーに更新を促す。
+    //   - version < 現行 : 古いレイアウト。将来 kModelGraphArchiveVersion を
+    //     上げるときは、ここで version ごとに読み分ける(古い read パスは残す)。
+    //     v1 しか無い現在は該当しない。
+    if (version > kModelGraphArchiveVersion)
     {
         throw std::runtime_error(
-            "readModelGraph: 非対応のフォーマットバージョンです (archive=" +
-            std::to_string(version) + ", expected=" +
-            std::to_string(kModelGraphArchiveVersion) + ")");
+            "readModelGraph: この checkpoint はより新しいフォーマット (v" +
+            std::to_string(version) + ") で書かれています。"
+            "現在の ai-engine (v" + std::to_string(kModelGraphArchiveVersion) +
+            ") では読めません。ai-engine を更新してください。");
+    }
+    if (version < kModelGraphArchiveVersion)
+    {
+        throw std::runtime_error(
+            "readModelGraph: 未対応の古いフォーマット (v" + std::to_string(version) +
+            ") です。現在は v" + std::to_string(kModelGraphArchiveVersion) +
+            " のみ対応しています。");
     }
 
     at::Tensor countTensor;

@@ -17,6 +17,7 @@ class IOptimizer;
 //   best_metric              : float64
 //   model_graph_fingerprint  : string(構造の照合用ハッシュ)
 //   model_graph              : ModelGraph 本体(構造の再構築用)
+//   rng_state_cpu            : CPU 乱数生成器の状態(学習再開の再現性用)
 //
 // これを TorchCheckpointStore(注入済み model/optimizer への in-place 復元)と
 // CheckpointModelLoader(checkpoint からの再構築)の両方が使う。
@@ -37,3 +38,16 @@ CheckpointMeta readCheckpointArchive(torch::serialize::InputArchive &archive,
 
 // モデルを構築する前に、checkpoint から ModelGraph だけを取り出す。
 ModelGraph readModelGraphFromCheckpoint(torch::serialize::InputArchive &archive);
+
+// checkpoint に記録された CPU 乱数生成器の状態を、プロセスのグローバル生成器へ復元する。
+// 「保存時と同じ乱数列で学習を続ける」ための処理なので、学習再開
+// (CheckpointModelLoader)からのみ呼ぶ。推論目的で重みだけ読む経路
+// (TorchCheckpointStore::loadFrom)ではグローバル状態を触らない。
+//
+// 現状の学習ループには乱数を使う箇所(シャッフル / dropout / データ拡張)が無いため
+// 実効的な差はまだ出ないが、それらが入ったときに再開が非再現になるのを防ぐため
+// 先に配線しておく。GPU 生成器の状態は含まない(GPU 学習は未対応)。
+//
+// 戻り値: 復元できたら true。rng_state_cpu を持たない旧 checkpoint では
+// 警告を出して false を返す(呼び出し側は続行してよい)。
+bool restoreCpuRngStateIfPresent(torch::serialize::InputArchive &archive);

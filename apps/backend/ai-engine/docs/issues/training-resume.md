@@ -177,8 +177,14 @@ save_last_every = 0            # 0 = 毎エポック。最終エポックは常�
     `model_graph_fingerprint` に書き、`TorchCheckpointStore::loadFrom` で照合。不一致は
     `runtime_error`、旧 .pt は警告のみ)。現状は「明示エラーで中断」。cold start
     フォールバックにするかは resume 配線時に判断。
-  - optimizer 種別名の検証は未対応(別途)。
-- **RNG 状態・LR スケジューラ状態**。厳密な再現には必要。スケジューラは未実装なので後回し。
+  - optimizer 種別名の検証は実装済み(`optimizer_type` を archive に書き、
+    `readCheckpointArchive` で照合。不一致は `runtime_error`、旧 .pt は警告のみ)。
+  - `format_version` は「現行超=読めない / 現行未満=version 別読み分け(現在 v1 のみ)」で分岐。
+- **RNG 状態**。実装済み。`rng_state_cpu` を checkpoint に保存し、`CheckpointModelLoader::load`
+  (=再開経路)でグローバル CPU 生成器へ復元する。現状の学習ループには乱数消費が無いため
+  実効差はまだ出ないが、シャッフル/dropout/データ拡張が入ったときに再開が非再現になるのを防ぐ。
+  詳細: `docs/checkpoint-rebuild.md` §5.9。GPU 生成器は未対応。
+- **LR スケジューラ状態**。スケジューラ機能そのものが未実装。実装時に checkpoint へ足す。
 - **出力ディレクトリ運用**。resume で同じ run に追記すると best/last が混ざる。新ディレクトリを切ると
   「どの run の続きか」の追跡が要る。
 - **総エポック数 ≤ 保存済み epoch** のとき(やることなし)の挙動。警告して終了。

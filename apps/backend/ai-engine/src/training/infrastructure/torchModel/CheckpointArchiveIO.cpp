@@ -7,10 +7,33 @@
 #include "training/infrastructure/torchModel/ModelGraphArchive.hpp"
 #include "training/infrastructure/torchModel/TorchCheckpointArchive.hpp"
 
+#include <ATen/CPUGeneratorImpl.h>
+#include <ATen/core/Generator.h>
 #include <torch/torch.h>
 
 #include <iostream>
+#include <mutex>
 #include <stdexcept>
+
+namespace
+{
+    // プロセス共有の CPU 乱数生成器の状態を 1 次元 uint8 テンソルとして取り出す。
+    // Generator はハンドル(intrusive_ptr ラッパ)なので、コピーしても同じ実体を指す。
+    // mutex() が非 const メンバのため、非 const のローカルに受けてからロックする。
+    at::Tensor currentCpuRngState()
+    {
+        at::Generator gen = at::detail::getDefaultCPUGenerator();
+        std::lock_guard<std::mutex> lock(gen.mutex());
+        return gen.get_state();
+    }
+
+    void applyCpuRngState(const at::Tensor &state)
+    {
+        at::Generator gen = at::detail::getDefaultCPUGenerator();
+        std::lock_guard<std::mutex> lock(gen.mutex());
+        gen.set_state(state);
+    }
+} // namespace
 
 void writeCheckpointArchive(torch::serialize::OutputArchive &archive,
                             const IModel &model, const IOptimizer &optimizer,
@@ -40,6 +63,9 @@ void writeCheckpointArchive(torch::serialize::OutputArchive &archive,
     torch::serialize::OutputArchive graphArchive;
     writeModelGraph(graphArchive, graph);
     archive.write("model_graph", graphArchive);
+
+    // CPU 乱数生成器の状態。学習再開時に「保存時の続きの乱数列」で回すため。
+    archive.write("rng_state_cpu", currentCpuRngState());
 }
 
 CheckpointMeta readCheckpointArchive(torch::serialize::InputArchive &archive,
@@ -101,6 +127,19 @@ CheckpointMeta readCheckpointArchive(torch::serialize::InputArchive &archive,
     return CheckpointMeta{
         static_cast<unsigned int>(epochTensor.item<int64_t>()),
         bestMetricTensor.item<double>()};
+}
+
+bool restoreCpuRngStateIfPresent(torch::serialize::InputArchive &archive)
+{
+    at::Tensor rngState;
+    if (!archive.try_read("rng_state_cpu", rngState))
+    {
+        std::cerr << "[warn] checkpoint に rng_state_cpu がありません（旧形式）。"
+                     "乱数状態は復元されません（学習再開の再現性に影響しうる）\n";
+        return false;
+    }
+    applyCpuRngState(rngState);
+    return true;
 }
 
 ModelGraph readModelGraphFromCheckpoint(torch::serialize::InputArchive &archive)

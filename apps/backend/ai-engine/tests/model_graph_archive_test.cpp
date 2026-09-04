@@ -6,9 +6,11 @@
 // libtorch の serialize を実際に通すが .pt ファイルは作らず、メモリ上の
 // OutputArchive → 一時ファイル → InputArchive で検証する。
 
+#include <algorithm>
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <vector>
 
 #include <torch/torch.h>
 
@@ -166,12 +168,51 @@ int main()
         check(empty.layers.empty(), "空の ModelGraph をラウンドトリップできる");
     }
 
-    // ---- 異常系: format_version 不一致 ----
+    // ---- フォーマットの固定(後方互換) ----
+    // model_graph セクションのキー名・構成が変わると、既存の .pt を
+    // 読むには kModelGraphArchiveVersion を上げて version 別の読み分けが要る。
+    // レイアウトを不用意に変えていないことを、既知グラフのキー集合で固定する。
     {
-        const std::filesystem::path badPath = dir / "bad_version.pt";
+        const std::filesystem::path pinPath = dir / "pin.pt";
+        {
+            ModelGraph g;
+            Conv2DParams conv;
+            conv.inChannels = 3;
+            conv.outChannels = 21;
+            conv.kernelSize = 3;
+            conv.stride = 1;
+            conv.padding = 1;
+            g.layers.push_back(LayersConfig{conv});
+
+            torch::serialize::OutputArchive out;
+            writeModelGraph(out, g);
+            out.save_to(pinPath.string());
+        }
+        torch::serialize::InputArchive in;
+        in.load_from(pinPath.string());
+        std::vector<std::string> keys = in.keys();
+        std::sort(keys.begin(), keys.end());
+
+        const std::vector<std::string> expected = {
+            "format_version", "layer_0_in_channels", "layer_0_kernel_size",
+            "layer_0_kind", "layer_0_out_channels", "layer_0_padding",
+            "layer_0_stride", "layer_count"};
+        check(keys == expected,
+              "Conv2D 1 層の archive キー集合が固定値と一致する(フォーマット非破壊)");
+
+        at::Tensor versionTensor;
+        in.read("format_version", versionTensor);
+        check(versionTensor.item<int64_t>() == kModelGraphArchiveVersion,
+              "format_version が現行バージョンで書かれている");
+    }
+
+    // ---- 異常系: 未来の format_version は読めない ----
+    {
+        const std::filesystem::path badPath = dir / "future_version.pt";
         {
             torch::serialize::OutputArchive out;
-            out.write("format_version", torch::tensor(static_cast<int64_t>(999)));
+            out.write("format_version",
+                      torch::tensor(static_cast<int64_t>(kModelGraphArchiveVersion + 1)));
             out.write("layer_count", torch::tensor(static_cast<int64_t>(0)));
             out.save_to(badPath.string());
         }
@@ -186,7 +227,7 @@ int main()
         {
             threw = true;
         }
-        check(threw, "非対応の format_version で std::runtime_error を投げる");
+        check(threw, "現行より新しい format_version で std::runtime_error を投げる");
     }
 
     std::filesystem::remove_all(dir);

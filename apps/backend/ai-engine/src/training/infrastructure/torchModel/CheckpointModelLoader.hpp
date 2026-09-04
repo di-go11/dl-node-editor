@@ -25,6 +25,11 @@ struct RestoredCheckpoint
     std::vector<at::Tensor> parameters;
     ModelGraph graph; // checkpoint に記録されていたモデル構造
     CheckpointMeta meta;
+
+    // CPU 乱数生成器の状態をグローバル生成器へ復元できたか。
+    // false は「rng_state_cpu を持たない旧 checkpoint だった」ことを意味し、
+    // 学習は続行できるが乱数列は保存時の続きにならない。
+    bool rngStateRestored = false;
 };
 
 // checkpoint(.pt)1 つだけを入力に、モデル構造の再構築から重み・optimizer 状態の

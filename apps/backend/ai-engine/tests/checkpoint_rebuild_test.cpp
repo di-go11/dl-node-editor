@@ -37,6 +37,7 @@
 #include "training/infrastructure/torchFunc/TorchOptimizerFactory.hpp"
 #include "training/infrastructure/torchModel/CheckpointArchiveIO.hpp"
 #include "training/infrastructure/torchModel/CheckpointModelLoader.hpp"
+#include "training/infrastructure/torchModel/ModelGraphArchive.hpp"
 #include "training/infrastructure/torchModel/TorchCheckpointStore.hpp"
 #include "training/infrastructure/torchModel/TorchModel.hpp"
 #include "training/infrastructure/torchModel/TorchModelFactory.hpp"
@@ -251,6 +252,59 @@ int main()
         RestoredCheckpoint again = loader.load(ptPath.string(), sameKind);
         check(allClose(again.parameters, savedParams),
               "種別が同じなら LR が違っても復元できる(LR は呼び出し側の指定)");
+    }
+
+    // ---- CPU 乱数状態の復元 ----
+    // 保存時の乱数状態が復元されれば、ロード後に引く乱数列は
+    // 「保存直後に引いていたはずの列」と一致する。
+    // 学習ループにまだ乱数消費(シャッフル / dropout)は無いので、
+    // 乱数生成を直接叩いて配線が効いていることを確認する。
+    {
+        const std::filesystem::path rngPtPath = dir / "rng_best.pt"; // <modelName>_best.pt
+
+        torch::manual_seed(20240607);
+        (void)torch::randn({7}); // 状態を非自明な位置へ進める
+
+        {
+            // この時点の乱数状態が checkpoint に記録される。
+            std::shared_ptr<IModel> m = modelFactory->create(graph);
+            std::vector<at::Tensor> p = m->parameters();
+            std::shared_ptr<IOptimizer> o = optimizerFactory->create(p, optimizerConfig);
+            TorchCheckpointStore store(m, o, dir.string(), "rng", graph);
+            store.saveBest(CheckpointMeta{1, 0.0});
+        }
+
+        // 保存直後に引いた「基準の乱数列」。
+        const at::Tensor expectedDraw = torch::randn({16});
+
+        // 乱数状態を別の場所へ動かしてから復元する。
+        torch::manual_seed(999);
+        (void)torch::randn({123});
+
+        RestoredCheckpoint rng = loader.load(rngPtPath.string(), optimizerConfig);
+        check(rng.rngStateRestored, "rngStateRestored が true(rng_state_cpu を読めた)");
+
+        const at::Tensor actualDraw = torch::randn({16});
+        check(torch::allclose(expectedDraw, actualDraw),
+              "checkpoint ロード後の乱数列が保存時の続きと一致する");
+    }
+
+    // ---- 旧形式(rng_state_cpu 無し)は警告のみで続行 ----
+    {
+        const std::filesystem::path noRngPath = dir / "no_rng.pt";
+        {
+            // model_graph は必要なので writeModelGraph で書きつつ rng_state_cpu は書かない。
+            torch::serialize::OutputArchive archive;
+            torch::serialize::OutputArchive graphArchive;
+            writeModelGraph(graphArchive, makeGraph(numClasses));
+            archive.write("model_graph", graphArchive);
+            archive.save_to(noRngPath.string());
+
+            torch::serialize::InputArchive in;
+            in.load_from(noRngPath.string());
+            check(!restoreCpuRngStateIfPresent(in),
+                  "rng_state_cpu を持たない archive では false を返す(続行可能)");
+        }
     }
 
     std::filesystem::remove_all(dir);
