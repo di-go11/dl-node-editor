@@ -51,8 +51,15 @@
   - [x] 保存 → 復元後に重みが一致すること
   - [x] 数ステップ学習して挙動が連続すること（復元後に同一ステップを踏むと重みが一致
         = Adam の `exp_avg` / `exp_avg_sq` / `step` が復元されている）
-  - [ ] 構造復元（ModelGraph のシリアライズ）と重みロードの結合 → 別途（現状は
-        呼び出し側が同一構造のモデルを構築する前提。`model_param_count` 不一致で例外）
+  - [x] アーキテクチャ検証（ModelGraph フィンガープリント）→ `modelGraphFingerprint`
+        （entities の純粋関数、FNV-1a）を checkpoint に `model_graph_fingerprint` として
+        書き、`loadFrom` で現モデルの graph と照合。不一致は `runtime_error`、
+        fingerprint キーの無い旧 .pt は警告のみ（後方互換）。
+        テスト: `checkpoint_roundtrip_test`（不一致で例外 / 旧形式は読める）
+  - [ ] 構造復元（ModelGraph のシリアライズと再構築）と重みロードの結合 → 別途
+        （現状は呼び出し側が同一構造のモデルを構築する前提。構造が違えば上記
+        フィンガープリント照合で弾かれる。checkpoint 単体からのモデル再構築は
+        `IModelFactory` 導入とセットで training-resume.md 側で扱う）
 
 ## 依存 / 順序
 `IModelStore` の重み保存機能（ModelSave ブランチ）をベースに進める。

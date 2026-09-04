@@ -125,7 +125,11 @@ cold start と resume を明示的に分ける。現状の規模なら `main.cpp
 - **`CheckpointMeta` に `MetricMode` を持たせるか**。持たせると「保存時の監視方向」と
   再開時の tracker 設定の不一致を検出できる。持たせないなら合成層が config から与える。
 - **破損 / 不整合チェックポイント時の方針**。cold start にフォールバックするか、明示エラーで中断するか。
-  - モデルグラフのフィンガープリント、optimizer 種別名を archive に書いて検証する案(→ optimizer-state-save.md の「アーキテクチャ検証」とも関連)
+  - モデルグラフのフィンガープリント検証は実装済み(`modelGraphFingerprint` を archive の
+    `model_graph_fingerprint` に書き、`TorchCheckpointStore::loadFrom` で照合。不一致は
+    `runtime_error`、旧 .pt は警告のみ)。現状は「明示エラーで中断」。cold start
+    フォールバックにするかは resume 配線時に判断。
+  - optimizer 種別名の検証は未対応(別途)。
 - **RNG 状態・LR スケジューラ状態**。厳密な再現には必要。スケジューラは未実装なので後回し。
 - **出力ディレクトリ運用**。resume で同じ run に追記すると best/last が混ざる。新ディレクトリを切ると
   「どの run の続きか」の追跡が要る。
