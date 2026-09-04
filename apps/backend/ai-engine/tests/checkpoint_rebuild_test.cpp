@@ -222,8 +222,36 @@ int main()
         check(threw, "model_graph を含まない checkpoint では明示的に例外を投げる");
     }
 
-    // 注: 保存時と違う OptimizerType を渡した場合の挙動は未定義(checkpoint に
-    // optimizer 種別を記録していないため検出できない)。既知の穴として issue に記載。
+    // ---- 異常系: Optimizer 種別の取り違え ----
+    // .pt は Adam で保存されている。SGD として読もうとすると、libtorch に
+    // 状態を渡す前に optimizer_type の照合で弾かれる。
+    {
+        OptimizerConfig sgdConfig;
+        sgdConfig.type = OptimizerType::SGD;
+        sgdConfig.learningRate = 0.01;
+
+        bool threw = false;
+        try
+        {
+            loader.load(ptPath.string(), sgdConfig);
+        }
+        catch (const std::runtime_error &)
+        {
+            threw = true;
+        }
+        check(threw, "Adam で保存した checkpoint を SGD として読むと例外を投げる");
+    }
+
+    // ---- 正常系: 同じ種別なら別インスタンスの config でも読める ----
+    {
+        OptimizerConfig sameKind;
+        sameKind.type = OptimizerType::Adam;
+        sameKind.learningRate = 0.001; // LR が違っても種別が同じなら読める
+
+        RestoredCheckpoint again = loader.load(ptPath.string(), sameKind);
+        check(allClose(again.parameters, savedParams),
+              "種別が同じなら LR が違っても復元できる(LR は呼び出し側の指定)");
+    }
 
     std::filesystem::remove_all(dir);
 

@@ -71,6 +71,7 @@ optimizer はコンストラクタで「更新対象パラメータ」を受け�
 | `best_metric` | float64 tensor | 保存時のベスト指標（float32 に丸めないため kFloat64 明示） | 既存 |
 | `model_graph_fingerprint` | string (IValue) | 構造のハッシュ。照合用 | **Phase 1** |
 | `model_graph` | nested archive | 構造そのもの。再構築用 | **Phase 2** |
+| `optimizer_type` | string (IValue) | `Adam` / `AdamW` / `SGD`。取り違え検出用 | **Phase 2** |
 
 `model_graph` セクションの中身（`ModelGraphArchive`）:
 
@@ -108,6 +109,8 @@ optimizer はコンストラクタで「更新対象パラメータ」を受け�
 | ファイル | 変更内容 | 理由 |
 |---|---|---|
 | `adapters/interfaces/IModel.hpp` | `virtual std::vector<at::Tensor> parameters() const = 0;` を追加 | Loader が `IModel` 越しに optimizer を組むために必要。`IModel` は既に `at::Tensor` を露出しているので新たな依存は増えない |
+| `adapters/interfaces/IOptimizer.hpp` | `virtual OptimizerType type() const = 0;` を追加 | checkpoint に種別を記録し、取り違えを検出するため（§5.4） |
+| `entities/domain-objects/OptimizerTypeName.hpp` | 新規。`optimizerTypeName()` | 種別の永続化・表示用の名前 |
 | `infrastructure/torchModel/TorchModel.hpp` | `parameters()` に `override` を付与 | 実装は既存のまま |
 | `infrastructure/torchModel/TorchCheckpointStore.cpp` | 読み書きを `CheckpointArchiveIO` に委譲。約 50 行 → 約 10 行 | Store と Loader でレイアウトを二重定義しないため |
 | `main.cpp` | model / optimizer を factory 経由に。optimizer は `appConfig.optimizer` から生成 | cold start と再構築で同じ生成口を通す |
@@ -150,7 +153,29 @@ fingerprint のキー名と読み順が Store と Loader の 2 か所に散る�
 API が `const ModelGraph*` になって呼び出し側で分岐が要るため、
 常に非 null の参照を取る形にした。余分なハッシュ計算 1 回は無視できる。
 
-### 5.4 Optimizer のデストラクタを `.cpp` へ移した
+### 5.4 Optimizer の種別を `IOptimizer` 自身に答えさせた
+
+checkpoint の optimizer 状態は種別ごとに中身が全く違う
+（Adam は `exp_avg` / `exp_avg_sq` / `step`、SGD は `momentum_buffer`）。
+にもかかわらず種別が記録されていなかったため、
+「Adam で保存した `.pt` を SGD で読む」を検出できなかった。
+
+記録元をどこから取るかで 2 案:
+
+- **A: `IOptimizer::type()` を追加し、Optimizer 自身に答えさせる**（採用）
+- B: `writeCheckpointArchive` に `OptimizerConfig` を渡す
+
+B は「実際に生成された Optimizer」ではなく「生成時に指定された config」を
+書くことになり、両者がズレたときに嘘の値が残る。
+A なら実体そのものが答えるのでズレようがない。
+`OptimizerType` は entities なので、adapters の `IOptimizer` から参照しても
+依存方向を壊さない（`IModel::parameters()` と同じ判断）。
+
+名前は `optimizerTypeName()`（entities の純粋関数）で文字列化して書く。
+int の enum 値ではなく文字列にしたのは、enum の並び替えで
+過去の `.pt` が壊れないようにするため。エラーメッセージもそのまま読める。
+
+### 5.5 Optimizer のデストラクタを `.cpp` へ移した
 
 factory を作った時点で `TorchOptimizerFactory.cpp` が
 `invalid application of 'sizeof' to incomplete type 'torch::optim::Adam'`
@@ -176,7 +201,7 @@ include していたためたまたま通っていた。
 （破棄コードは `make_shared` した TU に埋め込まれる）。
 問題になるのは「具象型を生成・破棄する TU」だけ。
 
-### 5.5 `IModel::parameters()` を純粋仮想にした影響
+### 5.6 `IModel::parameters()` を純粋仮想にした影響
 
 `IModel` の実装は `TorchModel` と、テストの `FakeModel`(`model_evaluator_test.cpp`) の 2 つ。
 両方に実装を追加済み。今後 `IModel` を実装するクラスは `parameters()` が必須になる。
@@ -218,7 +243,6 @@ include していたためたまたま通っていた。
 
 | 項目 | 内容 |
 |---|---|
-| **Optimizer 種別が checkpoint に無い** | Adam で保存した `.pt` を SGD として `load()` しても検出できない。libtorch の `Optimizer::load` が状態キーの不一致でどう振る舞うかも未確認。`optimizer_type` を archive に書いて照合するのが対策 |
 | **`OptimizerConfig` の派生フィールドが届かない** | `AppConfig` は `OptimizerConfig` を基底の値で持つため、`AdamOptimizerConfig::beta1` などはスライシングで消える。factory は `type` / `learningRate` / `weightDecay` のみ使い、残りはコンストラクタ既定値。`std::variant` 化か多相化が要検討 |
 | **`format_version` の移行パス** | 現在は不一致なら例外。旧版を読む必要が出たら version 別の読み分けが要る |
 | **fingerprint とシリアライザのフィールド列挙が重複** | `ModelGraphFingerprint`（entities、libtorch 非依存）と `ModelGraphArchive`（infrastructure）が同じフィールドを別々に列挙している。層を追加すると両方の更新が必要（`static_assert` で検出はされる） |

@@ -3,6 +3,7 @@
 #include "training/adapters/interfaces/IModel.hpp"
 #include "training/adapters/interfaces/IOptimizer.hpp"
 #include "training/entities/domain-objects/ModelGraphFingerprint.hpp"
+#include "training/entities/domain-objects/OptimizerTypeName.hpp"
 #include "training/infrastructure/torchModel/ModelGraphArchive.hpp"
 #include "training/infrastructure/torchModel/TorchCheckpointArchive.hpp"
 
@@ -24,6 +25,10 @@ void writeCheckpointArchive(torch::serialize::OutputArchive &archive,
     TorchCheckpointWriter optimWriter(optimArchive);
     optimizer.writeTo(optimWriter);
     archive.write("optimizer", optimArchive);
+
+    // Optimizer の種別。状態の中身(Adam の exp_avg / SGD の momentum_buffer など)は
+    // 種別ごとに全く違うため、復元時に取り違えを検出できるよう名前を残す。
+    archive.write("optimizer_type", c10::IValue(optimizerTypeName(optimizer.type())));
 
     archive.write("epoch", torch::tensor(static_cast<int64_t>(meta.epoch)));
     // torch::tensor(double) は float32 になり精度が落ちるため kFloat64 を明示する。
@@ -57,6 +62,25 @@ CheckpointMeta readCheckpointArchive(torch::serialize::InputArchive &archive,
     else
     {
         std::cerr << "[warn] checkpoint に fingerprint がありません（旧形式）。構造チェックをスキップします\n";
+    }
+
+    // Optimizer 種別の照合。Adam の状態を SGD に読ませるといった取り違えを、
+    // libtorch の Optimizer::load に渡す前に弾く。
+    c10::IValue optimizerTypeIValue;
+    if (archive.try_read("optimizer_type", optimizerTypeIValue))
+    {
+        const std::string stored = optimizerTypeIValue.toStringRef();
+        const std::string current = optimizerTypeName(optimizer.type());
+        if (stored != current)
+        {
+            throw std::runtime_error(
+                "readCheckpointArchive: optimizer type mismatch. (checkpoint=" +
+                stored + ", current=" + current + ")");
+        }
+    }
+    else
+    {
+        std::cerr << "[warn] checkpoint に optimizer 種別がありません（旧形式）。種別チェックをスキップします\n";
     }
 
     torch::serialize::InputArchive modelArchive;

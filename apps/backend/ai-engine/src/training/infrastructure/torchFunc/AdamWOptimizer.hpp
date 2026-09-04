@@ -31,6 +31,8 @@ public:
     // このクラスを生成・破棄する TU すべてに <torch/torch.h> が必要になってしまう。
     ~AdamWOptimizer() override;
 
+    OptimizerType type() const override { return OptimizerType::AdamW; }
+
     void resetGradients() override;
     void updateParmeters() override;
     void writeTo(ICheckpointWriter &archive) const override;

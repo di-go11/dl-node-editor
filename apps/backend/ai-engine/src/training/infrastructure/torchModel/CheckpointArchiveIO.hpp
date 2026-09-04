@@ -12,6 +12,7 @@ class IOptimizer;
 //
 //   model                    : モデル重み(IModel::writeTo / readFrom)
 //   optimizer                : Optimizer 内部状態(IOptimizer::writeTo / readFrom)
+//   optimizer_type           : string(Adam / AdamW / SGD。取り違え検出用)
 //   epoch                    : int64
 //   best_metric              : float64
 //   model_graph_fingerprint  : string(構造の照合用ハッシュ)
@@ -26,8 +27,10 @@ void writeCheckpointArchive(torch::serialize::OutputArchive &archive,
                             const ModelGraph &graph, const CheckpointMeta &meta);
 
 // model / optimizer / meta を復元する。
-// expectedGraph の fingerprint と archive のそれが食い違えば std::runtime_error。
-// fingerprint キーを持たない旧形式の checkpoint は警告のみでスキップする。
+// 復元前に 2 つの照合を行い、どちらかが食い違えば std::runtime_error:
+//   - expectedGraph の fingerprint と archive のそれ(モデル構造の取り違え)
+//   - optimizer.type() と archive の optimizer_type(Optimizer の取り違え)
+// 該当キーを持たない旧形式の checkpoint は、それぞれ警告のみでスキップする。
 CheckpointMeta readCheckpointArchive(torch::serialize::InputArchive &archive,
                                      IModel &model, IOptimizer &optimizer,
                                      const ModelGraph &expectedGraph);
