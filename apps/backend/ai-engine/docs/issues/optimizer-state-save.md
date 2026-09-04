@@ -56,10 +56,21 @@
         書き、`loadFrom` で現モデルの graph と照合。不一致は `runtime_error`、
         fingerprint キーの無い旧 .pt は警告のみ（後方互換）。
         テスト: `checkpoint_roundtrip_test`（不一致で例外 / 旧形式は読める）
-  - [ ] 構造復元（ModelGraph のシリアライズと再構築）と重みロードの結合 → 別途
-        （現状は呼び出し側が同一構造のモデルを構築する前提。構造が違えば上記
-        フィンガープリント照合で弾かれる。checkpoint 単体からのモデル再構築は
-        `IModelFactory` 導入とセットで training-resume.md 側で扱う）
+  - [x] 構造復元（ModelGraph のシリアライズと再構築）と重みロードの結合
+        → `ModelGraphArchive` で `ModelGraph` を checkpoint の `model_graph`
+        セクションに保存し、`CheckpointModelLoader` が
+        「構造を読む → `IModelFactory` でモデル構築 → `IOptimizerFactory` で
+        optimizer 構築 → 重み/状態を注入」を一気通貫で行う。
+        呼び出し側は `.pt` のパスと `OptimizerConfig` だけを渡せばよい。
+        テスト: `tests/checkpoint_rebuild_test.cpp`
+        詳細: `docs/checkpoint-rebuild.md`
+
+### 残った穴（別 issue へ）
+- optimizer 種別を checkpoint に記録していないため、Adam で保存した `.pt` を
+  SGD として読んでも検出できない
+- `AppConfig` が `OptimizerConfig` を基底の値で持つためスライシングが起き、
+  `beta1` / `momentum` などの派生フィールドが factory まで届かない
+- 学習再開（開始 epoch / tracker の復元）そのものは training-resume.md の担当
 
 ## 依存 / 順序
 `IModelStore` の重み保存機能（ModelSave ブランチ）をベースに進める。

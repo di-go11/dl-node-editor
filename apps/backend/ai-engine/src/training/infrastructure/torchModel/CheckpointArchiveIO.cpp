@@ -1,0 +1,92 @@
+#include "training/infrastructure/torchModel/CheckpointArchiveIO.hpp"
+
+#include "training/adapters/interfaces/IModel.hpp"
+#include "training/adapters/interfaces/IOptimizer.hpp"
+#include "training/entities/domain-objects/ModelGraphFingerprint.hpp"
+#include "training/infrastructure/torchModel/ModelGraphArchive.hpp"
+#include "training/infrastructure/torchModel/TorchCheckpointArchive.hpp"
+
+#include <torch/torch.h>
+
+#include <iostream>
+#include <stdexcept>
+
+void writeCheckpointArchive(torch::serialize::OutputArchive &archive,
+                            const IModel &model, const IOptimizer &optimizer,
+                            const ModelGraph &graph, const CheckpointMeta &meta)
+{
+    torch::serialize::OutputArchive modelArchive;
+    TorchCheckpointWriter modelWriter(modelArchive);
+    model.writeTo(modelWriter);
+    archive.write("model", modelArchive);
+
+    torch::serialize::OutputArchive optimArchive;
+    TorchCheckpointWriter optimWriter(optimArchive);
+    optimizer.writeTo(optimWriter);
+    archive.write("optimizer", optimArchive);
+
+    archive.write("epoch", torch::tensor(static_cast<int64_t>(meta.epoch)));
+    // torch::tensor(double) は float32 になり精度が落ちるため kFloat64 を明示する。
+    archive.write("best_metric", torch::tensor(meta.bestMetric, torch::kFloat64));
+
+    archive.write("model_graph_fingerprint", c10::IValue(modelGraphFingerprint(graph)));
+
+    // モデル構造そのもの。checkpoint 単体からのモデル再構築で読む。
+    torch::serialize::OutputArchive graphArchive;
+    writeModelGraph(graphArchive, graph);
+    archive.write("model_graph", graphArchive);
+}
+
+CheckpointMeta readCheckpointArchive(torch::serialize::InputArchive &archive,
+                                     IModel &model, IOptimizer &optimizer,
+                                     const ModelGraph &expectedGraph)
+{
+    // モデル構造の照合。壊れた重みを読み込む前に弾く。
+    c10::IValue fingerprintIValue;
+    if (archive.try_read("model_graph_fingerprint", fingerprintIValue))
+    {
+        const std::string stored = fingerprintIValue.toStringRef();
+        const std::string current = modelGraphFingerprint(expectedGraph);
+        if (stored != current)
+        {
+            throw std::runtime_error(
+                "readCheckpointArchive: model graph fingerprint mismatch. (checkpoint=" +
+                stored + ", current=" + current + ")");
+        }
+    }
+    else
+    {
+        std::cerr << "[warn] checkpoint に fingerprint がありません（旧形式）。構造チェックをスキップします\n";
+    }
+
+    torch::serialize::InputArchive modelArchive;
+    archive.read("model", modelArchive);
+    TorchCheckpointReader modelReader(modelArchive);
+    model.readFrom(modelReader);
+
+    torch::serialize::InputArchive optimArchive;
+    archive.read("optimizer", optimArchive);
+    TorchCheckpointReader optimReader(optimArchive);
+    optimizer.readFrom(optimReader);
+
+    at::Tensor epochTensor;
+    archive.read("epoch", epochTensor);
+    at::Tensor bestMetricTensor;
+    archive.read("best_metric", bestMetricTensor);
+
+    return CheckpointMeta{
+        static_cast<unsigned int>(epochTensor.item<int64_t>()),
+        bestMetricTensor.item<double>()};
+}
+
+ModelGraph readModelGraphFromCheckpoint(torch::serialize::InputArchive &archive)
+{
+    torch::serialize::InputArchive graphArchive;
+    if (!archive.try_read("model_graph", graphArchive))
+    {
+        throw std::runtime_error(
+            "readModelGraphFromCheckpoint: この checkpoint はモデル構造(model_graph)を"
+            "含んでいません。構造を書き出すようになる前の .pt からは再構築できません。");
+    }
+    return readModelGraph(graphArchive);
+}

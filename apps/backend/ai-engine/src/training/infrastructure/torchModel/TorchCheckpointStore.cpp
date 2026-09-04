@@ -1,12 +1,9 @@
 #include "training/infrastructure/torchModel/TorchCheckpointStore.hpp"
 #include "training/adapters/interfaces/IModel.hpp"
 #include "training/adapters/interfaces/IOptimizer.hpp"
-#include "training/infrastructure/torchModel/TorchCheckpointArchive.hpp"
-#include "training/infrastructure/torchModel/ModelGraphArchive.hpp"
-#include "training/entities/domain-objects/ModelGraphFingerprint.hpp"
+#include "training/infrastructure/torchModel/CheckpointArchiveIO.hpp"
 #include <torch/torch.h>
 #include <filesystem>
-#include <iostream>
 #include <stdexcept>
 #include <utility>
 
@@ -39,29 +36,9 @@ std::string TorchCheckpointStore::checkpointPath(CheckpointKind kind) const
 void TorchCheckpointStore::writeCheckpoint(const std::string &path, const CheckpointMeta &meta)
 {
     std::filesystem::create_directories(std::filesystem::path(path).parent_path());
+
     torch::serialize::OutputArchive archive;
-
-    torch::serialize::OutputArchive modelArchive;
-    TorchCheckpointWriter modelWriter(modelArchive);
-    _model->writeTo(modelWriter);
-    archive.write("model", modelArchive);
-
-    torch::serialize::OutputArchive optimArchive;
-    TorchCheckpointWriter optimWriter(optimArchive);
-    _optimizer->writeTo(optimWriter);
-    archive.write("optimizer", optimArchive);
-
-    archive.write("epoch", torch::tensor(static_cast<int64_t>(meta.epoch)));
-    // torch::tensor(double) は float32 になり精度が落ちるため kFloat64 を明示する。
-    archive.write("best_metric", torch::tensor(meta.bestMetric, torch::kFloat64));
-
-    archive.write("model_graph_fingerprint", c10::IValue(modelGraphFingerprint(_modelGraph)));
-
-    // モデル構造そのもの。checkpoint 単体からのモデル再構築(Phase 2)で読む。
-    torch::serialize::OutputArchive graphArchive;
-    writeModelGraph(graphArchive, _modelGraph);
-    archive.write("model_graph", graphArchive);
-
+    writeCheckpointArchive(archive, *_model, *_optimizer, _modelGraph, meta);
     archive.save_to(path);
 }
 
@@ -88,39 +65,7 @@ CheckpointMeta TorchCheckpointStore::loadFrom(const std::string &checkpointPath)
     torch::serialize::InputArchive archive;
     archive.load_from(checkpointPath);
 
-    // モデル構造の照合
-
-    c10::IValue fingerprintIValue;
-    if (archive.try_read("model_graph_fingerprint", fingerprintIValue))
-    {
-        const std::string stored = fingerprintIValue.toStringRef();
-        const std::string current = modelGraphFingerprint(_modelGraph);
-        if (stored != current)
-        {
-            throw std::runtime_error("TorchCheckpointStore::loadFrom: model graph fingerprint mismatch. (checkpoint=" + stored + ", current=" + current + ")");
-        }
-    }
-    else
-    {
-        std::cerr << "[warn] checkpoint に fingerprint がありません（旧形式）。構造チェックをスキップします\n";
-    }
-
-    torch::serialize::InputArchive modelArchive;
-    archive.read("model", modelArchive);
-    TorchCheckpointReader modelReader(modelArchive);
-    _model->readFrom(modelReader);
-
-    torch::serialize::InputArchive optimArchive;
-    archive.read("optimizer", optimArchive);
-    TorchCheckpointReader optimReader(optimArchive);
-    _optimizer->readFrom(optimReader);
-
-    at::Tensor epochTensor;
-    archive.read("epoch", epochTensor);
-    at::Tensor bestMetricTensor;
-    archive.read("best_metric", bestMetricTensor);
-
-    return CheckpointMeta{
-        static_cast<unsigned int>(epochTensor.item<int64_t>()),
-        bestMetricTensor.item<double>()};
+    // 注入済みの _model / _optimizer へ in-place 復元する(構造は変えない)。
+    // checkpoint から構造ごと作り直す経路は CheckpointModelLoader が担当。
+    return readCheckpointArchive(archive, *_model, *_optimizer, _modelGraph);
 }

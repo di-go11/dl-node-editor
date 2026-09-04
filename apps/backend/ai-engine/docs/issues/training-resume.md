@@ -110,6 +110,14 @@ cold start と resume を明示的に分ける。現状の規模なら `main.cpp
         正しいファイルを読む)、Adam 状態復元、異常系
   - この過程で **`best_metric` が float32 に丸められる不具合をテストが検出 → kFloat64 で修正**
 
+### モデル再構築の土台(完了 → optimizer-state-save.md / docs/checkpoint-rebuild.md)
+
+- [x] `ModelGraph` を checkpoint に保存(`ModelGraphArchive`)
+- [x] `IModelFactory` / `IOptimizerFactory` とその libtorch 実装
+- [x] `CheckpointModelLoader::load(path, optimizerConfig)` → `RestoredCheckpoint`
+      (model / optimizer / parameters / graph / meta)。resume 時に
+      「保存時と同じ `ModelGraph` を呼び出し側が組み直す」必要がなくなった
+
 ### resume 配線(未着手)
 
 - [ ] `BestMetricTracker` に「初期ベスト値で構築」する経路(コンストラクタ or setter)

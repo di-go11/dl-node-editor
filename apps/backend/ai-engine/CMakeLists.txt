@@ -128,3 +128,17 @@ target_link_options(model_graph_archive_test PRIVATE "-Wl,--allow-shlib-undefine
 set_property(TARGET model_graph_archive_test PROPERTY CXX_STANDARD 17)
 target_compile_definitions(model_graph_archive_test PRIVATE
 	MODEL_GRAPH_ARCHIVE_TEST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/model_graph_archive_tmp")
+
+# 12. CheckpointModelLoader の「.pt 単体からのモデル再構築」テスト
+add_executable(checkpoint_rebuild_test tests/checkpoint_rebuild_test.cpp)
+target_include_directories(checkpoint_rebuild_test PRIVATE
+	${CMAKE_CURRENT_SOURCE_DIR}/src
+	${CMAKE_CURRENT_SOURCE_DIR}
+	${TORCH_INCLUDE_DIRS}
+	${OpenCV_INCLUDE_DIRS}
+)
+target_link_libraries(checkpoint_rebuild_test PRIVATE ai_engine_lib "${TORCH_LIBRARIES}" ${OpenCV_LIBS})
+target_link_options(checkpoint_rebuild_test PRIVATE "-Wl,--allow-shlib-undefined")
+set_property(TARGET checkpoint_rebuild_test PROPERTY CXX_STANDARD 17)
+target_compile_definitions(checkpoint_rebuild_test PRIVATE
+	CHECKPOINT_REBUILD_TEST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/checkpoint_rebuild_tmp")

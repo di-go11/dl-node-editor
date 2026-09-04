@@ -10,9 +10,11 @@
 
 // infrastructure(具象クラス)
 #include "training/infrastructure/torchFunc/TorchLayerBuilder.hpp"
+#include "training/infrastructure/torchFunc/TorchOptimizerFactory.hpp"
 #include "training/infrastructure/torchModel/TorchModel.hpp"
+#include "training/infrastructure/torchModel/TorchModelFactory.hpp"
 #include "training/infrastructure/torchModel/TorchCheckpointStore.hpp"
-#include "training/infrastructure/torchFunc/AdamOptimizer.hpp"
+#include "training/infrastructure/torchModel/CheckpointModelLoader.hpp"
 #include "training/infrastructure/torchFunc/CrossEntropy.hpp"
 #include "training/infrastructure/readConfig/ConfigReader.hpp"
 
@@ -23,6 +25,10 @@
 
 #include <filesystem>
 #include <iostream>
+
+// adapters(インタフェース)
+#include "training/adapters/interfaces/IModel.hpp"
+#include "training/adapters/interfaces/IOptimizer.hpp"
 
 // adapters/application(具象クラス)
 #include "training/adapters/impl/TorchModelTrainer.hpp"
@@ -65,13 +71,24 @@ int main(void)
     const int numClasses = static_cast<int>(labelMap.entryCount());
     std::cout << "numClasses = " << numClasses << std::endl;
 
+    // モデル / Optimizer の生成口。checkpoint からの再構築(CheckpointModelLoader)も
+    // 同じ factory を使うため、cold start 側もここを通しておく。
+    auto modelFactory = std::make_shared<TorchModelFactory>();
+    auto optimizerFactory = std::make_shared<TorchOptimizerFactory>();
+
+    // cold start: 構造を組み、そこからモデル・Optimizer を作る。
+    //
+    // 学習再開(resume)を配線するときは、ここを
+    //   CheckpointModelLoader loader(modelFactory, optimizerFactory);
+    //   RestoredCheckpoint r = loader.load(<.pt のパス>, appConfig.optimizer);
+    // に差し替えれば、graph を組み直さずに model / optimizer / meta が得られる。
+    // 「どの .pt から再開するか」の判定と開始 epoch の受け渡しは
+    // docs/issues/training-resume.md の担当。
     ModelGraph graph = buildSampleModelGraph(numClasses);
 
-    TorchLayerBuilder builder;
-    auto model = std::make_shared<TorchModel>(graph, builder);
-
+    std::shared_ptr<IModel> model = modelFactory->create(graph);
     std::vector<at::Tensor> params = model->parameters();
-    auto optimizer = std::make_shared<AdamOptimizer>(params, /*learning rate*/ 0.001);
+    std::shared_ptr<IOptimizer> optimizer = optimizerFactory->create(params, appConfig.optimizer);
 
     auto loss = std::make_shared<CrossEntropy>();
 
