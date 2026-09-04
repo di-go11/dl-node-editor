@@ -118,15 +118,55 @@ cold start と resume を明示的に分ける。現状の規模なら `main.cpp
       (model / optimizer / parameters / graph / meta)。resume 時に
       「保存時と同じ `ModelGraph` を呼び出し側が組み直す」必要がなくなった
 
-### resume 配線(未着手)
+### resume 配線(完了)
 
-- [ ] `BestMetricTracker` に「初期ベスト値で構築」する経路(コンストラクタ or setter)
-- [ ] `TrainingResumeState`(application/impl)を定義
-- [ ] `TrainModelUsecase`: `TrainingResumeState` を受け取り、ループ開始 epoch と tracker を初期化、毎エポック `saveLast`
-- [ ] `main.cpp`: resume 判定 → `loadLast` / `loadFrom` → `execute` へ配線
-- [ ] `AppConfig` / `.config` 読み込みに `resumeFrom` / `saveLastEvery` を追加
-- [ ] resume シナリオのテスト(途中まで学習 → `saveLast` → 別インスタンスで再開 → 続きから同じ軌跡)
-- [ ] 再開後に tracker が旧ベストを保持し、悪い指標で `best.pt` を上書きしないこと
+- [x] `BestMetricTracker` に「初期ベスト値で構築」する経路
+      → `BestMetricTracker(MetricMode, double initialBest)` を追加
+- [x] `TrainingResumeState`(application/impl)を定義
+      → `startEpoch` / `initialBest` / `hasInitialBest`
+- [x] `TrainModelUsecase`: `TrainingResumeState` を受け取り、ループ開始 epoch と
+      tracker を初期化、毎エポック `saveLast`
+      → `execute(datasets, resume = {})`。`saveLastEvery` で頻度を制御し、
+        最終エポックは設定に関わらず必ず保存。
+        `startEpoch >= epochSize` のときは警告して 0 エポックで終了
+- [x] `main.cpp`: resume 判定 → `loadFrom` / 自動 `_last.pt` 検出 → `execute` へ配線
+      → 再開は `CheckpointModelLoader` を使うため、保存時と同じ `ModelGraph` を
+        手組みする必要がない。復元した構造が現在の numClasses と食い違う場合は警告
+- [x] `AppConfig` / `.config` 読み込みに `resumeFrom` / `saveLastEvery` を追加
+      (併せて未対応だった `model_name` にも対応。チェックポイント名を決めるため)
+- [x] 再開後に tracker が旧ベストを保持し、悪い指標で `best.pt` を上書きしないこと
+      → `best_checkpoint_test`(引き継ぐ場合 0 回 / 引き継がない場合 1 回の対比で検証)
+- [x] resume シナリオのテスト
+      → 分割してカバー:
+        - ループ側(開始 epoch・tracker 引き継ぎ・`saveLast` 頻度)は
+          `best_checkpoint_test` で `FakeCheckpointStore` を使って検証
+        - 復元の連続性(実 `TorchModel` + `AdamOptimizer` で、復元後に同一ステップを
+          踏むと重みが一致)は `checkpoint_rebuild_test` / `checkpoint_roundtrip_test`
+      - [ ] 実ファイル・実モデルで「学習 → 中断 → 再開」を通す E2E テストは未作成
+            (実データセットが要るため。上記2つの組み合わせで実質カバーしている)
+
+## 実装後の挙動まとめ
+
+### 再開元の決定（`main.cpp`）
+
+1. `.config` の `resume_from` が指定 → その `.pt` から再開
+2. 未指定でも `<output_dir>/<model_name>_last.pt` が存在 → 自動で再開
+3. どちらもなし → cold start
+
+### `.config` のノブ
+
+```
+# model_name = Segnet          # チェックポイント名。未指定なら "model"
+# resume_from = .../model_last.pt   # 空なら _last.pt を自動検出
+save_last_every = 0            # 0 = 毎エポック。最終エポックは常に保存
+```
+
+### 保存タイミング
+
+| | タイミング | 用途 |
+|---|---|---|
+| `<name>_best.pt` | validation mIoU がベスト更新したエポック | 推論・デプロイ |
+| `<name>_last.pt` | `save_last_every` ごと + 最終エポック | 中断・再開 |
 
 ## 検討事項(未決)
 

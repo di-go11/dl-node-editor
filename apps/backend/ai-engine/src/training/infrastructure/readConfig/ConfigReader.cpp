@@ -147,6 +147,43 @@ AppConfig ConfigReader::readAll(const std::string &filePath)
                 }
                 appConfig.outputDir = value;
             }
+            else if (key == "model_name")
+            {
+                if (value.empty())
+                {
+                    throw std::runtime_error("model_name value is empty");
+                }
+                // チェックポイントのファイル名(<modelName>_best.pt / _last.pt)に使われる。
+                appConfig.modelName = value;
+            }
+            else if (key == "resume_from")
+            {
+                // 空を許す(= 自動判定)。値があればその .pt から再開する。
+                appConfig.resumeFrom = value;
+            }
+            else if (key == "save_last_every")
+            {
+                if (value.empty())
+                {
+                    throw std::runtime_error("save_last_every value is empty");
+                }
+
+                int parsedValue;
+                try
+                {
+                    parsedValue = std::stoi(value);
+                }
+                catch (...)
+                {
+                    throw std::runtime_error("save_last_every value is not a number: " + value);
+                }
+
+                if (parsedValue < 0)
+                {
+                    throw std::runtime_error("save_last_every value must not be negative: " + value);
+                }
+                appConfig.saveLastEvery = static_cast<unsigned int>(parsedValue);
+            }
             else if (key == "epoch_size")
             {
                 if (value.empty())
