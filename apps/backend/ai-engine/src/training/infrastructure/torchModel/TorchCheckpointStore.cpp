@@ -2,6 +2,7 @@
 #include "training/adapters/interfaces/IModel.hpp"
 #include "training/adapters/interfaces/IOptimizer.hpp"
 #include "training/infrastructure/torchModel/TorchCheckpointArchive.hpp"
+#include "training/infrastructure/torchModel/ModelGraphArchive.hpp"
 #include "training/entities/domain-objects/ModelGraphFingerprint.hpp"
 #include <torch/torch.h>
 #include <filesystem>
@@ -55,6 +56,11 @@ void TorchCheckpointStore::writeCheckpoint(const std::string &path, const Checkp
     archive.write("best_metric", torch::tensor(meta.bestMetric, torch::kFloat64));
 
     archive.write("model_graph_fingerprint", c10::IValue(modelGraphFingerprint(_modelGraph)));
+
+    // モデル構造そのもの。checkpoint 単体からのモデル再構築(Phase 2)で読む。
+    torch::serialize::OutputArchive graphArchive;
+    writeModelGraph(graphArchive, _modelGraph);
+    archive.write("model_graph", graphArchive);
 
     archive.save_to(path);
 }

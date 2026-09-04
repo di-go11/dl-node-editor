@@ -114,3 +114,17 @@ set_property(TARGET checkpoint_roundtrip_test PROPERTY CXX_STANDARD 17)
 # テストが生成する .pt は tests/ 配下の一時ディレクトリに閉じ込める(実行後に削除)
 target_compile_definitions(checkpoint_roundtrip_test PRIVATE
 	CHECKPOINT_TEST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/checkpoint_roundtrip_tmp")
+
+# 11. ModelGraphArchive(writeModelGraph / readModelGraph)のラウンドトリップテスト
+add_executable(model_graph_archive_test tests/model_graph_archive_test.cpp)
+target_include_directories(model_graph_archive_test PRIVATE
+	${CMAKE_CURRENT_SOURCE_DIR}/src
+	${CMAKE_CURRENT_SOURCE_DIR}
+	${TORCH_INCLUDE_DIRS}
+	${OpenCV_INCLUDE_DIRS}
+)
+target_link_libraries(model_graph_archive_test PRIVATE ai_engine_lib "${TORCH_LIBRARIES}" ${OpenCV_LIBS})
+target_link_options(model_graph_archive_test PRIVATE "-Wl,--allow-shlib-undefined")
+set_property(TARGET model_graph_archive_test PROPERTY CXX_STANDARD 17)
+target_compile_definitions(model_graph_archive_test PRIVATE
+	MODEL_GRAPH_ARCHIVE_TEST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/model_graph_archive_tmp")
