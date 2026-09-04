@@ -8,6 +8,10 @@ AdamWOptimizer::AdamWOptimizer(std::vector<at::Tensor> &parameters, double learn
     _optim = std::make_unique<torch::optim::AdamW>(parameters, torch::optim::AdamWOptions(learningRate).betas(std::make_pair(beta1, beta2)).weight_decay(weight_decay));
 }
 
+// ここは <torch/torch.h> を include 済みで torch::optim::AdamW が完全型のため、
+// unique_ptr の破棄コードをこの TU に閉じ込められる。
+AdamWOptimizer::~AdamWOptimizer() = default;
+
 void AdamWOptimizer::resetGradients()
 {
     _optim->zero_grad();

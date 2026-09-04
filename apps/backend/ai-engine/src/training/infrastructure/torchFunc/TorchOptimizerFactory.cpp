@@ -4,10 +4,8 @@
 #include "training/infrastructure/torchFunc/AdamWOptimizer.hpp"
 #include "training/infrastructure/torchFunc/SGDOptimizer.hpp"
 
-// 各 Optimizer は std::unique_ptr<torch::optim::*> を前方宣言のまま保持しており、
-// デストラクタがヘッダ側で暗黙生成される。生成・破棄するこの TU では
-// torch::optim::* の完全な定義が要るため torch 本体を include する。
-#include <torch/torch.h>
+// 各 Optimizer はデストラクタを .cpp 側に閉じ込めているため、
+// ここで <torch/torch.h> を include する必要はない(libtorch を知らずに生成できる)。
 
 #include <stdexcept>
 #include <string>

@@ -150,7 +150,33 @@ fingerprint のキー名と読み順が Store と Loader の 2 か所に散る�
 API が `const ModelGraph*` になって呼び出し側で分岐が要るため、
 常に非 null の参照を取る形にした。余分なハッシュ計算 1 回は無視できる。
 
-### 5.4 `IModel::parameters()` を純粋仮想にした影響
+### 5.4 Optimizer のデストラクタを `.cpp` へ移した
+
+factory を作った時点で `TorchOptimizerFactory.cpp` が
+`invalid application of 'sizeof' to incomplete type 'torch::optim::Adam'`
+でコンパイルできなくなった。
+
+原因は `AdamOptimizer` 等が
+
+```cpp
+std::unique_ptr<torch::optim::Adam> _optim;  // torch::optim::Adam は前方宣言のみ
+// デストラクタの宣言がない → コンパイラがヘッダ内で暗黙生成
+//   → その場で ~unique_ptr<Adam> = sizeof(Adam) が要求される
+```
+
+という状態だったこと。これまでは `main.cpp` が `<torch/torch.h>` を
+include していたためたまたま通っていた。
+
+→ 3 つの Optimizer すべてでヘッダに `~XxxOptimizer() override;` を宣言し、
+`.cpp` 側（`<torch/torch.h>` を include 済みで完全型が見える場所）で
+`= default` を定義した。これにより **生成側の TU は libtorch を知らなくてよくなった**。
+
+なお `shared_ptr` はデリータを型消去するため、`shared_ptr<IOptimizer>` を
+受け取る adapters / application 層はもともと影響を受けない
+（破棄コードは `make_shared` した TU に埋め込まれる）。
+問題になるのは「具象型を生成・破棄する TU」だけ。
+
+### 5.5 `IModel::parameters()` を純粋仮想にした影響
 
 `IModel` の実装は `TorchModel` と、テストの `FakeModel`(`model_evaluator_test.cpp`) の 2 つ。
 両方に実装を追加済み。今後 `IModel` を実装するクラスは `parameters()` が必須になる。
@@ -195,7 +221,6 @@ API が `const ModelGraph*` になって呼び出し側で分岐が要るため�
 | **Optimizer 種別が checkpoint に無い** | Adam で保存した `.pt` を SGD として `load()` しても検出できない。libtorch の `Optimizer::load` が状態キーの不一致でどう振る舞うかも未確認。`optimizer_type` を archive に書いて照合するのが対策 |
 | **`OptimizerConfig` の派生フィールドが届かない** | `AppConfig` は `OptimizerConfig` を基底の値で持つため、`AdamOptimizerConfig::beta1` などはスライシングで消える。factory は `type` / `learningRate` / `weightDecay` のみ使い、残りはコンストラクタ既定値。`std::variant` 化か多相化が要検討 |
 | **`format_version` の移行パス** | 現在は不一致なら例外。旧版を読む必要が出たら version 別の読み分けが要る |
-| **Optimizer のデストラクタがヘッダ暗黙生成** | `AdamOptimizer` 等は `std::unique_ptr<torch::optim::Adam>` を前方宣言のまま持つが、デストラクタを宣言していないためヘッダで暗黙生成される。結果、生成・破棄する TU すべてが `<torch/torch.h>` を include しないと `incomplete type` でコンパイルエラーになる（`TorchOptimizerFactory.cpp` で実際に踏んだ）。ヘッダで `~AdamOptimizer();` を宣言し `.cpp` で定義すれば解消する |
 | **fingerprint とシリアライザのフィールド列挙が重複** | `ModelGraphFingerprint`（entities、libtorch 非依存）と `ModelGraphArchive`（infrastructure）が同じフィールドを別々に列挙している。層を追加すると両方の更新が必要（`static_assert` で検出はされる） |
 | **resume 本体は未実装** | `TrainModelUsecase` は依然 epoch 0 から回る。開始 epoch の受け渡しと `BestMetricTracker` の初期化は `docs/issues/training-resume.md` の担当 |
 
