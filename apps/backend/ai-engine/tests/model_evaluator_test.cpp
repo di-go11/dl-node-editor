@@ -155,6 +155,39 @@ int main()
         checkNear(metrics.meanIoU, 0.25, "all-zero: meanIoU == 0.25");
     }
 
+    // ---------- ignore_index(255): Letterbox 余白の扱い ----------
+    // 実データでは Letterbox リサイズがマスク余白を 255 で埋める。この値のピクセルが
+    // 混同行列のインデックス(target*C+pred)をはみ出させ、以前は評価が
+    // "shape '[2, 2]' is invalid for input of size N" で落ちていた。
+    {
+        // 2x2 のうち左上だけ 255(無視)。残り3画素は {1,1,0}。
+        const std::vector<uint8_t> maskedTarget = {255, 1, 1, 0};
+        FakeModel model(makePrediction({0, 1, 1, 0})); // 有効3画素は全て正解、無視画素の予測は 0
+        FakeLoss loss;
+        SingleBatchDataset dataset(makeBatch(maskedTarget));
+        TorchModelEvaluator evaluator(model, loss, /*numClasses=*/2, /*ignoreIndex=*/255);
+
+        EpochMetrics metrics = evaluator.evaluate(dataset);
+
+        checkNear(metrics.pixelAccuracy, 1.0, "ignore: 無視画素を除けば accuracy == 1.0(落ちない)");
+        checkNear(metrics.meanIoU, 1.0, "ignore: 無視画素を除けば mIoU == 1.0");
+        checkNear(metrics.loss, 0.5, "ignore: loss は FakeLoss の 0.5");
+    }
+
+    // ---------- 全画素が ignore_index: 0 除算せず 0 を返す ----------
+    {
+        FakeModel model(makePrediction({0, 0, 0, 0}));
+        FakeLoss loss;
+        SingleBatchDataset dataset(makeBatch({255, 255, 255, 255}));
+        TorchModelEvaluator evaluator(model, loss, /*numClasses=*/2, /*ignoreIndex=*/255);
+
+        EpochMetrics metrics = evaluator.evaluate(dataset);
+
+        checkNear(metrics.pixelAccuracy, 0.0, "all-ignore: pixelAccuracy == 0.0");
+        checkNear(metrics.loss, 0.0, "all-ignore: loss == 0.0");
+        checkNear(metrics.meanIoU, 0.0, "all-ignore: meanIoU == 0.0");
+    }
+
     if (failureCount == 0)
     {
         std::cout << "All model evaluator tests passed." << std::endl;

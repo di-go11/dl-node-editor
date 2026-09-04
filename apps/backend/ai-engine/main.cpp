@@ -141,8 +141,12 @@ int main(void)
 
     auto loss = std::make_shared<CrossEntropy>();
 
+    // マスクの Letterbox 余白を埋める値。損失(CrossEntropy)と評価(mIoU/accuracy)の
+    // 双方でこの値のピクセルを無視する。maskPreProcessor の ignoreIndex と一致させること。
+    constexpr int64_t maskIgnoreIndex = 255;
+
     auto trainer = std::make_shared<TorchModelTrainer>(model, loss, optimizer);
-    auto evaluator = std::make_shared<TorchModelEvaluator>(*model, *loss, numClasses);
+    auto evaluator = std::make_shared<TorchModelEvaluator>(*model, *loss, numClasses, maskIgnoreIndex);
     auto checkpointStore = std::make_shared<TorchCheckpointStore>(model, optimizer, appConfig.outputDir, appConfig.modelName, graph);
 
     TrainModelUsecase usecase(param, appConfig, trainer, evaluator, checkpointStore);
@@ -157,7 +161,7 @@ int main(void)
     ResizePreprocessorFactory preprocessorFactory(geometry);
 
     auto imagePreProcessor = preprocessorFactory.forImage();
-    auto maskPreProcessor = preprocessorFactory.forMask(/*ignoreIndex=*/255);
+    auto maskPreProcessor = preprocessorFactory.forMask(static_cast<uint8_t>(maskIgnoreIndex));
 
     //
     DatasetSplit trainsplit = DatasetSplit::Train;

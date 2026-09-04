@@ -142,3 +142,18 @@ target_link_options(checkpoint_rebuild_test PRIVATE "-Wl,--allow-shlib-undefined
 set_property(TARGET checkpoint_rebuild_test PROPERTY CXX_STANDARD 17)
 target_compile_definitions(checkpoint_rebuild_test PRIVATE
 	CHECKPOINT_REBUILD_TEST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/checkpoint_rebuild_tmp")
+
+# 13. 実データ(VOC)での学習パイプライン スモークテスト
+add_executable(training_smoke_test tests/training_smoke_test.cpp)
+target_include_directories(training_smoke_test PRIVATE
+	${CMAKE_CURRENT_SOURCE_DIR}/src
+	${CMAKE_CURRENT_SOURCE_DIR}
+	${TORCH_INCLUDE_DIRS}
+	${OpenCV_INCLUDE_DIRS}
+)
+target_link_libraries(training_smoke_test PRIVATE ai_engine_lib "${TORCH_LIBRARIES}" ${OpenCV_LIBS})
+target_link_options(training_smoke_test PRIVATE "-Wl,--allow-shlib-undefined")
+set_property(TARGET training_smoke_test PROPERTY CXX_STANDARD 17)
+target_compile_definitions(training_smoke_test PRIVATE
+	SMOKE_SRC_DATASET="${CMAKE_CURRENT_SOURCE_DIR}/dataset/train"
+	SMOKE_TMP_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/training_smoke_tmp")
