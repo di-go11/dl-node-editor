@@ -2,6 +2,7 @@
 
 #include "OptimizerConfig.hpp"
 #include "ActivationConfig.hpp"
+#include "Device.hpp"
 #include <cstddef>
 #include <string>
 
@@ -10,7 +11,7 @@ struct AppConfig
     std::string modelName;
     OptimizerConfig optimizer;
     ActivationConfig activation;
-    std::string datasetPath; // 学習用画像・アノテーション画像が置かれているデータセットのルートディレクトリ
+    std::string datasetPath;          // 学習用画像・アノテーション画像が置かれているデータセットのルートディレクトリ
     std::string outputDir = "models"; // チェックポイント(ベストモデルの重み)の保存先ディレクトリ
 
     // 学習再開(resume)の設定。
@@ -25,4 +26,7 @@ struct AppConfig
     unsigned int batchSize = 1;
     size_t input_width = 256;
     size_t input_height = 256;
+
+    // 学習に使用するデバイスの設定 (デフォルトは CUDA 0)
+    Device device;
 };
