@@ -28,5 +28,5 @@ struct AppConfig
     size_t input_height = 256;
 
     // 学習に使用するデバイスの設定 (デフォルトは CUDA 0)
-    Device device;
+    Device device = Device{Devicetype::Cuda, 0};
 };

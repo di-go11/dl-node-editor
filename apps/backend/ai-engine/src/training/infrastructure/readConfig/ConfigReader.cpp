@@ -408,6 +408,12 @@ AppConfig ConfigReader::readAll(const std::string &filePath)
                 }
                 appConfig.input_height = static_cast<size_t>(parsedValue);
             }
+            else if (key == "device")
+            {
+                // "cpu" / "cuda" / "cuda:N" のパースは Device entity の
+                // parseDevice に一任する(不正値は例外を投げる)。
+                appConfig.device = parseDevice(value);
+            }
             else
             {
                 throw std::runtime_error("Unknown config key: " + key);

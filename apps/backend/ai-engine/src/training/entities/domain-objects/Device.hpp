@@ -2,6 +2,7 @@
 
 #include <string>
 #include <charconv>
+#include <stdexcept>
 
 enum class Devicetype
 {
@@ -11,11 +12,11 @@ enum class Devicetype
 
 struct Device
 {
-    Devicetype kind = Devicetype::Cuda;
+    Devicetype type = Devicetype::Cuda;
     int index = 0; // Cudaの時のみ利用
 };
 
-Device parseDevice(const std::string &deviceStr)
+inline Device parseDevice(const std::string &deviceStr)
 {
     if (deviceStr == "cuda")
     {
@@ -45,5 +46,21 @@ Device parseDevice(const std::string &deviceStr)
     else
     {
         throw std::runtime_error("Unknown device type: " + deviceStr);
+    }
+}
+
+inline std::string deviceToString(const Device &device)
+{
+    if (device.type == Devicetype::Cuda)
+    {
+        return "cuda:" + std::to_string(device.index);
+    }
+    else if (device.type == Devicetype::Cpu)
+    {
+        return "cpu";
+    }
+    else
+    {
+        throw std::runtime_error("Unknown device type");
     }
 }

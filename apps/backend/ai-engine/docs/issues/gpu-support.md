@@ -46,11 +46,11 @@ RPC + Rust ポリシーエンジン」と束ねていた。gRPC 層はまだ 1 �
 `entities/domain-objects/Device.hpp`（libtorch 非依存）:
 
 ```cpp
-enum class DeviceKind { Cpu, Cuda };
+enum class Devicetype { Cpu, Cuda };
 
 struct Device
 {
-    DeviceKind kind = DeviceKind::Cuda;
+    Devicetype type = Devicetype::Cuda;
     int index = 0; // Cuda のときのみ意味を持つ
 };
 ```
@@ -76,7 +76,7 @@ struct Device
 
 ### 4. 起動時チェック
 
-`main.cpp`（将来は合成層）で、`device.kind == Cuda && !torch::cuda::is_available()`
+`main.cpp`（将来は合成層）で、`device.type == Devicetype::Cuda && !torch::cuda::is_available()`
 なら `runtime_error`。メッセージに「libtorch は CUDA ビルドか」「ドライバは見えるか」
 のヒントを添える。
 
@@ -98,8 +98,8 @@ archive から読んだテンソルを**現行モデルの device に合わせ�
 
 ### Phase 1 のタスク
 
-- [ ] `Device` entity（enum + index、`parseDevice` / `deviceToString`）
-- [ ] `AppConfig` / `ConfigReader` に `device`
+- [x] `Device` entity（enum + index、`parseDevice` / `deviceToString`）
+- [x] `AppConfig` / `ConfigReader` に `device`（`parseDevice` に一任、`cuda:N` 対応）
 - [ ] `Device` → `torch::Device` 変換（infrastructure）
 - [ ] `IModelFactory` / `TorchModelFactory` / `TorchLayerBuilder` に device を通す
 - [ ] `TorchModelTrainer` / `TorchModelEvaluator` で入力・ターゲットを `.to(device)`
@@ -107,6 +107,74 @@ archive から読んだテンソルを**現行モデルの device に合わせ�
 - [ ] checkpoint の device 跨ぎロード（読んだテンソルを現行 device へ）
 - [ ] テスト（上記）
 - [ ] 実データ 266 枚で GPU 実行し、CPU 版と loss が概ね一致・高速化を確認
+
+進捗メモ:
+
+- **A（entity / config、済）**: `Device.hpp` に `parseDevice` / `deviceToString`
+  を `inline` で実装（`<stdexcept>` include、メンバ名は `type`）。`ConfigReader`
+  は独自パースと `device_index` キーを廃し `appConfig.device = parseDevice(value)`
+  に一本化。`.config` は `device = cuda:0`。`ai_engine_lib` / `ai_engine_app`
+  ビルド確認済み。
+- **B（配線、未着手）**: 下記の実装計画に分解。
+
+### Phase 1-B 実装計画（配線）
+
+方針: `torch::Device` 型は infrastructure に閉じ、上位層へは entities の
+`Device` で渡す。既存呼び出し元はデフォルト引数を使わず全て更新する
+（doc の「明示的な配線」方針）。テスト側の追従は C フェーズでまとめて行う。
+
+- **B-0. 変換ヘルパ**
+  - 新規 `infrastructure/torchFunc/TorchDevice.hpp`:
+    `inline torch::Device toTorchDevice(const Device&)`（Cuda→`{kCUDA, index}` /
+    Cpu→`kCPU`）。以降 infra 内だけで使用。
+- **B-1. モデル生成経路に device を通す**
+  - `ILayer` に `virtual void toDevice(const Device&) = 0;`（entities 依存のみ）
+  - `Torch{Conv2D,Pooling,BatchNorm,Linear,Activation}Layer` ×5 に実装
+    （`_module->to(toTorchDevice(d))`）
+  - `IModelFactory::create(const ModelGraph&, const Device&)` にシグネチャ変更
+  - `TorchModelFactory` / `TorchModel` ctor に device を渡し、層 build 後に
+    各層 `toDevice`。`TorchModel` は `_device` を保持
+- **B-2. 入力テンソルを device へ**
+  - `TorchModelTrainer` / `TorchModelEvaluator` の ctor に `Device` 追加。
+    `converter.convert(...)` 直後に `input` / `target` を `.to(device)`
+  - `BatchTensorConverter` は CPU テンソル生成のまま（`.to` は呼び出し側の責務）
+  - Evaluator の `confusionMatrix` は当面 CPU 集計のままで可
+- **B-3. Optimizer の順序**
+  - cold start は `create(graph, device)` → `parameters()` → optimizer 構築の
+    順を維持するだけ（パラメータが GPU 上なら Adam の state も GPU に確保される）
+- **B-4. checkpoint の device 跨ぎロード**
+  - `CheckpointModelLoader::load(path, optCfg, device)` に device 追加 →
+    `create(graph, device)` でモデルを device 上に構築
+  - `TorchModel::readFrom`: `copy_` は cross-device を吸収するが、
+    `loaded.to(current[i].device())` を明示して意図を残す
+  - Adam / AdamW / SGD の `readFrom` 後、optimizer state
+    （`exp_avg` / `exp_avg_sq` / `momentum_buffer`）を各 param の device へ移す
+    処理を追加（**ここが「同一 device 前提」で壊れる本体**）
+  - `TorchCheckpointStore::loadFrom` も同様（resume 経路が両方通るなら共通化）
+  - `rng_state_cpu` は CPU 生成器の状態なので変更不要
+- **B-5. 起動時 CUDA チェック（`main.cpp`）**
+  - config 読み込み直後に
+    `device.type == Devicetype::Cuda && !torch::cuda::is_available()` なら
+    `runtime_error`（libtorch が CUDA ビルドか / ドライバがコンテナから
+    見えるかのヒント付き）。CPU への暗黙フォールバックはしない
+- **B-6. `main.cpp` の配線**
+  - `modelFactory->create(graph, appConfig.device)`
+  - `CheckpointModelLoader::load(resumePath, appConfig.optimizer, appConfig.device)`
+  - `TorchModelTrainer(model, loss, optimizer, appConfig.device)`
+  - `TorchModelEvaluator(*model, *loss, numClasses, maskIgnoreIndex, appConfig.device)`
+  - 起動ログに `deviceToString(appConfig.device)` を出力
+
+影響範囲（ビルドが通らなくなる既存呼び出し元。C フェーズで追従）:
+
+- `IModelFactory::create` シグネチャ変更 → `main.cpp` /
+  `CheckpointModelLoader` / factory を直接叩くテスト
+  （`checkpoint_rebuild_test` / `model_evaluator_test` /
+  `training_smoke_test` / `best_checkpoint_test` 等）
+- `ILayer` への純粋仮想追加 → 全 `Torch*Layer` とモック層
+- trainer / evaluator の ctor 変更 → 各テスト
+
+進め方: **B-0〜B-3（cold start が GPU で回る所まで）→ ビルド & スモーク →
+B-4（checkpoint 跨ぎ）→ B-5 / B-6**。
 
 ---
 
