@@ -46,7 +46,10 @@ EpochMetrics TorchModelEvaluator::evaluate(IDatasetRepository &valData)
         torch::Tensor input = converter.convert(batch.input);        // [N,C,H,W] float
         torch::Tensor target = converter.convertTarget(batch.target); // [N,H,W]   int64
 
-        torch::Tensor prediction = _model.forward(input); // [N,numClasses,H,W]
+        // forward はモデルの device(CPU/CUDA)上の予測を返す。指標計算は
+        // target / confusionMatrix と揃えて CPU で行うため、ここで CPU へ戻す
+        // (モデルが CPU の場合は no-op)。
+        torch::Tensor prediction = _model.forward(input).to(torch::kCPU); // [N,numClasses,H,W]
 
         torch::Tensor loss;
         _loss.lossOut(prediction, target, loss);

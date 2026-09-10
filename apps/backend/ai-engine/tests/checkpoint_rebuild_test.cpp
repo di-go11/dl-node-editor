@@ -48,6 +48,9 @@
 
 namespace
 {
+// テストは常に CPU 上で実行する。
+const ComputeDevice kTestDevice{ComputeDeviceType::Cpu, 0};
+
 int failureCount = 0;
 
 void check(bool condition, const std::string &message)
@@ -150,7 +153,7 @@ int main()
     auto modelFactory = std::make_shared<TorchModelFactory>();
     auto optimizerFactory = std::make_shared<TorchOptimizerFactory>();
 
-    std::shared_ptr<IModel> srcModel = modelFactory->create(graph);
+    std::shared_ptr<IModel> srcModel = modelFactory->create(graph, kTestDevice);
     std::vector<at::Tensor> srcParams = srcModel->parameters();
     std::shared_ptr<IOptimizer> srcOptimizer = optimizerFactory->create(srcParams, optimizerConfig);
 
@@ -168,7 +171,7 @@ int main()
 
     // ---- 復元側: graph を一切渡さず、.pt のパスだけで再構築 ----
     CheckpointModelLoader loader(modelFactory, optimizerFactory);
-    RestoredCheckpoint restored = loader.load(ptPath.string(), optimizerConfig);
+    RestoredCheckpoint restored = loader.load(ptPath.string(), optimizerConfig, kTestDevice);
 
     check(modelGraphFingerprint(restored.graph) == modelGraphFingerprint(graph),
           "checkpoint から復元した ModelGraph が保存時と一致する");
@@ -192,7 +195,7 @@ int main()
         bool threw = false;
         try
         {
-            loader.load((dir / "does_not_exist.pt").string(), optimizerConfig);
+            loader.load((dir / "does_not_exist.pt").string(), optimizerConfig, kTestDevice);
         }
         catch (const std::runtime_error &)
         {
@@ -214,7 +217,7 @@ int main()
         bool threw = false;
         try
         {
-            loader.load(legacyPath.string(), optimizerConfig);
+            loader.load(legacyPath.string(), optimizerConfig, kTestDevice);
         }
         catch (const std::runtime_error &)
         {
@@ -234,7 +237,7 @@ int main()
         bool threw = false;
         try
         {
-            loader.load(ptPath.string(), sgdConfig);
+            loader.load(ptPath.string(), sgdConfig, kTestDevice);
         }
         catch (const std::runtime_error &)
         {
@@ -249,7 +252,7 @@ int main()
         adam.learningRate = 0.001; // LR が違っても種別が同じなら読める
         const OptimizerConfig sameKind = adam;
 
-        RestoredCheckpoint again = loader.load(ptPath.string(), sameKind);
+        RestoredCheckpoint again = loader.load(ptPath.string(), sameKind, kTestDevice);
         check(allClose(again.parameters, savedParams),
               "種別が同じなら LR が違っても復元できる(LR は呼び出し側の指定)");
     }
@@ -267,7 +270,7 @@ int main()
 
         {
             // この時点の乱数状態が checkpoint に記録される。
-            std::shared_ptr<IModel> m = modelFactory->create(graph);
+            std::shared_ptr<IModel> m = modelFactory->create(graph, kTestDevice);
             std::vector<at::Tensor> p = m->parameters();
             std::shared_ptr<IOptimizer> o = optimizerFactory->create(p, optimizerConfig);
             TorchCheckpointStore store(m, o, dir.string(), "rng", graph);
@@ -281,7 +284,7 @@ int main()
         torch::manual_seed(999);
         (void)torch::randn({123});
 
-        RestoredCheckpoint rng = loader.load(rngPtPath.string(), optimizerConfig);
+        RestoredCheckpoint rng = loader.load(rngPtPath.string(), optimizerConfig, kTestDevice);
         check(rng.rngStateRestored, "rngStateRestored が true(rng_state_cpu を読めた)");
 
         const at::Tensor actualDraw = torch::randn({16});

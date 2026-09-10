@@ -1,6 +1,7 @@
 #pragma once
 
 #include "training/entities/domain-objects/ModelGraph.hpp"
+#include "training/entities/domain-objects/ComputeDevice.hpp"
 
 #include <memory>
 
@@ -16,5 +17,5 @@ class IModelFactory
 public:
     virtual ~IModelFactory() = default;
 
-    virtual std::shared_ptr<IModel> create(const ModelGraph &graph) = 0;
+    virtual std::shared_ptr<IModel> create(const ModelGraph &graph, const ComputeDevice &device) = 0;
 };

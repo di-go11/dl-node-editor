@@ -2,7 +2,7 @@
 
 #include "OptimizerConfig.hpp"
 #include "ActivationConfig.hpp"
-#include "Device.hpp"
+#include "ComputeDevice.hpp"
 #include <cstddef>
 #include <string>
 
@@ -28,5 +28,5 @@ struct AppConfig
     size_t input_height = 256;
 
     // 学習に使用するデバイスの設定 (デフォルトは CUDA 0)
-    Device device = Device{Devicetype::Cuda, 0};
+    ComputeDevice device = ComputeDevice{ComputeDeviceType::Cuda, 0};
 };

@@ -13,6 +13,7 @@ public:
     void forward(const at::Tensor &input, at::Tensor &output) override;
     std::vector<at::Tensor> parameters() const override;
     void setTrain(bool trainingMode) override;
+    void to(const ComputeDevice &device) override;
 
 private:
     std::shared_ptr<IActivation> _activation;

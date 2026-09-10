@@ -1,4 +1,5 @@
 #include "training/infrastructure/torchFunc/SGDOptimizer.hpp"
+#include "training/infrastructure/torchFunc/OptimizerStateDeviceSync.hpp"
 #include "training/infrastructure/torchModel/TorchCheckpointArchive.hpp"
 
 #include <torch/torch.h>
@@ -30,4 +31,14 @@ void SGDOptimizer::writeTo(ICheckpointWriter &archive) const
 void SGDOptimizer::readFrom(ICheckpointReader &archive)
 {
     _optim->load(toTorchArchive(archive));
+
+    // load 直後は state(momentum_buffer)が保存時の device 上にあるため、
+    // param の device へ揃える(CPU 保存 → GPU 再開 などで step() が壊れるのを防ぐ)。
+    training::infrastructure::torchFunc::syncOptimizerStateToParamDevice<torch::optim::SGDParamState>(
+        *_optim,
+        [](torch::optim::SGDParamState &s, const torch::Device &dev)
+        {
+            if (s.momentum_buffer().defined())
+                s.momentum_buffer(s.momentum_buffer().to(dev));
+        });
 }

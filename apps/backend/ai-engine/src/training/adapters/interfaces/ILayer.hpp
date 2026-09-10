@@ -1,5 +1,7 @@
 #pragma once
 
+#include "training/entities/domain-objects/ComputeDevice.hpp"
+
 #include <vector>
 
 namespace at
@@ -15,4 +17,7 @@ public:
     virtual std::vector<at::Tensor> parameters() const = 0;
 
     virtual void setTrain(bool trainingMode) = 0;
+
+    // 層の内部パラメータ・バッファを指定 device 上へ移動する。
+    virtual void to(const ComputeDevice &device) = 0;
 };

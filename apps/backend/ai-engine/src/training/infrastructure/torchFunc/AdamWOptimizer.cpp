@@ -1,4 +1,5 @@
 #include "training/infrastructure/torchFunc/AdamWOptimizer.hpp"
+#include "training/infrastructure/torchFunc/OptimizerStateDeviceSync.hpp"
 #include "training/infrastructure/torchModel/TorchCheckpointArchive.hpp"
 
 #include <torch/torch.h>
@@ -30,4 +31,18 @@ void AdamWOptimizer::writeTo(ICheckpointWriter &archive) const
 void AdamWOptimizer::readFrom(ICheckpointReader &archive)
 {
     _optim->load(toTorchArchive(archive));
+
+    // load 直後は state が保存時の device 上にあるため、param の device へ揃える
+    // (CPU 保存 → GPU 再開 などで step() が壊れるのを防ぐ)。
+    training::infrastructure::torchFunc::syncOptimizerStateToParamDevice<torch::optim::AdamWParamState>(
+        *_optim,
+        [](torch::optim::AdamWParamState &s, const torch::Device &dev)
+        {
+            if (s.exp_avg().defined())
+                s.exp_avg(s.exp_avg().to(dev));
+            if (s.exp_avg_sq().defined())
+                s.exp_avg_sq(s.exp_avg_sq().to(dev));
+            if (s.max_exp_avg_sq().defined())
+                s.max_exp_avg_sq(s.max_exp_avg_sq().to(dev));
+        });
 }

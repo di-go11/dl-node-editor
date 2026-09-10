@@ -1,4 +1,5 @@
 #include "training/infrastructure/torchFunc/TorchPoolingLayer.hpp"
+#include "training/infrastructure/torchFunc/DeviceToTorch.hpp"
 
 namespace
 {
@@ -34,4 +35,13 @@ void TorchPoolingLayer::setTrain(bool trainingMode)
 {
     std::visit([trainingMode](auto &module)
                { module->train(trainingMode); }, _module);
+}
+
+void TorchPoolingLayer::to(const ComputeDevice &device)
+{
+    // Pooling は学習パラメータ・buffer を持たないため実質 no-op だが、
+    // 一貫性のため module にも転送する。
+    const torch::Device torchDevice = training::infrastructure::torchFunc::deviceToTorch(device);
+    std::visit([torchDevice](auto &module)
+               { module->to(torchDevice); }, _module);
 }

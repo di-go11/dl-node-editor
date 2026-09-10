@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "training/entities/domain-objects/CheckpointMeta.hpp"
+#include "training/entities/domain-objects/ComputeDevice.hpp"
 #include "training/entities/domain-objects/ModelGraph.hpp"
 #include "training/entities/domain-objects/OptimizerConfig.hpp"
 
@@ -51,8 +52,11 @@ public:
     // optimizerConfig は「どの Optimizer を どのハイパーパラメータで作るか」。
     // (Optimizer の種別・LR は checkpoint に記録していないため、呼び出し側が与える)
     // ファイルが存在しない / model_graph を含まない場合は std::runtime_error。
+    // device は復元したモデルを配置する計算デバイス。保存時と異なる device を
+    // 指定してよい(例: cuda で学習した checkpoint を cpu で再開)。
     RestoredCheckpoint load(const std::string &checkpointPath,
-                            const OptimizerConfig &optimizerConfig);
+                            const OptimizerConfig &optimizerConfig,
+                            const ComputeDevice &device);
 
 private:
     std::shared_ptr<IModelFactory> _modelFactory;

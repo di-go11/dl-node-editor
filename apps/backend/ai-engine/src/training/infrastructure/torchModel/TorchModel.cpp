@@ -6,18 +6,22 @@
 #include "training/adapters/interfaces/IOptimizer.hpp"
 #include "training/entities/domain-objects/ModelGraph.hpp"
 #include "training/infrastructure/torchModel/TorchCheckpointArchive.hpp"
+#include "training/infrastructure/torchFunc/DeviceToTorch.hpp"
 
 #include <torch/torch.h>
 
 #include <stdexcept>
 #include <string>
 
-TorchModel::TorchModel(const ModelGraph &graph, ILayerBuilder &builder)
+TorchModel::TorchModel(const ModelGraph &graph, ILayerBuilder &builder, const ComputeDevice &device)
+    : _device(device)
 {
     _layers.reserve(graph.layers.size());
     for (const auto &layerConfig : graph.layers)
     {
-        _layers.push_back(builder.build(layerConfig));
+        auto layer = builder.build(layerConfig);
+        layer->to(_device);
+        _layers.push_back(std::move(layer));
     }
 }
 /*
@@ -48,7 +52,8 @@ void TorchModel::train(at::Tensor &prediction, at::Tensor &target, ILoss &loss, 
 */
 at::Tensor TorchModel::forward(const at::Tensor &input)
 {
-    at::Tensor current = input, next;
+    at::Tensor current = input.to(training::infrastructure::torchFunc::deviceToTorch(_device));
+    at::Tensor next;
     for (auto &layer : _layers)
     {
         layer->forward(current, next);
@@ -59,10 +64,12 @@ at::Tensor TorchModel::forward(const at::Tensor &input)
 
 at::Tensor TorchModel::trainStep(at::Tensor &input, at::Tensor &target, ILoss &loss, IOptimizer &optimizer)
 {
-    at::Tensor prediction = forward(input); // forwardの再利用
+    at::Tensor prediction = forward(input); // forwardの再利用(入力の device 合わせも forward 内で実施)
+
+    at::Tensor targetOnDevice = target.to(training::infrastructure::torchFunc::deviceToTorch(_device));
 
     at::Tensor lossValue;
-    loss.lossOut(prediction, target, lossValue); // 損失計算
+    loss.lossOut(prediction, targetOnDevice, lossValue); // 損失計算
 
     optimizer.resetGradients();  // 勾配リセット
     lossValue.backward();        // 勾配計算
@@ -106,7 +113,10 @@ void TorchModel::readFrom(ICheckpointReader &archive)
     {
         at::Tensor loaded;
         in.read("model_param_" + std::to_string(i), loaded);
-        current[i].copy_(loaded);
+        // checkpoint は別 device で保存されていることがある(CPU 保存 → GPU 再開 等)。
+        // copy_ は cross-device を吸収するが、意図を明示するため現行 param の
+        // device へ揃えてから書き戻す。
+        current[i].copy_(loaded.to(current[i].device()));
     }
 }
 

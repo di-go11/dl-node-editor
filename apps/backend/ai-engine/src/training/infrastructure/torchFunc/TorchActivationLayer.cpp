@@ -42,3 +42,9 @@ void TorchActivationLayer::setTrain(bool /*trainingMode*/)
 {
     // 活性化層は状態を持たないため train/eval の切替は不要
 }
+
+void TorchActivationLayer::to(const ComputeDevice & /*device*/)
+{
+    // 活性化層は学習パラメータ・buffer を持たないため device 移動は不要
+    // (出力テンソルは入力と同じ device 上に生成される)
+}

@@ -17,6 +17,12 @@ find_package(OpenCV REQUIRED)
 
 file(GLOB_RECURSE ALL_SRCS "src/training/*.cpp")
 
+# training_smoke_test を走らせる device。CI/ローカルで -DSMOKE_DEVICE=cuda:0 と
+# 指定すると GPU で実行する。既定は cpu(GPU ランナー不要)。
+if(NOT DEFINED SMOKE_DEVICE)
+	set(SMOKE_DEVICE "cpu")
+endif()
+
 # 2. ライブラリを作成(adapter/application/entities/infrastructure配下の実装をまとめる)
 add_library(ai_engine_lib
 	${ALL_SRCS}
@@ -156,4 +162,26 @@ target_link_options(training_smoke_test PRIVATE "-Wl,--allow-shlib-undefined")
 set_property(TARGET training_smoke_test PROPERTY CXX_STANDARD 17)
 target_compile_definitions(training_smoke_test PRIVATE
 	SMOKE_SRC_DATASET="${CMAKE_CURRENT_SOURCE_DIR}/dataset/train"
-	SMOKE_TMP_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/training_smoke_tmp")
+	SMOKE_TMP_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/training_smoke_tmp"
+	SMOKE_DEVICE="${SMOKE_DEVICE}")
+
+# 14. ComputeDevice entity(parseComputeDevice / computeDeviceToString)の単体テスト。
+#     libtorch 非依存(entity のみ)。
+add_executable(device_config_test tests/device_config_test.cpp)
+target_include_directories(device_config_test PRIVATE
+	${CMAKE_CURRENT_SOURCE_DIR}/src
+	${CMAKE_CURRENT_SOURCE_DIR}
+)
+set_property(TARGET device_config_test PROPERTY CXX_STANDARD 17)
+
+# 15. CPU と CUDA で学習結果が概ね一致することの確認(CUDA 無しは CPU のみで skip)。
+add_executable(device_parity_test tests/device_parity_test.cpp)
+target_include_directories(device_parity_test PRIVATE
+	${CMAKE_CURRENT_SOURCE_DIR}/src
+	${CMAKE_CURRENT_SOURCE_DIR}
+	${TORCH_INCLUDE_DIRS}
+	${OpenCV_INCLUDE_DIRS}
+)
+target_link_libraries(device_parity_test PRIVATE ai_engine_lib "${TORCH_LIBRARIES}" ${OpenCV_LIBS})
+target_link_options(device_parity_test PRIVATE "-Wl,--allow-shlib-undefined")
+set_property(TARGET device_parity_test PROPERTY CXX_STANDARD 17)

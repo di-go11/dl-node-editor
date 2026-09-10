@@ -4,27 +4,30 @@
 #include <charconv>
 #include <stdexcept>
 
-enum class Devicetype
+// 計算デバイス(CPU / CUDA)を表すドメイン値。
+// libtorch の c10::Device とグローバル名前空間で衝突しないよう、型名を
+// ComputeDevice としている(このリポジトリの entity は名前空間を使わない方針のため)。
+enum class ComputeDeviceType
 {
     Cpu,
     Cuda,
 };
 
-struct Device
+struct ComputeDevice
 {
-    Devicetype type = Devicetype::Cuda;
+    ComputeDeviceType type = ComputeDeviceType::Cuda;
     int index = 0; // Cudaの時のみ利用
 };
 
-inline Device parseDevice(const std::string &deviceStr)
+inline ComputeDevice parseComputeDevice(const std::string &deviceStr)
 {
     if (deviceStr == "cuda")
     {
-        return Device{Devicetype::Cuda, 0};
+        return ComputeDevice{ComputeDeviceType::Cuda, 0};
     }
     else if (deviceStr == "cpu")
     {
-        return Device{Devicetype::Cpu, 0};
+        return ComputeDevice{ComputeDeviceType::Cpu, 0};
     }
 
     const auto colon = deviceStr.find(':');
@@ -36,7 +39,7 @@ inline Device parseDevice(const std::string &deviceStr)
         auto [ptr, ec] = std::from_chars(first, last, cudaIndex); // cudaIndexを参照渡しするためcudaIndexに変換した数値がそのまま入る
         if (ec == std::errc() && ptr == last && cudaIndex >= 0)
         {
-            return Device{Devicetype::Cuda, cudaIndex};
+            return ComputeDevice{ComputeDeviceType::Cuda, cudaIndex};
         }
         else
         {
@@ -49,13 +52,13 @@ inline Device parseDevice(const std::string &deviceStr)
     }
 }
 
-inline std::string deviceToString(const Device &device)
+inline std::string computeDeviceToString(const ComputeDevice &device)
 {
-    if (device.type == Devicetype::Cuda)
+    if (device.type == ComputeDeviceType::Cuda)
     {
         return "cuda:" + std::to_string(device.index);
     }
-    else if (device.type == Devicetype::Cpu)
+    else if (device.type == ComputeDeviceType::Cpu)
     {
         return "cpu";
     }

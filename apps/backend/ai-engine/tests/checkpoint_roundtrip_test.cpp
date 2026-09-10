@@ -39,6 +39,9 @@
 
 namespace
 {
+// テストは常に CPU 上で実行する。
+const ComputeDevice kTestDevice{ComputeDeviceType::Cpu, 0};
+
 int failureCount = 0;
 
 void check(bool condition, const std::string &message)
@@ -74,7 +77,7 @@ struct Bundle
 Bundle makeBundle(const ModelGraph &graph, ILayerBuilder &builder, double lr)
 {
     Bundle b;
-    b.model = std::make_shared<TorchModel>(graph, builder);
+    b.model = std::make_shared<TorchModel>(graph, builder, kTestDevice);
     b.params = b.model->parameters();
     b.optimizer = std::make_shared<AdamOptimizer>(b.params, lr);
     return b;

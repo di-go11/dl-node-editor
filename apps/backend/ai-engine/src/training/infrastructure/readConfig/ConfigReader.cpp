@@ -410,9 +410,9 @@ AppConfig ConfigReader::readAll(const std::string &filePath)
             }
             else if (key == "device")
             {
-                // "cpu" / "cuda" / "cuda:N" のパースは Device entity の
-                // parseDevice に一任する(不正値は例外を投げる)。
-                appConfig.device = parseDevice(value);
+                // "cpu" / "cuda" / "cuda:N" のパースは ComputeDevice entity の
+                // parseComputeDevice に一任する(不正値は例外を投げる)。
+                appConfig.device = parseComputeDevice(value);
             }
             else
             {

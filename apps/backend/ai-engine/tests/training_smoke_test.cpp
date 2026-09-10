@@ -21,6 +21,7 @@
 
 #include <torch/torch.h>
 
+#include "training/entities/domain-objects/ComputeDevice.hpp"
 #include "training/entities/domain-objects/Conv2DParams.hpp"
 #include "training/entities/domain-objects/DatasetSplit.hpp"
 #include "training/entities/domain-objects/EpochMetrics.hpp"
@@ -55,11 +56,31 @@
 #ifndef SMOKE_TMP_DIR
 #define SMOKE_TMP_DIR "training_smoke_tmp"
 #endif
+#ifndef SMOKE_DEVICE
+#define SMOKE_DEVICE "cpu"
+#endif
 
 namespace fs = std::filesystem;
 
 namespace
 {
+// 実行 device は CMake の -DSMOKE_DEVICE で切り替える(既定 cpu)。
+// CUDA 指定でも torch::cuda が使えない環境では CPU にフォールバックする
+// (GPU ランナー無しでもこのテストが走るように)。
+ComputeDevice resolveTestDevice()
+{
+    ComputeDevice requested = parseComputeDevice(SMOKE_DEVICE);
+    if (requested.type == ComputeDeviceType::Cuda && !torch::cuda::is_available())
+    {
+        std::cout << "[info] SMOKE_DEVICE=" << SMOKE_DEVICE
+                  << " but CUDA is unavailable; falling back to cpu." << std::endl;
+        return ComputeDevice{ComputeDeviceType::Cpu, 0};
+    }
+    return requested;
+}
+
+const ComputeDevice kTestDevice = resolveTestDevice();
+
 int failureCount = 0;
 
 void check(bool cond, const std::string &msg)
@@ -249,7 +270,7 @@ int main()
     auto optimizerFactory = std::make_shared<TorchOptimizerFactory>();
 
     const ModelGraph graph = oneConvGraph(numClasses);
-    std::shared_ptr<IModel> model = modelFactory->create(graph);
+    std::shared_ptr<IModel> model = modelFactory->create(graph, kTestDevice);
     std::vector<at::Tensor> params = model->parameters();
 
     AdamOptimizerConfig adam;
@@ -322,7 +343,7 @@ int main()
     // ---- checkpoint 単体から再構築 → 続きを学習 ----
     {
         CheckpointModelLoader loader(modelFactory, optimizerFactory);
-        RestoredCheckpoint r = loader.load((ckptDir / "smoke_last.pt").string(), optimizerConfig);
+        RestoredCheckpoint r = loader.load((ckptDir / "smoke_last.pt").string(), optimizerConfig, kTestDevice);
 
         check(r.model != nullptr, "checkpoint からモデルを再構築できる");
         check(allClose(r.parameters, weightsAfterUsecase),

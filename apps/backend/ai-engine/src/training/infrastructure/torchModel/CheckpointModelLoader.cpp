@@ -22,7 +22,8 @@ CheckpointModelLoader::CheckpointModelLoader(std::shared_ptr<IModelFactory> mode
 }
 
 RestoredCheckpoint CheckpointModelLoader::load(const std::string &checkpointPath,
-                                               const OptimizerConfig &optimizerConfig)
+                                               const OptimizerConfig &optimizerConfig,
+                                               const ComputeDevice &device)
 {
     if (!std::filesystem::exists(checkpointPath))
     {
@@ -38,7 +39,7 @@ RestoredCheckpoint CheckpointModelLoader::load(const std::string &checkpointPath
     restored.graph = readModelGraphFromCheckpoint(archive);
 
     // 2. 構造からモデルを組む
-    restored.model = _modelFactory->create(restored.graph);
+    restored.model = _modelFactory->create(restored.graph, device);
 
     // 3. モデルのパラメータに optimizer を結び付ける
     //    parameters() はモデル内部と記憶域を共有するので、RestoredCheckpoint に

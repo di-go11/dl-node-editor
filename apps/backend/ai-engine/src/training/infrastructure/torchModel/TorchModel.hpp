@@ -1,6 +1,7 @@
 #pragma once
 
 #include "training/adapters/interfaces/IModel.hpp"
+#include "training/entities/domain-objects/ComputeDevice.hpp"
 
 #include <memory>
 #include <vector>
@@ -17,7 +18,7 @@ struct ModelGraph;
 class TorchModel : public IModel
 {
 public:
-    TorchModel(const ModelGraph &graph, ILayerBuilder &builder);
+    TorchModel(const ModelGraph &graph, ILayerBuilder &builder, const ComputeDevice &device);
 
     at::Tensor forward(const at::Tensor &input) override;
 
@@ -34,5 +35,6 @@ public:
     std::vector<at::Tensor> parameters() const override;
 
 private:
+    ComputeDevice _device;
     std::vector<std::shared_ptr<ILayer>> _layers;
 };

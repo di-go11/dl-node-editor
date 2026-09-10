@@ -23,6 +23,7 @@
 #include "training/infrastructure/image/ResizePreprocessorFactory.hpp"
 #include "training/infrastructure/dataset/LabelMapFileReader.hpp"
 #include "training/infrastructure/dataset/VocDatasetRepository.hpp"
+#include "training/infrastructure/torchFunc/DeviceToTorch.hpp"
 
 #include <filesystem>
 #include <iostream>
@@ -62,6 +63,8 @@ int main(void)
     ConfigReader configReader;
 
     AppConfig appConfig = configReader.readAll(".config");
+
+    training::infrastructure::torchFunc::ensureComputeDeviceAvailable(appConfig.device);
 
     // TrainParamの設定(.configから取得。将来的にGUI入力にも置き換わる想定)
     auto param = std::make_shared<TrainParam>(appConfig.epochSize, appConfig.batchSize);
@@ -109,7 +112,7 @@ int main(void)
         std::cout << "resume from: " << resumePath << std::endl;
 
         CheckpointModelLoader loader(modelFactory, optimizerFactory);
-        RestoredCheckpoint restored = loader.load(resumePath, appConfig.optimizer);
+        RestoredCheckpoint restored = loader.load(resumePath, appConfig.optimizer, appConfig.device);
 
         graph = restored.graph;
         model = restored.model;
@@ -126,15 +129,17 @@ int main(void)
         if (modelGraphFingerprint(graph) != modelGraphFingerprint(buildSampleModelGraph(numClasses)))
         {
             std::cerr << "[warn] checkpoint のモデル構造が現在の設定"
-                         "(numClasses=" << numClasses << ")から組む構造と異なります。"
-                         "意図した checkpoint か確認してください。" << std::endl;
+                         "(numClasses="
+                      << numClasses << ")から組む構造と異なります。"
+                                       "意図した checkpoint か確認してください。"
+                      << std::endl;
         }
     }
     else
     {
         // cold start: 構造を組み、そこからモデル・Optimizer を作る。
         graph = buildSampleModelGraph(numClasses);
-        model = modelFactory->create(graph);
+        model = modelFactory->create(graph, appConfig.device);
         params = model->parameters();
         optimizer = optimizerFactory->create(params, appConfig.optimizer);
     }

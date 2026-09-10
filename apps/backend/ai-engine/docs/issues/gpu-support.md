@@ -87,35 +87,68 @@ archive から読んだテンソルを**現行モデルの device に合わせ�
 （今は同一 device 前提。CPU で保存 → GPU で再開、が壊れる）。
 `rng_state_cpu` は CPU 生成器の状態なので device 非依存、変更不要。
 
-### Phase 1 のテスト
+### Phase 1 のテスト（実装済み）
 
-- `device_config_test`: `parseDevice` / `deviceToString` の往復、不正値のエラー
-- `training_smoke_test` を拡張: `SMOKE_DEVICE`（CMake から注入、既定 cpu）で
-  device を切り替え。CUDA が無ければ cpu のまま実行
-- checkpoint device 跨ぎ: CPU 保存 → `Device{Cuda,0}` で `CheckpointModelLoader`
-  → 重み一致・追加ステップ連続（`if (torch::cuda::is_available())` で囲む）
-- 既存の CPU テストは無改修で通ること
+- [x] `device_config_test`: `parseComputeDevice` / `computeDeviceToString` の往復、
+  不正値（`""` / `gpu` / `cuda:` / `cuda:-1` / `cuda:1x` / `CPU` / 前後空白 等）のエラー
+- [x] `device_parity_test`: 同一 seed で CPU / CUDA にモデル構築 → 同一入力で
+  数ステップ学習し、各ステップ loss と最終パラメータが一致することを確認。
+  CUDA 無しは CPU のみ実行して skip。
+  （実測: この小モデルでは CPU/CUDA の loss がビット一致
+  `1.12124 1.09565 1.08205 1.0719 1.06095`）
+- [x] `training_smoke_test`: `SMOKE_DEVICE`（CMake の `-DSMOKE_DEVICE=`、既定 cpu）で
+  device 切替。CUDA が使えない環境では cpu にフォールバックして実行
+- [x] checkpoint device 跨ぎ: `ai_engine_app` を CPU で 2 epoch → cuda:0 で resume し、
+  Adam の state 引き継ぎで loss が連続（0.23 → 0.17 → 0.15）することを確認
+- [x] 既存の CPU テスト（8 本）が無改修で通る
 
 ### Phase 1 のタスク
 
+> **2026-09-10 時点で Phase 1 完了。** ブランチ `feature/gpu-support`。
+> CPU / CUDA(RTX 4070 SUPER) / クロスデバイス（CPU保存→CUDA再開）で全経路動作、
+> テスト 10 本（新規 2 本含む）green、`clean-arch-lint` 違反なし。
+> 次は Phase 2（gRPC + Rust ポリシー、別 issue）。
+
 - [x] `Device` entity（enum + index、`parseDevice` / `deviceToString`）
 - [x] `AppConfig` / `ConfigReader` に `device`（`parseDevice` に一任、`cuda:N` 対応）
-- [ ] `Device` → `torch::Device` 変換（infrastructure）
-- [ ] `IModelFactory` / `TorchModelFactory` / `TorchLayerBuilder` に device を通す
-- [ ] `TorchModelTrainer` / `TorchModelEvaluator` で入力・ターゲットを `.to(device)`
-- [ ] `main.cpp`: device 決定 → 起動時 CUDA チェック → 配線
-- [ ] checkpoint の device 跨ぎロード（読んだテンソルを現行 device へ）
-- [ ] テスト（上記）
-- [ ] 実データ 266 枚で GPU 実行し、CPU 版と loss が概ね一致・高速化を確認
+- [x] `ComputeDevice` → `torch::Device` 変換（infrastructure、`DeviceToTorch.{hpp,cpp}`）
+- [x] `IModelFactory` / `TorchModelFactory` に device を通す
+      （`TorchLayerBuilder` ではなく `ILayer::to(const ComputeDevice&)` 経由に変更。理由は下記）
+- [x] `TorchModelTrainer` / `TorchModelEvaluator` で入力・ターゲットを device に合わせる
+      （実装は `TorchModel::forward`/`trainStep` 内で入力・target を `_device` へ移動。
+      Evaluator は forward の戻り値を `.to(kCPU)` して CPU 指標計算と揃える）
+- [x] `main.cpp`: device 決定 → 起動時 CUDA チェック → 配線
+- [x] checkpoint の device 跨ぎロード（モデル重み・optimizer state を現行 device へ）
+- [x] テスト（`device_config_test` / `device_parity_test` 追加、
+      `training_smoke_test` に `SMOKE_DEVICE` 追加）
+- [x] 実データで GPU 実行し CPU 版と loss が概ね一致（`device_parity_test` +
+      `ai_engine_app` の CPU保存→CUDA再開で確認。速度は現状 Conv 1 層 + batch=1 で
+      差が小さく、バッチ化 + SegNet 実装後に再計測）
 
 進捗メモ:
 
-- **A（entity / config、済）**: `Device.hpp` に `parseDevice` / `deviceToString`
-  を `inline` で実装（`<stdexcept>` include、メンバ名は `type`）。`ConfigReader`
-  は独自パースと `device_index` キーを廃し `appConfig.device = parseDevice(value)`
-  に一本化。`.config` は `device = cuda:0`。`ai_engine_lib` / `ai_engine_app`
-  ビルド確認済み。
-- **B（配線、未着手）**: 下記の実装計画に分解。
+- **A（entity / config、済）**: 型名は `Device` → **`ComputeDevice`** にリネーム
+  （libtorch の `c10::Device` とグローバル名前空間で衝突するため）。
+  ファイルも `ComputeDevice.hpp`。`parseComputeDevice` / `computeDeviceToString` /
+  `ComputeDeviceType` も同様。`ConfigReader` は `appConfig.device = parseComputeDevice(value)`
+  に一本化。`.config` は `device = cuda:0`。
+- **B（配線、完了）**: B-0〜B-6 実装。CPU / CUDA(RTX 4070 SUPER) / クロスデバイス
+  （CPU保存→CUDA再開）で全経路動作確認済み。実装が計画とずれた点:
+  - **B-0**: ヘルパは新規 `TorchDevice.hpp` ではなく既存
+    `infrastructure/torchFunc/DeviceToTorch.{hpp,cpp}` に
+    `deviceToTorch` / `ensureComputeDeviceAvailable` として実装。
+  - **B-1**: `ILayer` のメソッド名は `toDevice` ではなく `to(const ComputeDevice&)`
+    （既存 `setTrain` と同じ「ラップした module へ状態変更を転送する」形）。
+    `TorchLayerBuilder` は変更せず、`TorchModel` が build 後に各層 `to(_device)`。
+  - **B-2**: trainer / evaluator の ctor は変更せず。device は `TorchModel` が
+    `_device` として保持し `forward`/`trainStep` 内で入力・target を移動。
+    `TorchModelTrainer` は `trainStep` を呼ぶだけなので無改修。
+    `TorchModelEvaluator` は forward 戻り値を `.to(kCPU)` して既存の CPU 集計に接続。
+  - **B-4**: optimizer state の device 移行は
+    `infrastructure/torchFunc/OptimizerStateDeviceSync.hpp`（共通テンプレート）を
+    追加し、`Adam` / `AdamW` / `SGD` の `readFrom` で `load()` 後に呼ぶ。
+    `CheckpointModelLoader` / `TorchCheckpointStore::loadFrom` はどちらも
+    `IOptimizer::readFrom` を通るため 1 箇所で両経路カバー。
 
 ### Phase 1-B 実装計画（配線）
 

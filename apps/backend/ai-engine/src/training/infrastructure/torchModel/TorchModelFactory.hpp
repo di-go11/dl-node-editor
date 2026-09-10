@@ -10,7 +10,7 @@
 class TorchModelFactory : public IModelFactory
 {
 public:
-    std::shared_ptr<IModel> create(const ModelGraph &graph) override;
+    std::shared_ptr<IModel> create(const ModelGraph &graph, const ComputeDevice &device) override;
 
 private:
     TorchLayerBuilder _builder;
