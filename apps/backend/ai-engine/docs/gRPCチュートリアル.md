@@ -31,6 +31,52 @@ RPC は 4 種類ある。
 | クライアントストリーミング | `rpc F(stream Req) returns (Res)` | データを分割アップロード |
 | 双方向ストリーミング | `rpc F(stream Req) returns (stream Res)` | 対話的な制御 |
 
+### 1.1 `.proto` / `service` / `rpc` の粒度 — ファイルは API ごとに作らない
+
+よくある誤解: 「config を送る API」「loss を逐次受け取る API」ごとに `.proto` を
+作るのか？ → **違う。** 粒度は 3 段階に分かれる。
+
+```
+.proto ファイル   ← ドメイン（関心事）単位     例: training.proto
+  └ service       ← 関連する操作のまとまり       例: TrainingService
+      └ rpc       ← 個々の操作（1 メソッド = 1 API）
+```
+
+「config を送って完了を受け取る」も「loss を逐次受け取る」も、**同じ `service` 内の
+別々の `rpc`**。通信パターン（1 往復 / ストリーミング）は `rpc` の `stream` 有無で
+決まるだけで、ファイルもサービスも分けない。
+
+```protobuf
+syntax = "proto3";
+package aiengine.training.v1;
+
+service TrainingService {
+  rpc StartTraining(StartTrainingRequest) returns (StartTrainingResponse);      // 1往復
+  rpc StreamProgress(StreamProgressRequest) returns (stream ProgressUpdate);    // サーバーストリーミング
+  rpc StopTraining(StopTrainingRequest) returns (StopTrainingResponse);         // 1往復
+  rpc GetJobStatus(GetJobStatusRequest) returns (JobStatus);                    // 1往復
+}
+```
+
+#### ファイルを分ける基準 = ドメインごと（RPC ごとではない）
+
+| ファイル | service | 分ける理由 |
+| --- | --- | --- |
+| `capabilities.proto` | `Capabilities` | GPU 情報・レジストリ一覧。学習とは別の関心事 |
+| `training.proto` | `TrainingService` | 学習の開始 / 進捗 / 停止をまとめる |
+| `inference.proto` | `InferenceService` | 推論。学習済みモデルを使う別入口 |
+| `common.proto` | （service なし） | `Device` / `Error` など複数ファイルで共有する message |
+
+本プロジェクトのロードマップの Phase 2 / 3 / 4 が、それぞれ
+`capabilities.proto` / `training.proto` / `inference.proto` に対応する
+（`docs/issues/開発ロードマップ.md`）。
+
+#### RPC を1つの service にまとめる目安
+
+- 同じライフサイクル・同じリソース（ここでは学習 job）を扱う操作は同じ service
+- クライアントが「これらをまとめて使う」なら同じ service
+- 認証・デプロイ単位・チーム境界が違うなら service（＝ファイル）を分ける
+
 ---
 
 ## 2. 事前準備
