@@ -211,7 +211,10 @@ B-4（checkpoint 跨ぎ）→ B-5 / B-6**。
 
 ---
 
-## Phase 2: gRPC 層と Rust ポリシー（別 issue / API 層の着手とセット・保留）
+## Phase 2: gRPC 層と Rust ポリシー
+
+**→ 独立 issue に分離: `docs/issues/grpc-layer.md`（ブランチ `feat/gRPC-function`）。**
+以下は分離前のメモ。詳細な設計・ディレクトリ構成・タスクは grpc-layer.md を参照。
 
 gRPC 層（Rust↔C++）が存在しないため、それを立てるタイミングで行う。
 
