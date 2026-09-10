@@ -33,7 +33,7 @@ inline Device parseDevice(const std::string &deviceStr)
         int cudaIndex = 0;
         const char *first = deviceStr.data() + colon + 1;
         const char *last = deviceStr.data() + deviceStr.size();
-        auto [ptr, ec] = std::from_chars(first, last, cudaIndex); // cudaIndexを参照渡しするためここに変換した数値が入る
+        auto [ptr, ec] = std::from_chars(first, last, cudaIndex); // cudaIndexを参照渡しするためcudaIndexに変換した数値がそのまま入る
         if (ec == std::errc() && ptr == last && cudaIndex >= 0)
         {
             return Device{Devicetype::Cuda, cudaIndex};

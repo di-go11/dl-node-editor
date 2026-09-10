@@ -1,17 +1,22 @@
 #include "training/infrastructure/torchFunc/DeviceToTorch.hpp"
 
-torch::Device DeviceToTorch::convert(const Device &device)
+#include <stdexcept>
+
+namespace training::infrastructure::torchFunc
 {
-    if (device.getType() == DeviceType::CPU)
+    torch::Device deviceToTorch(const Device &device)
     {
-        return torch::Device(torch::kCPU);
-    }
-    else if (device.getType() == DeviceType::CUDA)
-    {
-        return torch::Device(torch::kCUDA, device.getIndex());
-    }
-    else
-    {
-        throw std::invalid_argument("Unsupported device type");
+        if (device.type == Devicetype::Cpu)
+        {
+            return torch::Device(torch::kCPU);
+        }
+        else if (device.type == Devicetype::Cuda)
+        {
+            return torch::Device(torch::kCUDA, device.index);
+        }
+        else
+        {
+            throw std::invalid_argument("Unsupported device type");
+        }
     }
 }

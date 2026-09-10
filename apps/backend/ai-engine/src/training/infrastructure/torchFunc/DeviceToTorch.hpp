@@ -6,5 +6,5 @@
 
 namespace training::infrastructure::torchFunc
 {
-    static torch::Device convert(const Device &device);
+    torch::Device deviceToTorch(const Device &device);
 }
