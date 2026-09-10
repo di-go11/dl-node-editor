@@ -7,6 +7,7 @@ RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
     && apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
+    ccache \
     ninja-build \
     clang \
     gdb \
@@ -41,5 +42,16 @@ RUN wget -O libtorch.zip https://download.pytorch.org/libtorch/cu126/libtorch-sh
 # 4. CMake用の環境変数を設定 (find_package(Torch) が動くようにする)
 ENV CMAKE_PREFIX_PATH=/opt/libtorch
 
-# 5. docker-compose.yml に合わせて作業ディレクトリを戻す
+# 5. ccache の設定
+#    - /usr/lib/ccache には gcc/g++/clang などのシンボリックリンクが置かれるので PATH 先頭に追加
+#    - CMAKE_*_COMPILER_LAUNCHER で CMake/Ninja のビルドからも確実に ccache を経由させる
+#    - CCACHE_DIR はキャッシュ保存先。docker-compose.yml の名前付きボリュームで永続化する
+ENV PATH="/usr/lib/ccache:${PATH}"
+ENV CCACHE_DIR=/ccache
+ENV CCACHE_MAXSIZE=5G
+ENV CMAKE_C_COMPILER_LAUNCHER=ccache
+ENV CMAKE_CXX_COMPILER_LAUNCHER=ccache
+RUN mkdir -p /ccache && ccache --version
+
+# 6. docker-compose.yml に合わせて作業ディレクトリを戻す
 WORKDIR /workspaces/apps/backend/ai-engine
