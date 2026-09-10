@@ -23,6 +23,10 @@ RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
     # オプションのCUDAライブラリ(構造化スパース演算・マルチGPU共有メモリ)
     libcusparselt0-cuda-12 \
     libnvshmem3-cuda-12 \
+    libgrpc++-dev \
+    libprotobuf-dev \
+    protobuf-compiler \
+    protobuf-compiler-grpc \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
     # libcusparseLt/libnvshmemはバージョン別サブディレクトリに配置され、

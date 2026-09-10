@@ -15,6 +15,14 @@ find_package(Torch REQUIRED)
 # 1-2. 画像デコード(JPEG/PNG)用にOpenCVを探す(Dockerfileでlibopencv-devをインストール済み)
 find_package(OpenCV REQUIRED)
 
+# 1-3. gRPC C++ライブラリを探す。
+find_package(gRPC CONFIG REQUIRED)
+
+find_package(Protobuf REQUIRED)
+
+# 共有契約となる proto のパスを PROTO_DIR に設定する（2 サービス共通のため ai-engine/ の外）。
+cmake_path(SET PROTO_DIR NORMALIZE "${CMAKE_CURRENT_SOURCE_DIR}/../proto")
+
 file(GLOB_RECURSE ALL_SRCS "src/training/*.cpp")
 
 # training_smoke_test を走らせる device。CI/ローカルで -DSMOKE_DEVICE=cuda:0 と
@@ -42,6 +50,44 @@ target_link_libraries(ai_engine_lib PRIVATE "${TORCH_LIBRARIES}" ${OpenCV_LIBS})
 # 4. (重要) CMakeの仕様で必要なコンパイルフラグを追加
 set_property(TARGET ai_engine_lib PROPERTY CXX_STANDARD 17)
 
+# 4-2. gRPC / protobuf 生成コード専用ライブラリ。
+#      .proto を「入力ソース」として渡すのが protobuf_generate の作法（configure 時に実在必須）。
+#      生成物は build ツリーに出るので、参照側が include できるよう BINARY_DIR を PUBLIC 公開する。
+add_library(ai_engine_proto STATIC ${PROTO_DIR}/capabilities.proto)
+target_link_libraries(ai_engine_proto PUBLIC gRPC::grpc++ protobuf::libprotobuf)
+target_include_directories(ai_engine_proto PUBLIC ${CMAKE_CURRENT_BINARY_DIR})
+set_property(TARGET ai_engine_proto PROPERTY CXX_STANDARD 17)
+
+# (a) メッセージ型: *.pb.h / *.pb.cc
+protobuf_generate(
+	TARGET ai_engine_proto
+	LANGUAGE cpp
+	IMPORT_DIRS ${PROTO_DIR}
+	PROTOC_OUT_DIR ${CMAKE_CURRENT_BINARY_DIR})
+
+# (b) サービススタブ: *.grpc.pb.h / *.grpc.pb.cc（gRPC プラグイン経由）
+protobuf_generate(
+	TARGET ai_engine_proto
+	LANGUAGE grpc
+	GENERATE_EXTENSIONS .grpc.pb.h .grpc.pb.cc
+	PLUGIN "protoc-gen-grpc=$<TARGET_FILE:gRPC::grpc_cpp_plugin>"
+	IMPORT_DIRS ${PROTO_DIR}
+	PROTOC_OUT_DIR ${CMAKE_CURRENT_BINARY_DIR})
+
+# 4-3. gRPC inbound adapter（src/api/grpc/）。生成コードに触れてよいのはこの層だけ。
+#      application ポート(ICapabilityProvider)経由で ai_engine_lib を呼ぶ。
+add_library(ai_engine_grpc STATIC
+	src/api/grpc/GrpcServer.cpp
+	src/api/grpc/CapabilitiesServiceImpl.cpp)
+target_include_directories(ai_engine_grpc PRIVATE
+	${CMAKE_CURRENT_SOURCE_DIR}/src
+	${TORCH_INCLUDE_DIRS})
+target_link_libraries(ai_engine_grpc PRIVATE
+	ai_engine_lib
+	ai_engine_proto
+	"${TORCH_LIBRARIES}")
+set_property(TARGET ai_engine_grpc PROPERTY CXX_STANDARD 17)
+
 # 5. main.cppを実行可能ファイルとしてビルドし、上記ライブラリをリンクする
 add_executable(ai_engine_app main.cpp)
 target_include_directories(ai_engine_app PRIVATE
@@ -49,7 +95,7 @@ target_include_directories(ai_engine_app PRIVATE
 	${CMAKE_CURRENT_SOURCE_DIR}
 	${TORCH_INCLUDE_DIRS}
 )
-target_link_libraries(ai_engine_app PRIVATE ai_engine_lib "${TORCH_LIBRARIES}")
+target_link_libraries(ai_engine_app PRIVATE ai_engine_lib ai_engine_grpc "${TORCH_LIBRARIES}")
 set_property(TARGET ai_engine_app PROPERTY CXX_STANDARD 17)
 
 # libtorch(CUDAビルド)が依存するcuSPARSELt/NVSHMEM等、この環境に入っていない
@@ -185,3 +231,4 @@ target_include_directories(device_parity_test PRIVATE
 target_link_libraries(device_parity_test PRIVATE ai_engine_lib "${TORCH_LIBRARIES}" ${OpenCV_LIBS})
 target_link_options(device_parity_test PRIVATE "-Wl,--allow-shlib-undefined")
 set_property(TARGET device_parity_test PROPERTY CXX_STANDARD 17)
+
