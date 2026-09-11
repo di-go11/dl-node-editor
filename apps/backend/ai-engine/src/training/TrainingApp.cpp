@@ -1,3 +1,5 @@
+#include "training/TrainingApp.hpp"
+
 #include <memory>
 #include <torch/torch.h>
 
@@ -39,25 +41,28 @@
 #include "training/application/impl/TrainingDatasets.hpp"
 #include "training/application/impl/TrainingResumeState.hpp"
 
-// numClasses = セグメンテーションのクラス数(labelmap.txt のエントリ数)。
-// 最終層は「クラス数チャンネルの生ロジット」を出力する。CrossEntropy が
-// 内部で log_softmax するため、末尾に活性化層は置かない。
-ModelGraph buildSampleModelGraph(int numClasses)
+namespace
 {
-    ModelGraph graph;
+    // numClasses = セグメンテーションのクラス数(labelmap.txt のエントリ数)。
+    // 最終層は「クラス数チャンネルの生ロジット」を出力する。CrossEntropy が
+    // 内部で log_softmax するため、末尾に活性化層は置かない。
+    ModelGraph buildSampleModelGraph(int numClasses)
+    {
+        ModelGraph graph;
 
-    Conv2DParams conv;
-    conv.inChannels = 3; // 実データ(RGB画像)に合わせて3チャンネル
-    conv.outChannels = numClasses;
-    conv.kernelSize = 3;
-    conv.stride = 1;
-    conv.padding = 1;
-    graph.layers.push_back(LayersConfig{conv});
+        Conv2DParams conv;
+        conv.inChannels = 3; // 実データ(RGB画像)に合わせて3チャンネル
+        conv.outChannels = numClasses;
+        conv.kernelSize = 3;
+        conv.stride = 1;
+        conv.padding = 1;
+        graph.layers.push_back(LayersConfig{conv});
 
-    return graph;
-}
+        return graph;
+    }
+} // namespace
 
-int main(void)
+void runTraining()
 {
     // configの読み込み
     ConfigReader configReader;
@@ -183,6 +188,4 @@ int main(void)
     usecase.execute(datasets, resumeState);
 
     std::cout << "training loop finished" << std::endl;
-
-    return 0;
 }

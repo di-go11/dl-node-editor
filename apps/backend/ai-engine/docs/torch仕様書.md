@@ -70,7 +70,7 @@ CUDA ビルドの `libtorch_cuda.so` は、構造化スパース演算(cuSPARSEL
 ```
 
 `torch/torch.h` は「学習・推論を C++ で**書く**ために必要なものすべて」を含む。
-本プロジェクトの [main.cpp](../main.cpp) や各 `infrastructure/torchFunc/*.cpp` はこれを使っている。
+本プロジェクトの [TrainingApp.cpp](../src/training/TrainingApp.cpp)（学習の合成層。旧 main.cpp の中身）や各 `infrastructure/torchFunc/*.cpp` はこれを使っている。
 **TorchScript のロードは含まれない**(§10-6)。
 
 ```cpp

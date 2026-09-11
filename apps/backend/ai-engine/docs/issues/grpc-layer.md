@@ -2,6 +2,10 @@
 
 ブランチ: `feat/gRPC-function` / GPU 対応 issue（`gpu-support.md`）の **Phase 2**。
 
+> **2026-09-11 時点の進捗**: C++ 側（`.proto` / gRPC サーバー / `GetCapabilities`）は
+> 実装・ビルド・`grpcurl` での疎通確認まで完了。Rust 側（`training-api` crate）と
+> devcontainer の 2 サービス化は未着手。詳細は「進捗メモ」節を参照。
+
 ## 背景
 
 Phase 1 で C++ 内のデバイス抽象（`ComputeDevice` → `torch::Device`、各層への
@@ -34,22 +38,26 @@ CLAUDE.md の方針（再掲）:
 
 ## ディレクトリ構成
 
+実際に出来上がった構成（C++ 側。Rust はまだ無い）:
+
 ```
 apps/backend/
   proto/
     capabilities.proto          # 共有契約。C++ / Rust 両方がここから生成
-  ai-engine/                    # 既存 C++
+  ai-engine/
     src/
-      api/grpc/                 # ★新規: inbound adapter(gRPC サーバー)
-        CapabilitiesServiceImpl.{hpp,cpp}
-        GrpcServer.{hpp,cpp}    # サーバー起動・shutdown
+      main.cpp                  # 合成層。--serve で GrpcApp、それ以外は TrainingApp
+      api/grpc/                 # inbound adapter(gRPC サーバー)。生成コードに触れてよいのはここだけ
+        GrpcApp.{hpp,cpp}       # composition root: CudaCapabilityProvider + CapabilitiesServiceImpl + GrpcServer
+        GrpcServer.{hpp,cpp}    # ServerBuilder のラッパ。起動・Wait・shutdown
+        CapabilitiesServiceImpl.{hpp,cpp}  # Capabilities::Service 実装
       training/
+        TrainingApp.{hpp,cpp}   # 学習側の composition root(旧 main.cpp の中身)
         application/interfaces/
-          ICapabilityProvider.hpp   # ★新規: application が握るポート
+          ICapabilityProvider.hpp          # application が握るポート
         infrastructure/torchFunc/
-          CudaCapabilityProvider.{hpp,cpp}  # ★新規: torch::cuda::* 実装
-    main.cpp                    # gRPC サーバーモードの起動を追加
-  training-api/                 # ★新規 Rust crate
+          CudaCapabilityProvider.{hpp,cpp} # torch::cuda::* 実装
+  training-api/                 # ★未着手: 新規 Rust crate
     Cargo.toml
     build.rs                    # tonic-build で proto 生成
     src/
@@ -59,6 +67,9 @@ apps/backend/
       infrastructure/           # 設定読み込み、capability キャッシュ
       main.rs
 ```
+
+計画との違いは「進捗メモ」節を参照（`main.cpp` の位置・`GrpcApp` の追加・
+`ai_engine_grpc` が `ai_engine_lib` をリンクしない制約など）。
 
 ### 原則
 
@@ -71,61 +82,80 @@ apps/backend/
 - `src/api/` は `src/training/` と同階層。capability は training 専用の関心事では
   ないため training の内側に閉じない。
 
-## `.proto`（最小案）
+## `.proto`（実装済み。最小案より簡略化）
+
+`apps/backend/proto/capabilities.proto`。パッケージ名は `capabilities.v1`
+（計画時の `aiengine.v1` から変更。「このプロトは capability 専用」であることを
+名前で明示するため）。リクエストは既存の Well-Known Type `google.protobuf.Empty`
+を使い、専用の `GetCapabilitiesRequest` は作らなかった。
 
 ```proto
 syntax = "proto3";
-package aiengine.v1;
+import "google/protobuf/empty.proto";
+
+package capabilities.v1;
+
+enum DeviceType {
+    DEVICE_TYPE_UNSPECIFIED = 0;
+    DEVICE_TYPE_CPU = 1;
+    DEVICE_TYPE_CUDA = 2;
+}
+
+message DeviceInfo {
+    string device_name = 1;
+    uint32 device_index = 2;   // 計画時は optional だったが、システムの protoc(3.12.4)が
+                                // proto3 optional に非対応のため外した(下記参照)
+    DeviceType device_type = 3;
+}
+
+message CapabilitiesResponse {
+    bool cuda_available = 1;
+    repeated DeviceInfo devices = 2;
+}
 
 service Capabilities {
-  rpc GetCapabilities(GetCapabilitiesRequest) returns (GetCapabilitiesResponse);
-}
-
-message GetCapabilitiesRequest {}
-
-message GetCapabilitiesResponse {
-  bool   cuda_available   = 1;
-  uint32 device_count     = 2;
-  string torch_version    = 3;
-  string cuda_build_version = 4;   // libtorch のビルド時 CUDA
-  string cudnn_build_version = 5;
-  repeated CudaDevice devices = 6;
-}
-
-message CudaDevice {
-  uint32 index                  = 1;
-  string name                   = 2;
-  uint32 compute_capability_major = 3;
-  uint32 compute_capability_minor = 4;
-  uint64 total_memory_bytes      = 5;
+    rpc GetCapabilities(google.protobuf.Empty) returns (CapabilitiesResponse);
 }
 ```
 
-バージョニングは `package aiengine.v1;` で始める。破壊的変更は `v2` を切る。
+**計画からの縮小**: `device_count` / `torch_version` / `cuda_build_version` /
+`cudnn_build_version` / `compute_capability_major/minor` / `total_memory_bytes`
+は実装していない。`device_count` は `devices` の要素数で代替可能、他はまだ
+使う予定が無いため後回し。要る場面が出たら `v1` に**フィールド追加**（既存
+フィールド番号は変えない）で拡張する。バージョニングは `package capabilities.v1;`
+のとおり。破壊的変更は `v2` を切る。
 
-## C++ 側
+## C++ 側（実装済み）
 
 ### 1. ビルド基盤
 
 - Dockerfile（`.devcontainer/Dockerfile`）に追加:
-  `libgrpc++-dev` `libprotobuf-dev` `protobuf-compiler` `protobuf-compiler-grpc`
-- `CMakeLists.txt`: `find_package(gRPC CONFIG REQUIRED)` / `find_package(Protobuf REQUIRED)`、
-  `protobuf_generate` + gRPC プラグインで `capabilities.proto` から `.pb.cc` / `.grpc.pb.cc`
-  を `build/` に生成。生成物はコミットしない。
-- リンクの重さ対策: gRPC サーバーは `ai_engine_app` に統合するか、別ターゲット
-  `ai_engine_grpc` に分けるか要検討（`-j2` 制約下でのビルド時間）。
+  `libgrpc++-dev` `libprotobuf-dev` `protobuf-compiler` `protobuf-compiler-grpc`、
+  加えて疎通確認用に **`grpcurl`**（apt に無いので GitHub リリースのバイナリを
+  バージョン固定でダウンロード）。
+- `CMakeLists.txt`: 当初案の `find_package(gRPC CONFIG REQUIRED)` は
+  **Ubuntu 22.04 の `libgrpc++-dev`(1.30.2) が CMake Config を提供せず失敗**したため、
+  pkg-config 経由に変更（`gRPC::grpc++` / `gRPC::grpc_cpp_plugin` という同名の
+  imported target を自作して差し替え）。`Protobuf` も同様に一癖あった
+  （「進捗メモ」参照）。生成物は `build/protoGenerated/` に集約し、コミットしない。
+- リンク方針: **別ターゲット `ai_engine_grpc` に分けた**。これは単なるビルド時間対策
+  ではなく、`ai_engine_lib`(torch)をリンクしないことが**必須の制約**になった
+  （「進捗メモ」参照）。
 
 ### 2. `ICapabilityProvider`（application ポート）
 
+実装（`src/training/application/interfaces/ICapabilityProvider.hpp`）:
+
 ```cpp
-// application/interfaces/ICapabilityProvider.hpp — libtorch 非依存
+struct DeviceSnapshot {
+    std::string name;
+    ComputeDeviceType type;
+    int index = 0;
+};
+
 struct CapabilitySnapshot {
     bool cudaAvailable = false;
-    unsigned int deviceCount = 0;
-    std::string torchVersion;
-    std::string cudaBuildVersion;
-    std::string cudnnBuildVersion;
-    std::vector<CudaDeviceInfo> devices;  // index/name/cc/vram を持つ値型
+    std::vector<DeviceSnapshot> devices;
 };
 
 class ICapabilityProvider {
@@ -135,25 +165,49 @@ public:
 };
 ```
 
+計画時の `deviceCount` / `torchVersion` / `cudaBuildVersion` / `cudnnBuildVersion`
+は無し（`.proto` の縮小に合わせた）。`ComputeDeviceType` は Phase 1 の
+`ComputeDevice.hpp`（entities）をそのまま再利用している。
+
 ### 3. `CudaCapabilityProvider`（infrastructure 実装）
 
-`torch::cuda::is_available()` / `device_count()` / `at::cuda::getDeviceProperties(i)`、
-`TORCH_VERSION` マクロ等から `CapabilitySnapshot` を組む。
+`torch::cuda::is_available()` / `device_count()` から `CapabilitySnapshot` を組む
+（`src/training/infrastructure/torchFunc/CudaCapabilityProvider.cpp`）。
+`at::cuda::getDeviceProperties` 等の詳細情報は `.proto` を縮小したため未使用。
 
 ### 4. `CapabilitiesServiceImpl`（gRPC adapter）
 
-生成された `Capabilities::Service` を継承。`GetCapabilities` で
-`_provider->snapshot()` を呼び、`CapabilitySnapshot` → protobuf レスポンスに変換。
+生成された `capabilities::v1::Capabilities::Service` を継承。コンストラクタで
+`ICapabilityProvider&` を DI で受け取る（具象 `CudaCapabilityProvider` は知らない）。
+`ComputeDeviceType` → `capabilities::v1::DeviceType` の変換は、生成 enum を
+他層に漏らさないためこの `.cpp` 内の無名 namespace に閉じている。
 
-### 5. `main.cpp`
+### 5. `main.cpp` → `src/main.cpp` + `GrpcApp` / `TrainingApp`
 
-`--serve` などのフラグ（or 別バイナリ）で gRPC サーバーモード起動。
-既存の「config を読んで学習」経路はそのまま残す（Phase 2 では学習 RPC は無い）。
+計画より一段整理した。旧 `main.cpp`(学習の全ロジックを直書き)を
+`src/training/TrainingApp.cpp`(`runTraining()`)に切り出し、対称的に
+`src/api/grpc/GrpcApp.cpp`(`runGrpcServer()`。`CudaCapabilityProvider` +
+`CapabilitiesServiceImpl` + `GrpcServer` の DI 配線)を新設。
+`src/main.cpp` はどちらを呼ぶかを `--serve` フラグで振り分けるだけの薄い層。
+
+```cpp
+// src/main.cpp
+int main(int argc, char **argv)
+{
+    const bool serve = (argc > 1 && std::string(argv[1]) == "--serve");
+    if (serve) runGrpcServer(); else runTraining();
+    return 0;
+}
+```
+
+`GrpcApp.cpp` は `ai_engine_grpc` 側に置く（`ai_engine_app` ではない）。
+理由は「進捗メモ」の CMake 制約を参照。
 
 ### 6. Phase 1 の起動時チェックの扱い
 
-`ensureComputeDeviceAvailable`（`DeviceToTorch.cpp`）は**残す**。
-Rust プリフライトが本線になるが、C++ 単体起動・多層防御として維持。
+`ensureComputeDeviceAvailable`（`DeviceToTorch.cpp`）は**残した**。
+`runTraining()` から呼ばれる。Rust プリフライトが本線になる予定だが、
+C++ 単体起動・多層防御として維持。
 
 ## Rust 側
 
@@ -196,12 +250,13 @@ services:
 
 ## 進め方（順序）
 
-1. `apps/backend/proto/capabilities.proto`
-2. C++ Dockerfile に gRPC/protobuf 追加 → CMake で生成 → **空の gRPC サーバーが
-   起動して `grpc_cli` で疎通するところまで**
-3. C++: `ICapabilityProvider` + `CudaCapabilityProvider` + `GetCapabilities` ハンドラ
+1. ~~`apps/backend/proto/capabilities.proto`~~ **完了**
+2. ~~C++ Dockerfile に gRPC/protobuf 追加 → CMake で生成 → 空の gRPC サーバーが
+   起動して疎通するところまで~~ **完了**（`grpc_cli` ではなく `grpcurl` を使用）
+3. ~~C++: `ICapabilityProvider` + `CudaCapabilityProvider` + `GetCapabilities` ハンドラ~~
+   **完了**（`grpcurl` で実応答まで確認済み）
 4. Rust: コンテナ + crate 雛形 → tonic クライアントで `GetCapabilities` を
-   叩けるところまで
+   叩けるところまで　← **次はここ**
 5. Rust: `domain` + `application` のポリシー層（device バリデーション）
 6. B-5 の役割を Rust プリフライトへ（C++ チェックは多層防御で残す）
 
@@ -210,17 +265,81 @@ gRPC を別ターゲットに分けるか早めに判断する。
 
 ## タスク
 
-- [ ] `apps/backend/proto/capabilities.proto`
-- [ ] `.devcontainer/Dockerfile`: gRPC / protobuf 追加
+- [x] `apps/backend/proto/capabilities.proto`
+- [x] `.devcontainer/Dockerfile`: gRPC / protobuf 追加（+ `grpcurl` 追加、計画外）
 - [ ] `.devcontainer/Dockerfile.rust` + `docker-compose.yml` 2 サービス化
-- [ ] `CMakeLists.txt`: proto 生成 + gRPC リンク（別ターゲット要否の判断込み）
-- [ ] C++: `ICapabilityProvider` / `CudaCapabilityProvider`
-- [ ] C++: `CapabilitiesServiceImpl` / `GrpcServer` / `main.cpp` のサーバーモード
+- [x] `CMakeLists.txt`: proto 生成 + gRPC リンク（`ai_engine_grpc` に分離。
+      理由は必須制約、詳細は進捗メモ）
+- [x] C++: `ICapabilityProvider` / `CudaCapabilityProvider`
+- [x] C++: `CapabilitiesServiceImpl` / `GrpcServer` / `GrpcApp` /
+      `src/main.cpp` の `--serve` サーバーモード
+- [x] 動作確認: `grpcurl` で `GetCapabilities` を実行し
+      `cudaAvailable` / `devices`(cpu, cuda:0) が正しく返ることを確認
+- [x] 既存テスト（10本）が無改修で通ることを確認
 - [ ] Rust: `training-api` crate（`build.rs` で proto 生成）
 - [ ] Rust: `adapters/grpc` クライアント → `GetCapabilities` 疎通
 - [ ] Rust: `domain` + `application`（device バリデーションポリシー）
 - [ ] 統合: Rust プリフライト → NG ならエラー停止（サーバー版方針）
-- [ ] `gpu-support.md` の Phase 2 セクションから本 issue へリンク
+- [x] `gpu-support.md` の Phase 2 セクションから本 issue へリンク
+
+## 進捗メモ（2026-09-11、C++ 側完了分）
+
+実装は計画どおり進んだが、**CMake / ビルド周りで3つ想定外の問題**を踏んだ。
+将来 Rust 側や別の RPC を追加するときに同じ問題を踏まないための記録。
+
+### 1. `find_package(gRPC CONFIG REQUIRED)` が失敗する
+
+Ubuntu 22.04 の `libgrpc++-dev`(apt, 1.30.2)は `gRPCConfig.cmake` を提供せず
+pkg-config の `.pc` のみ。`pkg_check_modules(... IMPORTED_TARGET grpc++)` で
+見つけ、`gRPC::grpc++` / `gRPC::grpc_cpp_plugin` という**同名**の target を
+自作して差し替えた（呼び出し側のコードは無変更で済む）。
+
+### 2. `protobuf::libprotobuf` にリンクしても実体が空
+
+`find_package(Torch)` が内部で読む `Caffe2Config.cmake` が、
+「`protobuf::libprotobuf` という名前がまだ無ければ中身の無いダミーを作る」処理を
+**先に**実行してしまう。後から呼ぶ `find_package(Protobuf)` は「その名前は既にある」
+と見なして本物に差し替えない（`FindProtobuf.cmake` 側にも同種のガードがある）。
+結果、最終リンクで `undefined reference to google::protobuf::Message` になる。
+`protobuf::libprotobuf` という名前は諦め、pkg-config 経由で別名
+`SystemProtobuf::libprotobuf` を用意して使っている。
+
+加えて devcontainer の環境変数 `CMAKE_PREFIX_PATH=/opt/libtorch` が
+`find_package(Protobuf)` の探索に混ざり、libtorch 同梱の(バージョンが違う)
+protobuf ヘッダを拾ってしまう問題もあった
+（`unset(ENV{CMAKE_PREFIX_PATH})` は CMake が起動時に取り込み済みで効かない）。
+`Protobuf_INCLUDE_DIR` 等をキャッシュに直接ピン留めして探索自体を回避した。
+
+### 3. `ai_engine_lib`(STATIC, torch を PRIVATE リンク)の使用要件が伝播する
+
+STATIC ライブラリの PRIVATE 依存(ここでは torch)の使用要件(include dirs)は、
+CMake の仕様上それをリンクする側にも伝播してしまう(静的リンクは最終的な
+実行ファイルが全依存を知る必要があるための既知の制約で、`target_include_directories`
+側の工夫では回避できないことを実験で確認済み)。これにより **`ai_engine_lib` を
+リンクした翻訳単位はどれも、libtorch 同梱の protobuf ヘッダが `-isystem` で
+紛れ込み、生成コード(`capabilities.grpc.pb.h` 経由で `source_context.pb.h` 等)と
+衝突する**。
+
+対処は「`ai_engine_lib` をリンクしない」の一択:
+- `ai_engine_grpc`(`GrpcServer.cpp` / `CapabilitiesServiceImpl.cpp` /
+  `GrpcApp.cpp`)は `ai_engine_lib` を **リンクしない**
+- `GrpcApp.cpp` が使う `CudaCapabilityProvider.hpp` は torch 非依存のヘッダ
+  (メンバも無い)なのでコンパイルは通る。実体(`.cpp`、torch 使用)のシンボル解決は
+  両方をリンクする最終実行ファイル `ai_engine_app` の段階で行われる
+- ただし `ai_engine_app` の最終リンクでは**リンク順**が重要: `ai_engine_grpc`
+  (`CudaCapabilityProvider` を要求する側)を `ai_engine_lib`(提供する側)より
+  **先**に書く必要がある(静的リンクは左から右へ一方向にしか未解決シンボルを
+  探さないため、逆順だと `undefined reference to vtable for
+  CudaCapabilityProvider` になる)
+
+### この制約が今後に効いてくる点
+
+将来 `Inference` サービス等を追加するとき、その adapter 実装
+（`InferenceServiceImpl` 等）も **`ai_engine_lib` を直接リンクしてはいけない**。
+具象 infrastructure クラス（`TorchInferenceEngine` 等）は `ICapabilityProvider`
+と同じパターンで interface 越しに DI し、実体の組み立ては `GrpcApp.cpp` のような
+composition root（`ai_engine_grpc` 側、`CudaCapabilityProvider.hpp` のように
+torch 非依存なヘッダしか include しない前提）に置く。
 
 ## アーキテクチャ上の注意
 
