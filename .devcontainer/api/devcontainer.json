@@ -2,7 +2,7 @@
   "name": "API Dev",
   "dockerComposeFile": "../docker-compose.yml",
   "service": "api-dev",
-  "workspaceFolder": "/workspaces/api",
+  "workspaceFolder": "/workspaces/apps/backend/api",
   "customizations": {
     "vscode": {
       "extensions": [

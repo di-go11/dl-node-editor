@@ -5,7 +5,7 @@ services:
       context: .
       dockerfile: Dockerfile
     volumes:
-      - ../apps/backend:/workspaces:cached # apps/backend配下(ai-engine/api/proto)のみマウント。protoはC++/Rust共通契約のためai-engine単体ではなくbackend単位で共有する
+      - ../:/workspaces:cached # リポジトリルートをマウント(.gitを含めるため。backend単体マウントだとコンテナ内でgit操作ができなくなる)
       - ~/.claude:/root/.claude:cached # ホスト側のClaude設定(CLAUDE.md等)を共有
       - ccache-data:/ccache # ccache のキャッシュをコンテナ再作成後も永続化
     # VS Code が DevContainer として認識し続けるための設定
@@ -27,18 +27,18 @@ services:
     security_opt:
       - seccomp:unconfined
 
-    working_dir: /workspaces/ai-engine
+    working_dir: /workspaces/apps/backend/ai-engine
   api-dev:
     build:
       context: .
       dockerfile: Dockerfile.rust
     volumes:
-      - ../apps/backend:/workspaces:cached
+      - ../:/workspaces:cached
       - ~/.claude:/root/.claude:cached # ホスト側のClaude設定(CLAUDE.md等)を共有
       - cargo-registry:/usr/local/cargo/registry # cargo のキャッシュをコンテナ再作成後も永続化
     # VS Code が DevContainer として認識し続けるための設定(base imageのデフォルトCMDはbashで、TTYがないと即終了するため)
     command: /bin/bash -c "while sleep 1000; do :; done"
-    working_dir: /workspaces/api
+    working_dir: /workspaces/apps/backend/api
 
 volumes:
   ccache-data:

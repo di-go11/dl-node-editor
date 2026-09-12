@@ -2,7 +2,7 @@
   "name": "AI-Engine C++ Dev",
   "dockerComposeFile": "../docker-compose.yml",
   "service": "ai-engine-dev",
-  "workspaceFolder": "/workspaces/ai-engine",
+  "workspaceFolder": "/workspaces/apps/backend/ai-engine",
   "customizations": {
     "vscode": {
       "extensions": [

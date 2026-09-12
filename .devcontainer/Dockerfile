@@ -65,4 +65,4 @@ ENV CMAKE_CXX_COMPILER_LAUNCHER=ccache
 RUN mkdir -p /ccache && ccache --version
 
 # 6. docker-compose.yml に合わせて作業ディレクトリを戻す
-WORKDIR /workspaces/ai-engine
+WORKDIR /workspaces/apps/backend/ai-engine
