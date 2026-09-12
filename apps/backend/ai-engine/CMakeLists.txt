@@ -7,24 +7,24 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # libtorchのパスを指定する（Dockerfileで指定したパスを使用）
-set(CMAKE_PREFIX_PATH "/opt/libtorch" ${CMAKE_PREFIX_PATH})
+set(CMAKE_PREFIX_PATH "/opt/libtorch" ${CMAKE_PREFIX_PATH}) # Cmake_Prefix_Pathに /opt/libtorch を追加するということ。右辺に ${CMAKE_PREFIX_PATH} を追加することで、既存のパスも保持される。
 
 # 1. 以前のDockerfileで指定した環境変数（/opt/libtorch）からLibTorchを探す
 find_package(Torch REQUIRED)
 
 # 1-2. 画像デコード(JPEG/PNG)用にOpenCVを探す(Dockerfileでlibopencv-devをインストール済み)
-find_package(OpenCV REQUIRED)
+find_package(OpenCV REQUIRED) # user/lib内に保存しているためデフォルトで見つけることができる。
 
 # 1-3. gRPC C++ライブラリを探す。
 # Ubuntu 22.04 の libgrpc++-dev(apt)は gRPCConfig.cmake / gRPCTargets.cmake を
 # 提供しない(pkg-config の .pc ファイルしか無い)ため find_package(gRPC CONFIG)
 # は失敗する。pkg-config 経由で見つけ、以降のコードが参照する
 # gRPC::grpc++ / gRPC::grpc_cpp_plugin と同じ名前のターゲットを自前で作る。
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(GRPCPP REQUIRED IMPORTED_TARGET grpc++)
-add_library(gRPC::grpc++ ALIAS PkgConfig::GRPCPP)
+find_package(PkgConfig REQUIRED) # PkgConfig.cmakeというCMakeの既存のモジュールを読み込む。
+pkg_check_modules(GRPCPP REQUIRED IMPORTED_TARGET grpc++) # PkgConfig.cmakeのモジュールを使用してgrpc++.pcを読み込む。
+add_library(gRPC::grpc++ ALIAS PkgConfig::GRPCPP) # gRPC::grpc++という読み取り専用の別名を作成。
 
-find_program(GRPC_CPP_PLUGIN_EXECUTABLE grpc_cpp_plugin REQUIRED)
+find_program(GRPC_CPP_PLUGIN_EXECUTABLE grpc_cpp_plugin REQUIRED) # grpc_cpp_pluginはgrpcのサービススタブ(.grpc.pb.h / .grpc.pb.cc)を生成するための外部プラグイン実行ファイル。
 add_executable(gRPC::grpc_cpp_plugin IMPORTED)
 set_target_properties(gRPC::grpc_cpp_plugin PROPERTIES
 	IMPORTED_LOCATION ${GRPC_CPP_PLUGIN_EXECUTABLE})
