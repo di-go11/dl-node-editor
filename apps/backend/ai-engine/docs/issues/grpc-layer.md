@@ -3,8 +3,11 @@
 ブランチ: `feat/gRPC-function` / GPU 対応 issue（`gpu-support.md`）の **Phase 2**。
 
 > **2026-09-11 時点の進捗**: C++ 側（`.proto` / gRPC サーバー / `GetCapabilities`）は
-> 実装・ビルド・`grpcurl` での疎通確認まで完了。Rust 側（`training-api` crate）と
-> devcontainer の 2 サービス化は未着手。詳細は「進捗メモ」節を参照。
+> 実装・ビルド・`grpcurl` での疎通確認まで完了。**Rust 側（`api` crate。当初
+> `training-api` の名前で計画していたが、学習専用ではなくフロントエンド向け
+> バックエンドAPI全体を担うため `api` に改名）と devcontainer の 2 サービス化は
+> `training-api-setup.md` に切り出した**（本ファイルは
+> C++ 側完了分の記録として完結させる）。詳細は「進捗メモ」節を参照。
 
 ## 背景
 
@@ -57,7 +60,7 @@ apps/backend/
           ICapabilityProvider.hpp          # application が握るポート
         infrastructure/torchFunc/
           CudaCapabilityProvider.{hpp,cpp} # torch::cuda::* 実装
-  training-api/                 # ★未着手: 新規 Rust crate
+  api/                           # ★未着手: 新規 Rust crate（当初 training-api の名前で計画。詳細は training-api-setup.md）
     Cargo.toml
     build.rs                    # tonic-build で proto 生成
     src/
@@ -209,65 +212,34 @@ int main(int argc, char **argv)
 `runTraining()` から呼ばれる。Rust プリフライトが本線になる予定だが、
 C++ 単体起動・多層防御として維持。
 
-## Rust 側
+## Rust 側 / devcontainer 2 サービス化
 
-### crate: `training-api`
+`training-api-setup.md` に分離した（crate 構成・各層の責務・devcontainer
+設定・進め方の詳細はそちらを参照）。ここでは要点のみ:
 
-- `tonic` + `prost`、`build.rs` で `../proto/capabilities.proto` を生成
-- クリーンアーキテクチャ（entity から）:
+- crate: `apps/backend/api/`（`tonic` + `prost`、クリーンアーキテクチャ）
+- devcontainer: `api-dev` サービスを追加し 2 サービス構成へ
+- サーバー版の方針: device バリデーション NG は**エラーで停止**
+  （`gpu-support.md` の「黙って CPU に落とさない」を Rust 側に移設）
 
-| 層 | 責務 |
-|---|---|
-| `domain` | `DeviceRequest`（`cpu` / `cuda:N`）、`Capabilities`、`DeviceValidationError`。生成コード非依存 |
-| `application` | ポリシー: 「`cuda` 指定だが `cuda_available=false`」「index が `device_count` 以上」を弾き、ユーザー向けメッセージを生成 |
-| `adapters/grpc` | tonic クライアント。protobuf メッセージ ↔ `domain` 変換。capability 取得 |
-| `infrastructure` | 設定読み込み、起動時に capability を 1 回取得してキャッシュ |
-
-### やること
-
-- 起動時に `GetCapabilities` を叩いて capability をキャッシュ
-- device 指定（config / 将来は API リクエスト）を `application` のポリシーで検証
-- **サーバー版の方針**: 検証 NG は**エラーで停止**（gpu-support.md の
-  「黙って CPU に落とさない」を Rust 側に移設）
-- クライアントローカル版は「停止せず利用可能な device 一覧を返す」動作になるが
-  それは別 issue。ポリシー関数自体は共有できるよう、判定結果の**扱い**を
-  呼び出し側の責務として切り出しておく
-
-## devcontainer
-
-`.devcontainer/docker-compose.yml` を 2 サービスへ:
-
-```yaml
-services:
-  ai-engine-dev:      # 既存。gRPC サーバーもここで動かす。50051 を expose
-  training-api-dev:   # 新規。Dockerfile.rust(rustup + protobuf-compiler)
-    depends_on: [ai-engine-dev]
-```
-
-- devcontainer の主サービスは **C++（`ai-engine-dev`）のまま**。Rust は
-  `runServices` で併立、または個別に `docker compose exec` で開発
-- サービス間: `training-api-dev` → `ai-engine-dev:50051`
-
-## 進め方（順序）
+## 進め方（順序、C++ 側）
 
 1. ~~`apps/backend/proto/capabilities.proto`~~ **完了**
 2. ~~C++ Dockerfile に gRPC/protobuf 追加 → CMake で生成 → 空の gRPC サーバーが
    起動して疎通するところまで~~ **完了**（`grpc_cli` ではなく `grpcurl` を使用）
 3. ~~C++: `ICapabilityProvider` + `CudaCapabilityProvider` + `GetCapabilities` ハンドラ~~
    **完了**（`grpcurl` で実応答まで確認済み）
-4. Rust: コンテナ + crate 雛形 → tonic クライアントで `GetCapabilities` を
-   叩けるところまで　← **次はここ**
-5. Rust: `domain` + `application` のポリシー層（device バリデーション）
-6. B-5 の役割を Rust プリフライトへ（C++ チェックは多層防御で残す）
+
+以降（Rust crate 雛形 → tonic クライアント疎通 → ポリシー層 → 統合）は
+`training-api-setup.md` を参照。
 
 各ステップでビルド確認（`-j2`）。gRPC 導入で C++ のビルド時間が増えるため、
 gRPC を別ターゲットに分けるか早めに判断する。
 
-## タスク
+## タスク（C++ 側。Rust 側は `training-api-setup.md` を参照）
 
 - [x] `apps/backend/proto/capabilities.proto`
 - [x] `.devcontainer/Dockerfile`: gRPC / protobuf 追加（+ `grpcurl` 追加、計画外）
-- [ ] `.devcontainer/Dockerfile.rust` + `docker-compose.yml` 2 サービス化
 - [x] `CMakeLists.txt`: proto 生成 + gRPC リンク（`ai_engine_grpc` に分離。
       理由は必須制約、詳細は進捗メモ）
 - [x] C++: `ICapabilityProvider` / `CudaCapabilityProvider`
@@ -276,11 +248,9 @@ gRPC を別ターゲットに分けるか早めに判断する。
 - [x] 動作確認: `grpcurl` で `GetCapabilities` を実行し
       `cudaAvailable` / `devices`(cpu, cuda:0) が正しく返ることを確認
 - [x] 既存テスト（10本）が無改修で通ることを確認
-- [ ] Rust: `training-api` crate（`build.rs` で proto 生成）
-- [ ] Rust: `adapters/grpc` クライアント → `GetCapabilities` 疎通
-- [ ] Rust: `domain` + `application`（device バリデーションポリシー）
-- [ ] 統合: Rust プリフライト → NG ならエラー停止（サーバー版方針）
 - [x] `gpu-support.md` の Phase 2 セクションから本 issue へリンク
+- [ ] → 続きは `training-api-setup.md`（devcontainer 2 サービス化 /
+      `api` crate / tonic クライアント / device バリデーション）
 
 ## 進捗メモ（2026-09-11、C++ 側完了分）
 
@@ -350,6 +320,7 @@ torch 非依存なヘッダしか include しない前提）に置く。
 
 ## 関連
 
+- `docs/issues/training-api-setup.md` — 本 issue の続き（Rust 側 / devcontainer 2 サービス化）
 - `docs/issues/gpu-support.md` — Phase 1（完了）。B-5 の起動時チェックを Rust へ寄せる
 - `CLAUDE.md` — コンテナ分離 / gRPC のみ / デプロイ方針
 - `gpu-support.md` の「実行環境別の GPU 実装見通し」— サーバー版 / クライアント版で
