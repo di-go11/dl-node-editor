@@ -61,15 +61,12 @@ GPU の情報が表示されれば OK。ここが通らないと以降は進め�
 
 ## 2. リポジトリを取得
 
+`feat/gRPC-function` は `main` にマージ済み（SegNet 対応含む）。`main` を使う。
+
 ```bash
 git clone https://github.com/HT-lab-git/robust-object-detection.git
 cd robust-object-detection
-git checkout feat/gRPC-function   # SegNet 対応はこのブランチ。main には未マージ
 ```
-
-> **要確認**: `feat/gRPC-function` を `main` にマージしてから使うか、
-> ブランチのまま使うかはこちらで決められないので判断をお願いします。
-> ひとまずこの手順はブランチのままで進める前提で書いています。
 
 ---
 
@@ -163,7 +160,7 @@ docker run --rm --gpus all \
 
 ## この手順で解決できていない/確認が必要な点
 
-- [ ] `feat/gRPC-function` を `main` にマージするかどうか（手順2）
+- [x] `feat/gRPC-function` を `main` にマージするかどうか → マージ済み（手順2）
 - [ ] データセットの具体的な運び方（USB か社内ストレージか等、手順3）
 - [ ] Windows 側 NVIDIA ドライバのバージョンが CUDA 12.6 に対応しているか
       （`nvidia-smi` の出力にある Driver Version / CUDA Version を確認）
