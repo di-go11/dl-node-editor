@@ -1,8 +1,14 @@
 # 自前 GPU マシン(Windows Server 2022)で学習を動かす手順
 
-対象: Windows Server 2022、NVIDIA GPU、Docker は **WSL2 上の Docker Engine** で
-稼働中（Docker Desktop ではない）。インターネット到達可。SSH 不可のため、
-**この手順は現地（サーバーのコンソール/RDP）で実行する**前提。
+対象: Windows Server 2022、NVIDIA GPU。Docker は **Docker Desktop**（WSL2 バックエンド）
+経由で使う（WSL2 に Docker Engine 単体を新規インストールする案は不採用。
+Docker Desktop が既に入っていたため、そちらの `desktop-linux` コンテキストを使う
+運用に決定）。インターネット到達可。SSH 不可のため、**この手順は現地
+（サーバーのコンソール/RDP）で実行する**前提。
+
+**社内のライセンス方針を確認すること**: Docker Desktop は組織規模によって
+有償サブスクリプションが必要な場合がある（Docker Subscription Service Agreement）。
+商用サーバーでの継続利用前に確認してください。
 
 現状の `.devcontainer/Dockerfile` はビルドツールチェーンだけを持つ「土台」イメージで、
 リポジトリ本体は `docker-compose.yml` が bind mount で流し込む構成（イメージに
@@ -10,52 +16,29 @@
 
 ---
 
-## 0. 前提チェック
+## 0〜1. 前提チェック・GPU 疎通確認（完了済み）
 
-WSL2 上に Docker Engine が既にある、とのことなので以下を確認するだけでよい：
-
-```bash
-# WSL2 の Linux ディストリ(Ubuntu 想定)のシェルで
-docker info | head -5          # Docker Engine が動いているか
-nvidia-smi                     # Windows 側 NVIDIA ドライバが WSL 越しに見えているか
-```
-
-`nvidia-smi` が **WSL2 の中で**通れば、Windows ホスト側の NVIDIA ドライバ
-（CUDA on WSL 対応版、概ね R550 以降）は入っている。通らなければ、
-Windows 側（WSL の中ではない）に NVIDIA の最新ドライバを入れ直す必要がある
-（[NVIDIA CUDA on WSL](https://docs.nvidia.com/cuda/wsl-user-guide/) 参照）。
-**WSL2 の中に Linux 用 NVIDIA ドライバを別途入れてはいけない**（Windows 側の
-ドライバがそのまま使われる方式のため、競合する）。
-
----
-
-## 1. NVIDIA Container Toolkit を WSL2 内に入れる
-
-WSL2 の Ubuntu シェルで：
+**この手順は現地で実施・確認済み。** 以後の作業も同じ WSL2 の Ubuntu シェルの中
+（PowerShell ではない）で行う。
 
 ```bash
-curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
-  | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
-curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
-  | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
-  | sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+# Docker Desktop 側のエンジンに切り替える(PowerShell 側と別管理なので毎回のシェルで必要)
+docker context use desktop-linux
 
-sudo apt-get update
-sudo apt-get install -y nvidia-container-toolkit
+# 疎通確認
+docker run --rm hello-world
 
-# Docker に nvidia runtime を登録して再起動
-sudo nvidia-ctk runtime configure --runtime=docker
-sudo systemctl restart docker
-```
-
-### 疎通確認
-
-```bash
+# GPU が使えるか確認
 docker run --rm --gpus all nvidia/cuda:12.6.2-base-ubuntu22.04 nvidia-smi
 ```
 
-GPU の情報が表示されれば OK。ここが通らないと以降は進めても無駄なので、
-必ず先に確認すること。
+GPU の情報が表示されるところまで確認済み。`nvidia-container-toolkit` の
+apt インストールは Docker Desktop 側が内部で処理するため**不要**（当初案の
+WSL2 単体 Docker Engine 構成では必要だったが、Docker Desktop 採用により省略）。
+
+もし新しいシェルを開いて `docker run` が `desktop-linux` ではなく `default`
+コンテキストで失敗する場合は、上の `docker context use desktop-linux` を
+シェルごとに実行し直すこと。
 
 ---
 
@@ -161,9 +144,11 @@ docker run --rm --gpus all \
 ## この手順で解決できていない/確認が必要な点
 
 - [x] `feat/gRPC-function` を `main` にマージするかどうか → マージ済み（手順2）
+- [x] Docker Desktop / WSL2 Engine 単体 のどちらを使うか →
+      **Docker Desktop（`desktop-linux` コンテキスト）を使う**で確定。
+      GPU 疎通確認済み（`nvidia-smi` がコンテナ内から実行できることを確認）
+- [ ] Docker Desktop の商用ライセンス要否（社内で要確認、上部の注記参照）
 - [ ] データセットの具体的な運び方（USB か社内ストレージか等、手順3）
-- [ ] Windows 側 NVIDIA ドライバのバージョンが CUDA 12.6 に対応しているか
-      （`nvidia-smi` の出力にある Driver Version / CUDA Version を確認）
 - [ ] 長時間学習を back ground で回す運用（`docker run -d` + ログの出し先など）は
       未整備。まずは前面で1回通すところまでを想定した手順
 
