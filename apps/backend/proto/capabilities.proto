@@ -1,0 +1,26 @@
+/*Enviroment of moving c++ exe.*/
+syntax = "proto3";
+import "google/protobuf/empty.proto";
+
+package capabilities.v1;
+
+enum DeviceType {
+    DEVICE_TYPE_UNSPECIFIED = 0;
+    DEVICE_TYPE_CPU = 1;
+    DEVICE_TYPE_CUDA = 2;
+}
+
+message DeviceInfo{
+    string device_name = 1;
+    uint32 device_index = 2;
+    DeviceType device_type = 3;
+}
+
+message CapabilitiesResponse {
+    bool cuda_available = 1; // Check that cuda available.
+    repeated DeviceInfo devices = 2; // Lists of useable devices.
+}
+
+service Capabilities {
+    rpc GetCapabilities(google.protobuf.Empty) returns (CapabilitiesResponse);
+}

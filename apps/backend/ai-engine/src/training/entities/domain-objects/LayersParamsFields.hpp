@@ -27,6 +27,8 @@ enum class LayerKind : std::int64_t
     BatchNorm = 2,
     Linear = 3,
     Activation = 4,
+    IndexedPooling = 5,
+    Unpooling = 6
 };
 
 inline LayerKind layerKindOf(const Conv2DParams &) { return LayerKind::Conv2D; }
@@ -34,6 +36,8 @@ inline LayerKind layerKindOf(const PoolingParams &) { return LayerKind::Pooling;
 inline LayerKind layerKindOf(const BatchNormParams &) { return LayerKind::BatchNorm; }
 inline LayerKind layerKindOf(const LinearParams &) { return LayerKind::Linear; }
 inline LayerKind layerKindOf(const ActivationConfig &) { return LayerKind::Activation; }
+inline LayerKind layerKindOf(const IndexedPoolingParams &) { return LayerKind::IndexedPooling; }
+inline LayerKind layerKindOf(const UnpoolingParams &) { return LayerKind::Unpooling; }
 
 // fingerprint の正規化文字列に使う層種名。
 inline std::string layerKindTag(LayerKind kind)
@@ -50,6 +54,10 @@ inline std::string layerKindTag(LayerKind kind)
         return "linear";
     case LayerKind::Activation:
         return "activation";
+    case LayerKind::IndexedPooling:
+        return "indexed";
+    case LayerKind::Unpooling:
+        return "unpool";
     }
 
     throw std::runtime_error("layerKindTag: 未知の LayerKind (" +
@@ -99,6 +107,18 @@ void visitLayerFields(Params &p, F &&f)
     {
         f("activation_type", p.activationType);
         f("dim", p.dim);
+    }
+    else if constexpr (std::is_same_v<T, IndexedPoolingParams>)
+    {
+        f("kernel_size", p.kernelSize);
+        f("stride", p.stride);
+        f("padding", p.padding);
+    }
+    else if constexpr (std::is_same_v<T, UnpoolingParams>)
+    {
+        f("kernel_size", p.kernelSize);
+        f("stride", p.stride);
+        f("padding", p.padding);
     }
     else
     {

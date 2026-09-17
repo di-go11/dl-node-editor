@@ -932,6 +932,20 @@ ImageData resize(const ImageData &input) const {
 | 結果を呼び出し側へ返す | 値返し(RVO に任せる。`return std::move(local)` は書かない) |
 | 同サイズ出力を大量ループで使い回す(実測でボトルネックのときだけ) | `T& output` 出力引数 |
 
+## final
+
+クラス宣言につけると「**これ以上継承できない**」という指定。
+
+```proto
+class GreeterServiceImpl final : public Greeter::Service {}
+```
+
+- GreeterServiceImplを継承した子クラスを作ろうとするとコンパイルエラーになる
+- 「このサービス実装はここで完結させる、これ以上拡張しない」という意図を明示する
+- 副次的な効果として、コンパイラが仮想関数呼び出しを最適化しやすくなる場合がある
+
+
+
 ## スマートポインタ(`unique_ptr` / `shared_ptr` と `make_unique` / `make_shared`)
 
 ### 0. 用語の前提 — 「所有権(ownership)」
@@ -1157,7 +1171,7 @@ Foo::~Foo() = default;            // .cpp 側なら OK
 
 ### 10. 本プロジェクトでの使用例
 
-[main.cpp](../main.cpp) は生成物を組み立てて注入するため `make_shared` を多用している。
+[TrainingApp.cpp](../src/training/TrainingApp.cpp)（学習の合成層。旧 main.cpp の中身）は生成物を組み立てて注入するため `make_shared` を多用している。
 
 ```c++
 auto model = std::make_shared<TorchModel>(graph, builder);      // count = 1
@@ -1304,3 +1318,4 @@ Base b = makeBad();                    // b.f() は Base::f() を呼ぶ(動的�
 | 生成した多態オブジェクトを共有所有させたい | いったん `unique_ptr<IBase>` で返し、受け取り側が `shared_ptr` へ変換 |
 | 具象型がコンパイル時に確定している | 具象型の**値**(スタック)。ファクトリ不要 |
 | 既存の多態オブジェクトを所有を移さず返す | `IBase&` / `IBase*`(寿命は別途保証) |
+

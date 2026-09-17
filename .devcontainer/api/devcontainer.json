@@ -1,0 +1,28 @@
+{
+  "name": "API Dev",
+  "dockerComposeFile": "../docker-compose.yml",
+  "service": "api-dev",
+  "workspaceFolder": "/workspaces/apps/backend/api",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "rust-lang.rust-analyzer", // Rust用LSP本体。補完、ホバー型表示、定義ジャンプ、インライン診断
+        "tamasfe.even-better-toml", // Cargo.tomlのシンタックスハイライト・補完(標準のJSON/YAML同様、TOMLにも専用パーサが必要)
+        "serayuzgur.crates", // Cargo.toml内の依存クレートに最新バージョンをインライン表示
+        "vadimcn.vscode-lldb", // CodeLLDBデバッガ。ブレークポイントやステップ実行に使用。
+        "zxh404.vscode-proto3", //.protoファイルのシンタックスハイライト
+        "mhutchie.git-graph",
+        "anthropic.claude-code"
+      ],
+      "settings": {
+        "rust-analyzer.check.command": "clippy", // rust-analyzerの診断にClippyを使用する。。clippyはコンパイラのエラー検出に加え、Rustのイディオムから外れた書き方(非効率なクローンや冗長なパターンなど)も検出するリンターで、コンパイルは通るが改善余地がある箇所までエディタ上で早期にフィードバックできる。
+        "rust-analyzer.cargo.features": "all", // Cargo.tomlの[features]をすべて有効化する(特殊値"all"は文字列で渡す必要がある)
+        "editor.formatOnSave": true, // 保存時にrustfmtで自動整形する設定。
+        "[rust]": {
+          "editor.defaultFormatter": "rust-lang.rust-analyzer"
+        }
+      }
+    }
+  },
+  "remoteUser": "root"
+}

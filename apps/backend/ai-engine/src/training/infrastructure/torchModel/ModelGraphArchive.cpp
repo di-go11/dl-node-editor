@@ -13,7 +13,7 @@ namespace
 // LayersParams の alternative が増減したらここで気付けるようにする。
 // 増やした場合は LayersParamsFields.hpp(LayerKind・フィールド列挙)の更新と、
 // 下の readLayer の分岐追加、kModelGraphArchiveVersion のインクリメントが必要。
-static_assert(std::variant_size_v<LayersParams> == 5,
+static_assert(std::variant_size_v<LayersParams> == 7,
               "LayersParams の要素数が変わりました。ModelGraphArchive の対応を更新してください。");
 
 // archive への読み書きヘルパ。スカラーは 1 要素テンソルとして保存する
@@ -138,6 +138,10 @@ LayersConfig readLayer(torch::serialize::InputArchive &in, std::size_t index)
         return LayersConfig{readParams<LinearParams>(r)};
     case LayerKind::Activation:
         return LayersConfig{readParams<ActivationConfig>(r)};
+    case LayerKind::IndexedPooling:
+        return LayersConfig{readParams<IndexedPoolingParams>(r)};
+    case LayerKind::Unpooling:
+        return LayersConfig{readParams<UnpoolingParams>(r)};
     }
 
     throw std::runtime_error(

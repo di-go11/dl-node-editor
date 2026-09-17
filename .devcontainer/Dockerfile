@@ -23,6 +23,10 @@ RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
     # オプションのCUDAライブラリ(構造化スパース演算・マルチGPU共有メモリ)
     libcusparselt0-cuda-12 \
     libnvshmem3-cuda-12 \
+    libgrpc++-dev \
+    libprotobuf-dev \
+    protobuf-compiler \
+    protobuf-compiler-grpc \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
     # libcusparseLt/libnvshmemはバージョン別サブディレクトリに配置され、
@@ -30,6 +34,13 @@ RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
     && echo "/usr/lib/x86_64-linux-gnu/libcusparseLt/12" > /etc/ld.so.conf.d/cusparselt.conf \
     && echo "/usr/lib/x86_64-linux-gnu/nvshmem/12" > /etc/ld.so.conf.d/nvshmem.conf \
     && ldconfig
+
+# 1-4. grpcurl(gRPC版のcurl。ターミナルからRPCを直接叩いて疎通確認するツール)
+#      apt には無いので GitHub リリースのバイナリを取得する。バージョンは固定。
+RUN wget -q https://github.com/fullstorydev/grpcurl/releases/download/v1.9.1/grpcurl_1.9.1_linux_x86_64.tar.gz -O /tmp/grpcurl.tar.gz \
+    && tar -xzf /tmp/grpcurl.tar.gz -C /usr/local/bin grpcurl \
+    && chmod 755 /usr/local/bin/grpcurl \
+    && rm /tmp/grpcurl.tar.gz
 
 # 2. LibTorchを配置するディレクトリに移動
 WORKDIR /opt

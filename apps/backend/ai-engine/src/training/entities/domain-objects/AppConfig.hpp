@@ -3,6 +3,7 @@
 #include "OptimizerConfig.hpp"
 #include "ActivationConfig.hpp"
 #include "ComputeDevice.hpp"
+#include "ModelArchitectureType.hpp"
 #include <cstddef>
 #include <string>
 
@@ -29,4 +30,7 @@ struct AppConfig
 
     // 学習に使用するデバイスの設定 (デフォルトは CUDA 0)
     ComputeDevice device = ComputeDevice{ComputeDeviceType::Cuda, 0};
+
+    // 学習するモデル構造。TrainingApp.cpp の buildXxxGraph() の選択に使う。
+    ModelArchitectureType architecture = ModelArchitectureType::Sample;
 };
