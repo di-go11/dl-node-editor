@@ -3,7 +3,7 @@
 #include "training/entities/domain-objects/LayersParams.hpp"
 #include <variant>
 
-using LayersParams = std::variant<Conv2DParams, PoolingParams, BatchNormParams, LinearParams, ActivationParams>;
+using LayersParams = std::variant<Conv2DParams, PoolingParams, BatchNormParams, LinearParams, ActivationParams, IndexedPoolingParams, UnpoolingParams>;
 
 struct LayersConfig
 {

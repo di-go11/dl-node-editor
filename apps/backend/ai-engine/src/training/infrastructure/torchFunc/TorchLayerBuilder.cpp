@@ -7,6 +7,8 @@
 #include "training/infrastructure/torchFunc/TorchBatchNormLayer.hpp"
 #include "training/infrastructure/torchFunc/TorchLinearLayer.hpp"
 #include "training/infrastructure/torchFunc/TorchActivationLayer.hpp"
+#include "training/infrastructure/torchFunc/TorchIndexPoolingLayer.hpp"
+#include "training/infrastructure/torchFunc/TorchUnpoolingLayer.hpp"
 
 #include <variant>
 
@@ -47,6 +49,13 @@ std::shared_ptr<ILayer> TorchLayerBuilder::build(const LayersConfig &config)
             {
                 return std::make_shared<TorchActivationLayer>(p);
             },
-        },
+            [](const IndexedPoolingParams &p) -> std::shared_ptr<ILayer>
+            {
+                return std::make_shared<TorchIndexPoolingLayer>(p);
+            },
+            [](const UnpoolingParams &p) -> std::shared_ptr<ILayer>
+            {
+                return std::make_shared<TorchUnpoolingLayer>(p);
+            }},
         config.params);
 }

@@ -37,4 +37,5 @@ public:
 private:
     ComputeDevice _device;
     std::vector<std::shared_ptr<ILayer>> _layers;
+    bool _useIndices = false;
 };

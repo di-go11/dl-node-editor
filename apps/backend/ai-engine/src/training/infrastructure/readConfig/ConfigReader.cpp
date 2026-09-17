@@ -290,6 +290,21 @@ AppConfig ConfigReader::readAll(const std::string &filePath)
                 // チェックポイントのファイル名(<modelName>_best.pt / _last.pt)に使われる。
                 appConfig.modelName = value;
             }
+            else if (key == "model_architecture")
+            {
+                if (value == "Sample")
+                {
+                    appConfig.architecture = ModelArchitectureType::Sample;
+                }
+                else if (value == "SegNet")
+                {
+                    appConfig.architecture = ModelArchitectureType::SegNet;
+                }
+                else
+                {
+                    throw std::runtime_error("Unknown model architecture: " + value);
+                }
+            }
             else if (key == "resume_from")
             {
                 // 空を許す(= 自動判定)。値があればその .pt から再開する。

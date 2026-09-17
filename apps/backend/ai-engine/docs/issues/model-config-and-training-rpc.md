@@ -20,6 +20,42 @@ GUI 操作する」もの（`CLAUDE.md`）。しかし **ブロック UI を先�
 
 したがって **いま設計する config スキーマ（= proto メッセージ）は無駄にならない**。
 
+## 実装知見: SegNet(encoder-decoder)を線形列 `ModelGraph` で通した経験
+
+この issue を書く前に、`feat/gRPC-function` ブランチで実際に
+`segnetProgram.py`（Python/PyTorch 版 SegNet）を C++ の既存 `ModelGraph`
+（`std::vector<LayersConfig>` のフラットな直列リスト）上で再現し、GPU で
+学習が完走するところまで確認した。この経験は「1. モデル定義」の
+グラフ表現の決定に直接効く。
+
+**やったこと**: SegNet の encoder は `MaxPool2d(return_indices=True)`、
+decoder は対応する `MaxUnpool2d` で pooling 位置を正確に復元する。これは
+「離れたノード同士を結ぶ」という意味では DAG が要りそうに見えるが、
+**encoder→decoder が対称であれば LIFO スタックで表現できる**ことが分かった:
+
+- 新しい層タイプを2つ追加: `IndexedPoolingParams`(indices を記録する pooling)、
+  `UnpoolingParams`(indices を使って復元する unpooling)。既存の `PoolingParams`
+  とは型を分けた(振る舞いが違うものを1つの型にフラグで押し込めない、という
+  この codebase の既存方針に従った)
+- `ILayer` とは別に `IIndicesSource` / `IIndicesSink` という小さいインターフェースを
+  追加。`ModelGraph`/`LayersConfig` 自体は**一切変更していない**
+- `TorchModel::forward` が層を順に処理する際、`IIndicesSource` を実装する層が
+  出てきたら indices をスタックに積み、`IIndicesSink` を実装する層が出てきたら
+  スタックから降ろして渡すだけ。**ノード間の明示的な参照(エッジ)は不要**、
+  層を並べる「順序」だけで依存関係が表現できた
+
+**結論**: グラフに「分岐して離れた場所で合流する」ような構造(U-Net の concat 型
+skip connection 等)が本当に必要になるまでは、**ノード+エッジへの一般化は不要**。
+線形列のままで、SegNet クラスの encoder-decoder モデルは表現できる。
+
+**関連ファイル**（実装の参考。config スキーマ設計時にレイヤ種別の一覧として使える）:
+- `src/training/entities/domain-objects/{IndexedPoolingParams,UnpoolingParams}.hpp`
+- `src/training/adapters/interfaces/{IIndicesSource,IIndicesSink}.hpp`
+- `src/training/infrastructure/torchFunc/{TorchIndexPoolingLayer,TorchUnpoolingLayer}.cpp`
+- `src/training/infrastructure/torchModel/TorchModel.cpp`（LIFO スタックの実装）
+- `src/training/TrainingApp.cpp`（`buildSegNetGraph` — config 化する前の「正解」の
+  グラフ構造として使える）
+
 ## 却下した案: 「Layer のコードを渡す」
 
 C++ のレイヤ実装コード（または独自コード文字列）を RPC で送る案は採らない。
@@ -56,8 +92,14 @@ C++ のレイヤ実装コード（または独自コード文字列）を RPC �
 
 ### 1. モデル定義
 
-- [ ] グラフ表現: ノード集合 + エッジ集合で確定してよいか（分岐・合流を許すか、
-      当面は線形列だけか）
+- [x] グラフ表現: **線形列で SegNet(encoder-decoder + indices)まで表現できることを
+      実証済み**（`feat/gRPC-function` ブランチ、C++ 側）。詳細は下の「実装知見」参照。
+      U-Net の concat 型 skip connection のような**複数入力を取る層**が要る場面が
+      来たら、そこで初めてノード+エッジへ拡張すればよい。当面は線形列のままで
+      ブロックしない
+- [ ] ノード集合 + エッジ集合(案B)に拡張する場合、上記の「pooling→unpooling の
+      LIFO 対応」のような**暗黙の順序依存**をどう明示するか（エッジで表現するのか、
+      indices 用の特別な参照フィールドを設けるのか）
 - [ ] `params` の値型: `oneof { double, int64, bool, string, list }` の範囲
 - [ ] 初期化・重み共有・事前学習重みの指定を config に含めるか（含めないなら別 RPC）
 - [ ] 入力仕様（チャンネル数・解像度）は config か dataset 由来か

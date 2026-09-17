@@ -4,6 +4,8 @@
 #include "training/adapters/interfaces/ILayerBuilders.hpp"
 #include "training/adapters/interfaces/ILoss.hpp"
 #include "training/adapters/interfaces/IOptimizer.hpp"
+#include "training/adapters/interfaces/IIndicesSource.hpp"
+#include "training/adapters/interfaces/IIndicesSink.hpp"
 #include "training/entities/domain-objects/ModelGraph.hpp"
 #include "training/infrastructure/torchModel/TorchCheckpointArchive.hpp"
 #include "training/infrastructure/torchFunc/DeviceToTorch.hpp"
@@ -21,43 +23,52 @@ TorchModel::TorchModel(const ModelGraph &graph, ILayerBuilder &builder, const Co
     {
         auto layer = builder.build(layerConfig);
         layer->to(_device);
+
+        // indices を使う層(pooling/unpooling のどちらか片方でも)が1つでも
+        // あれば、forward() でスタックの push/pop を行う。無ければ普通のモデルは
+        // dynamic_cast のコストを一切払わない。
+        if (dynamic_cast<IIndicesSource *>(layer.get()) || dynamic_cast<IIndicesSink *>(layer.get()))
+        {
+            _useIndices = true;
+        }
+
         _layers.push_back(std::move(layer));
     }
 }
-/*
-void TorchModel::train(at::Tensor &prediction, at::Tensor &target, ILoss &loss, IOptimizer &optimizer)
-{
-    // 層間の活性化(ReLU など)は graph.layers に活性化層として含まれ、この forward
-    // ループで順に適用される。最終層は生ロジットを出力し、ここでは活性化を掛けない。
-    at::Tensor current = prediction;
-    at::Tensor next;
-    for (auto &layer : _layers)
-    {
-        layer->forward(current, next);
-        current = next;
-    }
 
-    at::Tensor lossValue;
-    loss.lossOut(current, target, lossValue);
-
-    std::cout << "LOSS値:" << lossValue << std::endl;
-
-    optimizer.resetGradients();
-    lossValue.backward();
-    optimizer.updateParmeters();
-
-    prediction = current;
-}
-
-*/
 at::Tensor TorchModel::forward(const at::Tensor &input)
 {
     at::Tensor current = input.to(training::infrastructure::torchFunc::deviceToTorch(_device));
     at::Tensor next;
+
+    std::vector<at::Tensor> indicesStack; // LIFO。pooling で積み、対応する unpooling で降ろす
+
     for (auto &layer : _layers)
     {
+        if (_useIndices)
+        {
+            if (auto *sink = dynamic_cast<IIndicesSink *>(layer.get()))
+            {
+                if (indicesStack.empty())
+                {
+                    throw std::runtime_error(
+                        "TorchModel::forward: unpooling に対応する pooling の indices がありません");
+                }
+                sink->provideIndices(indicesStack.back());
+                indicesStack.pop_back();
+            }
+        }
+
         layer->forward(current, next);
         current = next;
+
+        if (_useIndices)
+        {
+            if (auto *source = dynamic_cast<IIndicesSource *>(layer.get()))
+            {
+                indicesStack.push_back(source->takeIndices());
+            }
+        }
     }
     return current;
 }

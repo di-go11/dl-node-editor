@@ -5,3 +5,5 @@
 #include "BatchNormParams.hpp"
 #include "LinearParams.hpp"
 #include "ActivationParams.hpp"
+#include "IndexedPoolingParams.hpp"
+#include "UnpoolingParams.hpp"
