@@ -300,3 +300,15 @@ target_link_libraries(device_parity_test PRIVATE ai_engine_lib "${TORCH_LIBRARIE
 target_link_options(device_parity_test PRIVATE "-Wl,--allow-shlib-undefined")
 set_property(TARGET device_parity_test PROPERTY CXX_STANDARD 17)
 
+# 16. 損失関数(DiceLoss等)の数値的な妥当性テスト。
+add_executable(loss_function_test tests/loss_function_test.cpp)
+target_include_directories(loss_function_test PRIVATE
+	${CMAKE_CURRENT_SOURCE_DIR}/src
+	${CMAKE_CURRENT_SOURCE_DIR}
+	${TORCH_INCLUDE_DIRS}
+	${OpenCV_INCLUDE_DIRS}
+)
+target_link_libraries(loss_function_test PRIVATE ai_engine_lib "${TORCH_LIBRARIES}" ${OpenCV_LIBS})
+target_link_options(loss_function_test PRIVATE "-Wl,--allow-shlib-undefined")
+set_property(TARGET loss_function_test PROPERTY CXX_STANDARD 17)
+
