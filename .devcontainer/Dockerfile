@@ -1,4 +1,4 @@
-FROM nvidia/cuda:13.2.1-cudnn-devel-ubuntu22.04
+FROM nvidia/cuda:12.6.2-cudnn-devel-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -20,12 +20,9 @@ RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
     wget \
     unzip \
     # LibTorch(CUDAビルド)のtorch_cuda.so/torch_nvshmem.soが実行時に要求する
-    # オプションのCUDAライブラリ(構造化スパース演算・マルチGPU共有メモリ)。
-    # CUDA 13 系への更新に合わせてパッケージ名も -cuda-13 に変更(未検証。
-    # apt-get install がここで失敗したら `apt-cache search libcusparselt` /
-    # `apt-cache search libnvshmem` で実際のパッケージ名を確認して直すこと)。
-    libcusparselt0-cuda-13 \
-    libnvshmem3-cuda-13 \
+    # オプションのCUDAライブラリ(構造化スパース演算・マルチGPU共有メモリ)
+    libcusparselt0-cuda-12 \
+    libnvshmem3-cuda-12 \
     libgrpc++-dev \
     libprotobuf-dev \
     protobuf-compiler \
@@ -34,8 +31,8 @@ RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
     && rm -rf /var/lib/apt/lists/* \
     # libcusparseLt/libnvshmemはバージョン別サブディレクトリに配置され、
     # 標準のライブラリ検索パスに含まれないため、ldconfigに明示的に追加する
-    && echo "/usr/lib/x86_64-linux-gnu/libcusparseLt/13" > /etc/ld.so.conf.d/cusparselt.conf \
-    && echo "/usr/lib/x86_64-linux-gnu/nvshmem/13" > /etc/ld.so.conf.d/nvshmem.conf \
+    && echo "/usr/lib/x86_64-linux-gnu/libcusparseLt/12" > /etc/ld.so.conf.d/cusparselt.conf \
+    && echo "/usr/lib/x86_64-linux-gnu/nvshmem/12" > /etc/ld.so.conf.d/nvshmem.conf \
     && ldconfig
 
 # 1-4. grpcurl(gRPC版のcurl。ターミナルからRPCを直接叩いて疎通確認するツール)
@@ -48,11 +45,8 @@ RUN wget -q https://github.com/fullstorydev/grpcurl/releases/download/v1.9.1/grp
 # 2. LibTorchを配置するディレクトリに移動
 WORKDIR /opt
 
-# 3. LibTorch (CUDA 13.2 / cxx11 ABI) をダウンロードして解凍
-#    Blackwell(sm_120, RTX PRO 4500 Blackwell 等)対応のため cu126 → cu132 に更新。
-#    Ada Lovelace(sm_89, RTX 4070 SUPER 等)世代も含め広くカバーしている前提だが、
-#    devcontainer 側での再ビルド確認はまだ済んでいない。
-RUN wget -O libtorch.zip https://download.pytorch.org/libtorch/cu132/libtorch-shared-with-deps-2.13.0%2Bcu132.zip \
+# 3. LibTorch (CUDA 12.6 / cxx11 ABI) をダウンロードして解凍
+RUN wget -O libtorch.zip https://download.pytorch.org/libtorch/cu126/libtorch-shared-with-deps-2.13.0%2Bcu126.zip \
     && unzip -q libtorch.zip \
     && rm libtorch.zip
 
