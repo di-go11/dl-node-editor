@@ -1,9 +1,9 @@
 # 自前 GPU マシン(Windows Server 2022)で学習を動かす手順
 
 対象: Windows Server 2022、NVIDIA GPU。Docker は **Docker Desktop**（WSL2 バックエンド）
-経由で使う（WSL2 に Docker Engine 単体を新規インストールする案は不採用。
-Docker Desktop が既に入っていたため、そちらの `desktop-linux` コンテキストを使う
-運用に決定）。インターネット到達可。SSH 不可のため、**この手順は現地
+経由で使う。**作業は WSL ではなく PowerShell で完結させる**（Docker Desktop の
+`docker` コマンドは PowerShell からも使えるため）。インターネット到達可。
+SSH 不可（外部からこのサーバーへの inbound）のため、**この手順は現地
 （サーバーのコンソール/RDP）で実行する**前提。
 
 **社内のライセンス方針を確認すること**: Docker Desktop は組織規模によって
@@ -18,11 +18,11 @@ Docker Desktop が既に入っていたため、そちらの `desktop-linux` コ
 
 ## 0〜1. 前提チェック・GPU 疎通確認（完了済み）
 
-**この手順は現地で実施・確認済み。** 以後の作業も同じ WSL2 の Ubuntu シェルの中
-（PowerShell ではない）で行う。
+PowerShell で：
 
-```bash
-# Docker Desktop 側のエンジンに切り替える(PowerShell 側と別管理なので毎回のシェルで必要)
+```powershell
+# Docker Desktop 側のエンジンに切り替える(WSL側とは別管理なので、この
+# PowerShell セッションでも設定が要る)
 docker context use desktop-linux
 
 # 疎通確認
@@ -33,41 +33,52 @@ docker run --rm --gpus all nvidia/cuda:12.6.2-base-ubuntu22.04 nvidia-smi
 ```
 
 GPU の情報が表示されるところまで確認済み。`nvidia-container-toolkit` の
-apt インストールは Docker Desktop 側が内部で処理するため**不要**（当初案の
-WSL2 単体 Docker Engine 構成では必要だったが、Docker Desktop 採用により省略）。
-
-もし新しいシェルを開いて `docker run` が `desktop-linux` ではなく `default`
-コンテキストで失敗する場合は、上の `docker context use desktop-linux` を
-シェルごとに実行し直すこと。
+インストールは Docker Desktop 側が内部で処理するため**不要**。
 
 ---
 
-## 2. リポジトリを取得
+## 2. SSH 鍵と Deploy key（設定済み）
+
+- PowerShell（Windows OpenSSH）で鍵を作成し、GitHub の当該リポジトリの
+  **Deploy keys** に公開鍵を登録済み
+- カスタムファイル名で作成したため、`$env:USERPROFILE\.ssh\config` に
+  以下を追記して自動的に使われるようにしてある：
+  ```
+  Host github.com
+      IdentityFile ~/.ssh/<作成したファイル名>
+  ```
+- `ssh -T git@github.com` で `Hi HT-lab-git/robust-object-detection! ...` の
+  認証成功メッセージを確認済み
+
+---
+
+## 3. リポジトリを取得
 
 `feat/gRPC-function` は `main` にマージ済み（SegNet 対応含む）。`main` を使う。
+Deploy key は SSH 経由のみ有効なので、**SSH URL** で clone する（`https://` ではない）。
 
-```bash
-git clone https://github.com/HT-lab-git/robust-object-detection.git
+```powershell
+git clone git@github.com:HT-lab-git/robust-object-detection.git
 cd robust-object-detection
 ```
 
 ---
 
-## 3. データセットを持っていく
+## 4. データセットを持っていく
 
-`dataset/` は `.gitignore` 対象なので `git clone` では来ない。**SSH が使えないため、
-git 以外の方法で運ぶ必要がある**（USB メモリ／社内共有ストレージ／クラウド
-ストレージ経由でのダウンロード等）。
+`dataset/` は `.gitignore` 対象なので `git clone` では来ない。**SSH(inbound)が
+使えないため、git 以外の方法で運ぶ必要がある**（USB メモリ／社内共有ストレージ／
+クラウドストレージ経由でのダウンロード等）。
 
 持っていった後、リポジトリの以下に置く：
 
 ```
-robust-object-detection/apps/backend/ai-engine/dataset/train/
-  ├── ImageSets/
-  ├── JPEGImages/
-  ├── SegmentationClass/
-  ├── SegmentationClassP/
-  ├── SegmentationObject/
+robust-object-detection\apps\backend\ai-engine\dataset\train\
+  ├── ImageSets\
+  ├── JPEGImages\
+  ├── SegmentationClass\
+  ├── SegmentationClassP\
+  ├── SegmentationObject\
   └── labelmap.txt
 ```
 
@@ -75,10 +86,12 @@ robust-object-detection/apps/backend/ai-engine/dataset/train/
 
 ---
 
-## 4. `.config` をこのマシンのパスに合わせる
+## 5. `.config` を確認する
 
-`apps/backend/ai-engine/.config` は絶対パスがハードコードされている。
-`robust-object-detection` をどこに clone したかに合わせて書き換える。
+`apps/backend/ai-engine/.config` のパスは**コンテナ内部から見えるパス**なので、
+Windows 側のパスに書き換える必要は無い（手順7で bind mount するとき、
+ホスト側のリポジトリをコンテナ内 `/workspaces` にマウントするため、
+中身は devcontainer と同じ配置になる）。
 
 ```ini
 dataset_path = /workspaces/apps/backend/ai-engine/dataset/train
@@ -87,16 +100,15 @@ device       = cuda:0
 model_architecture = SegNet
 ```
 
-↑ コンテナ内のパス。手順6で bind mount するとき、ホスト側のリポジトリを
-コンテナ内 `/workspaces` にマウントすればこのままで動く（devcontainer と
-同じ配置なので、実質書き換え不要なことが多い）。
+そのままで動くはず。念のため中身を確認だけしておく。
 
 ---
 
-## 5. 土台イメージをビルド
+## 6. 土台イメージをビルド
 
-```bash
-cd robust-object-detection
+PowerShell で、`robust-object-detection` の直下から：
+
+```powershell
 docker build -t ai-engine:latest -f .devcontainer/Dockerfile .devcontainer
 ```
 
@@ -104,24 +116,30 @@ libtorch(CUDA 12.6 版, 約2GB)のダウンロードが走るので少し時間�
 
 ---
 
-## 6. コンテナを起動してビルド & 学習実行
+## 7. コンテナを起動してビルド & 学習実行
 
 `docker-compose.yml` の `command: sleep` は開発用の待機なので、ここでは
-直接学習コマンドを実行する形にする。
+直接学習コマンドを実行する形にする。PowerShell のカレントディレクトリを
+`${PWD}` で渡す（Docker Desktop が Windows パス → コンテナ内パスの変換を
+自動でやってくれる）。
 
-```bash
-docker run --rm --gpus all \
-  -v "$(pwd)":/workspaces \
-  -w /workspaces/apps/backend/ai-engine \
-  ai-engine:latest \
+```powershell
+docker run --rm --gpus all `
+  -v "${PWD}:/workspaces" `
+  -w /workspaces/apps/backend/ai-engine `
+  ai-engine:latest `
   bash -c "cmake -S . -B build && cmake --build build -j2 --target ai_engine_app && ./build/ai_engine_app"
 ```
 
-- `--gpus all`: NVIDIA Container Toolkit 経由で GPU をコンテナに渡す
-- `-v "$(pwd)":/workspaces`: リポジトリ全体を bind mount（`.config` の
+（PowerShell の行継続は `` ` ``（バッククォート）。1行にまとめて書いても良い）
+
+- `--gpus all`: GPU をコンテナに渡す
+- `-v "${PWD}:/workspaces"`: リポジトリ全体を bind mount（`.config` の
   パスと一致させる）
 - `-j2`: このプロジェクトの既定方針どおりビルド並列度を抑える
   （メモリ不足で落ちるのを防ぐ。マシンのメモリに余裕があれば上げてよい）
+- `bash -c "..."` の中身はコンテナ（Linux）の中で実行されるので、
+  ホストが Windows でもそのまま Linux のコマンドで良い
 
 学習ログが標準出力に流れ、`models/model_best.pt` / `model_last.pt` が
 リポジトリ内に生成される（bind mount なのでホスト側にもそのまま残る）。
@@ -131,11 +149,11 @@ docker run --rm --gpus all \
 `cmake -S . -B build` は初回だけでよい。2回目以降はビルド済みの `build/`
 がホスト側に残っているので：
 
-```bash
-docker run --rm --gpus all \
-  -v "$(pwd)":/workspaces \
-  -w /workspaces/apps/backend/ai-engine \
-  ai-engine:latest \
+```powershell
+docker run --rm --gpus all `
+  -v "${PWD}:/workspaces" `
+  -w /workspaces/apps/backend/ai-engine `
+  ai-engine:latest `
   ./build/ai_engine_app
 ```
 
@@ -143,12 +161,13 @@ docker run --rm --gpus all \
 
 ## この手順で解決できていない/確認が必要な点
 
-- [x] `feat/gRPC-function` を `main` にマージするかどうか → マージ済み（手順2）
+- [x] `feat/gRPC-function` を `main` にマージするかどうか → マージ済み
 - [x] Docker Desktop / WSL2 Engine 単体 のどちらを使うか →
-      **Docker Desktop（`desktop-linux` コンテキスト）を使う**で確定。
-      GPU 疎通確認済み（`nvidia-smi` がコンテナ内から実行できることを確認）
+      **Docker Desktop（`desktop-linux` コンテキスト）を使う**で確定
+- [x] GitHub 認証方式 → **Deploy key（SSH）**で確定。設定・疎通確認済み
+- [x] PowerShell / WSL のどちらで作業を統一するか → **PowerShell** で確定
 - [ ] Docker Desktop の商用ライセンス要否（社内で要確認、上部の注記参照）
-- [ ] データセットの具体的な運び方（USB か社内ストレージか等、手順3）
+- [ ] データセットの具体的な運び方（USB か社内ストレージか等、手順4）
 - [ ] 長時間学習を back ground で回す運用（`docker run -d` + ログの出し先など）は
       未整備。まずは前面で1回通すところまでを想定した手順
 
