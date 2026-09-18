@@ -1,0 +1,124 @@
+syntax = "proto3";
+package training.v1;
+
+service TrainingService {
+    rpc StartTraining(StartTrainingRequest) returns (StartTrainingResponse); // 単項
+    rpc StreamProgress(StreamProgressRequest) returns (stream StreamProgressResponse); // サーバーストリーミング
+    rpc StopTraining(StopTrainingRequest) returns (StopTrainingResponse); //単項
+}
+
+// ---StartTrainingRequest---
+
+// ---layers---
+
+message Conv2DParams {
+    int64 in_channels = 1;
+    int64 out_channels = 2;
+    int64 kernel_size = 3;
+    int64 stride = 4;
+    int64 padding = 5;
+    int64 dilation = 6;
+}
+
+message Pooling2DParams {
+    PoolingType pooling_type = 1;
+    int64 kernel_size = 2;
+    int64 stride = 3;
+    int64 padding = 4;
+}
+
+enum PoolingType {POOLING_TYPE_UNSPECIFIED = 0; POOLING_TYPE_MAX = 1;}
+
+message BatchNormParams {int64 num_features = 1; double eps = 2; double momentum = 3;}
+message LinearParams {int64 in_features = 1;int64 out_features = 2; bool bias = 3;}
+message ActivationParams {ActivationType activation_type = 1; int32 dim = 2;}
+
+enum ActivationType {
+    ACTIVATION_TYPE_UNSPECIFIED = 0;
+    ACTIVATION_TYPE_RELU = 1;
+    ACTIVATION_TYPE_SIGMOID = 2;
+    ACTIVATION_TYPE_SOFTMAX = 3;
+    ACTIVATION_TYPE_TANH = 4;
+}
+message IndexedPoolingParams {int64 kernelSize = 1; int64 stride = 2; int64 padding = 3;}
+message UnpoolingParams {int64 kernelSize = 1; int64 stride = 2; int64 padding = 3;}
+
+message LayerConfig {
+    oneof params {
+        Conv2DParams conv2d = 1;
+        Pooling2DParams pooling2d = 2;
+        BatchNormParams batch_norm = 3;
+        LinearParams linear = 4;
+        ActivationParams activation = 5;
+        IndexedPoolingParams indexed_pooling = 6;
+        UnpoolingParams unpooling = 7;
+    }
+}
+
+message ModelGraph {
+    repeated LayerConfig layers = 1;
+}
+
+// ---optimizer---
+
+message AdamConfig  { double learning_rate = 1; double weight_decay = 2; double beta1 = 3; double beta2 = 4; double eps = 5; }
+message AdamWConfig { double learning_rate = 1; double weight_decay = 2; double beta1 = 3; double beta2 = 4; }
+message SGDConfig   { double learning_rate = 1; double weight_decay = 2; double momentum = 3; bool nesterov = 4; }
+
+message OptimizerConfig {
+    oneof config {
+        AdamConfig adam = 1;
+        AdamWConfig adam_w = 2;
+        SGDConfig sgd = 3;
+    }
+}
+
+// ---loss---
+message LossConfig{} // まだlossに関するドメインを作成していないため後で
+
+
+// ---merge---
+
+message StartTrainingRequest {
+    string model_name = 1;
+    ModelGraph model_graph = 2;
+    OptimizerConfig optimizer = 3;
+    LossConfig loss = 4;
+}
+
+message StartTrainingResponse {
+    TrainingStatus status = 1;
+}
+
+message StopTrainingRequest {}
+
+message StopTrainingResponse {
+    TrainingStatus status = 1;
+}
+
+// ---StreamProgress---
+
+message StreamProgressRequest {}
+
+message StreamProgressResponse{
+    uint32 epoch = 1;
+    double train_loss = 2;
+    double val_loss = 3;
+    TrainingStatus status = 4; // RUNNING / COMPLITED /FAILED / STOPPED
+    oneof metrics{
+        SegmentationMetrics segmentation = 5;
+    }
+}
+
+message SegmentationMetrics{
+    double val_pixel_acc = 1;
+    double val_mioU = 2;
+}
+
+enum TrainingStatus {
+    TRAINING_STATUS_UNSPECIFIED = 0;
+    TRAINING_STATUS_RUNNING = 1;
+    TRAINING_STATUS_COMPLETED = 2;
+    TRAINING_STATUS_FAILED = 3;
+    TRAINING_STATUS_STOPPED = 4;
+}
