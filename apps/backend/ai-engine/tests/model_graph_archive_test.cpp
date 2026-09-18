@@ -26,11 +26,12 @@
 #define MODEL_GRAPH_ARCHIVE_TEST_DIR "model_graph_archive_tmp"
 #endif
 
-// Conv2D(in=3, out=21, k=3, s=1, p=1) 1 層のみのグラフの fingerprint。
-// 正規化文字列 "v1;layers=1:[0]conv2d|3|21|3|1|1" の FNV-1a(64bit)。
-// フィールド列挙を LayersParamsFields.hpp へ集約する前の実装が出していた値であり、
-// 過去に保存した .pt との互換を保つため変えてはいけない。
-#define EXPECTED_SIMPLE_FINGERPRINT "47f17d6aca1c1936"
+// Conv2D(in=3, out=21, k=3, s=1, p=1, dilation=1) 1 層のみのグラフの fingerprint。
+// 正規化文字列 "v1;layers=1:[0]conv2d|3|21|3|1|1|1" の FNV-1a(64bit)。
+// 2026/9/18 dilation フィールド追加(kModelGraphArchiveVersion を v1→v2 に bump)
+// に伴い値が変わった。今後この値を変えるときは、それが意図した *Params の
+// フィールド変更(=version bump を伴う変更)であることを確認すること。
+#define EXPECTED_SIMPLE_FINGERPRINT "20a9a8897b805afd"
 
 namespace
 {
@@ -55,6 +56,7 @@ ModelGraph makeFullGraph()
     conv.kernelSize = 5;
     conv.stride = 2;
     conv.padding = 1;
+    conv.dilation = 2;
     graph.layers.push_back(LayersConfig{conv});
 
     BatchNormParams bn;
@@ -139,6 +141,7 @@ int main()
         const auto &conv = std::get<Conv2DParams>(restored.layers[0].params);
         check(conv.outChannels == 16 && conv.kernelSize == 5 && conv.stride == 2,
               "Conv2DParams が復元される");
+        check(conv.dilation == 2, "Conv2DParams の dilation が復元される");
         const auto &bn = std::get<BatchNormParams>(restored.layers[1].params);
         check(std::abs(bn.eps - 1e-4) < 1e-12 && std::abs(bn.momentum - 0.05) < 1e-12,
               "BatchNormParams の double フィールドが復元される");
@@ -194,9 +197,9 @@ int main()
         std::sort(keys.begin(), keys.end());
 
         const std::vector<std::string> expected = {
-            "format_version", "layer_0_in_channels", "layer_0_kernel_size",
-            "layer_0_kind", "layer_0_out_channels", "layer_0_padding",
-            "layer_0_stride", "layer_count"};
+            "format_version", "layer_0_dilation", "layer_0_in_channels",
+            "layer_0_kernel_size", "layer_0_kind", "layer_0_out_channels",
+            "layer_0_padding", "layer_0_stride", "layer_count"};
         check(keys == expected,
               "Conv2D 1 層の archive キー集合が固定値と一致する(フォーマット非破壊)");
 

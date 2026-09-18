@@ -83,6 +83,7 @@ void visitLayerFields(Params &p, F &&f)
         f("kernel_size", p.kernelSize);
         f("stride", p.stride);
         f("padding", p.padding);
+        f("dilation", p.dilation);
     }
     else if constexpr (std::is_same_v<T, PoolingParams>)
     {
