@@ -30,9 +30,108 @@ public:
 
 デストラクタだけ`= 0`ではなく`= default`になっている点に注意。仮想デストラクタが必要な理由は、基底クラスのポインタ経由で派生クラスのオブジェクトを`delete`したときに、正しく派生クラスのデストラクタまで呼ばれるようにするため(仮想でないと未定義動作になる)。デストラクタまで純粋仮想にする必要はなく、`virtual`かつ実装を持てば(あるいは`= default`で自動生成させれば)十分。
 
-## std::variantとstd::visit
+## 演算子
 
-### std::variant
+### operator()
+
+`operator()`は**関数呼び出し演算子**で、「オブジェクトを関数のように呼べるようにする」ための特殊なメンバ関数。
+
+#### operotor()がない場合
+
+受けとる側が、呼び出すメソッド名を決め打ちするしか無い。
+
+```cpp
+#include <iostream>
+#include <vector>
+
+// 受け取る側: 「run というメソッドがある型」しか受け付けられない
+template <class T>
+void applyAll(const std::vector<int> &xs, T &obj)
+{
+    for (int x : xs) {
+        std::cout << obj.run(x) << "\n";     // ← メソッド名 run を決め打ち
+    }
+}
+
+struct Adder {
+    int base;
+    int run(int x) const { return x + base; }        // run
+};
+
+struct Multiplier {
+    int factor;
+    int execute(int x) const { return x * factor; }  // execute (別の人が別の名前で作った)
+};
+
+int main()
+{
+    std::vector<int> xs{1, 2, 3};
+
+    Adder add10{10};
+    applyAll(xs, add10);        // ○ run があるので動く
+
+    Multiplier times3{3};
+    applyAll(xs, times3);       // ✗ コンパイルエラー: 'Multiplier' に 'run' が無い
+}
+```
+`Multiplier`は同じ「intを受けてintを返す処理」なのに、メソッド名が`execute`なので`applyAll`から呼べず、コンパイルエラーになる。
+
+これを解決するには?
+- `Multiplier`のメソッド名を`run`に統一する
+- `applyAll`を`execute`用にもう一本書く(冗長)
+- 共通の基底クラス(`IProcessor`)を作って継承させる(すべての型に継承を強いる)
+- 普通の関数(`int triple(int)`)や、他のライブラリはメソッドを持たないため渡せない
+
+#### operator()がある場合
+
+呼び出しの書き方を`f(x)`に決めておく。
+
+```cpp
+#include <iostream>
+#include <vector>
+
+// 受け取る側: 「f(x) と書ける型」なら何でも受け付ける
+template <class F>
+void applyAll(const std::vector<int> &xs, F &&f) 
+{
+    for (int x : xs) {
+        std::cout << f(x) << "\n";           // ← 呼び出し構文 f(x) だけを前提にする
+    }
+}
+
+struct Adder {
+    int base;
+    int operator()(int x) const { return x + base; }
+};
+
+struct Multiplier {
+    int factor;
+    int operator()(int x) const { return x * factor; }
+};
+
+int square(int x) { return x * x; }          // ただの関数
+
+int main()
+{
+    std::vector<int> xs{1, 2, 3};
+
+    applyAll(xs, Adder{10});                              // ○ クラス
+    applyAll(xs, Multiplier{3});                          // ○ 別のクラス
+    applyAll(xs, square);                                 // ○ 普通の関数
+    applyAll(xs, [](int x) { return x - 1; });            // ○ ラムダ
+    int offset = 100;
+    applyAll(xs, [offset](int x) { return x + offset; }); // ○ 状態を持つラムダ
+}
+```
+
+- `Adder{10}`: 変数に入れていない=一時オブジェクトと呼ばれるオブジェクトを生成する。このオブジェクトはその式が終わる(`;`が来る)まで生存している。
+- `F &&f`: 「右辺値参照」なため、変数ではなく右辺文を受け取るため、今回は`Adder{10}`のような一時オブジェクトを直接渡せる。`F f`だとコピーが発生するため、コピーコンストラクタがないクラスは渡せない。
+
+## 標準ライブラリ
+
+### std::variantとstd::visit
+
+#### std::variant
 `#include <variant>`必須
 `std::variant<型1, 型2, 型3,...>`
 
@@ -46,13 +145,55 @@ v = 3.14;             // double を保持(前の値は破棄される)
 v = std::string("hi"); // std::string を保持
 ```
 
-### std::visit(型に応じて処理を分岐)
+#### std::visit(型に応じて処理を分岐)
 
-`std::visit(呼び出し可能なもの, variant変数)`
+`std::visit(visitor, variant)`
 
 - 第1引数: `variant`が今保持している型の値を受け取って処理する関数(ラムダ, 関数オブジェクト, 関数ポインタなど)
 - 第2引数; 対象の`std::variant`変数
-- `variant`が実際に保持している型を判定し、その型の値を引数として第1引数の関数を呼び出す
+- `variant`が実際に保持している型を判定し、その型の値を引数として第1引数の関数を呼び出す。デザインパターンでの**visitorパターン**をC++で実現したもの。
+
+##### ジェネリックラムダ `[](const auto &c) -> 複数の型を生成できるクラスor構造体`
+
+- 引数型`auto`を使うことで、どの型が来ても呼び出せる。**テンプレート化されたラムダ関数(c++14以降)**。実体としてはコンパイラが`operator()`をテンプレートメンバ関数として持つ無名クラスを生成し、`std::visit`は`variant`が実際に保持している方で、そのテンプレートを暗黙にインスタンス化する。`->`の後ろは戻り値型を保証するための構文。
+
+```cpp
+std::visit([](const auto &c) -> std::shared_ptr<ILayer> {
+    return std::make_shared<TorchConv2DLayer>(c);
+}, v);
+```
+
+###### [](ラムダ導入子とキャプチャ)
+
+`[]`は**ラムダ式の始まりを示す記号=ラムダ導入子**。中に書くものを**キャプチャリスト**と呼ぶ。「ラムダの外にある変数のうち、どれをラムダの中に持ち込むか」を指定する。
+
+```cpp
+int base = 10;
+auto f = [base](int x) -> int {return x + base;};
+```
+
+これは次のクラスと同じ。
+
+```cpp
+class 無名クラス{
+private:
+    int base;
+public:
+    explicit 無名クラス(int b) : base(b) {}
+    int operator()(int x) const {return x + base;}
+};
+```
+つまり、キャプチャは「無名クラスのメンバ変数として何を保持させるか」の指定。
+
+|書き方|意味|
+|---|---|
+|`[]`|何も持ち込まない(状態を持たないラムダ)|
+|`[x]`|変数 `x` を値コピーで持ち込む|
+|`[&x]`|変数 `x` を参照で持ち込む|
+|`[=]`|ラムダの外にある変数をすべて値コピーで持ち込む|
+|`[&]`|ラムダの外にある変数をすべて参照で持ち込む|
+|`[this]`|囲んでいるクラスの`this`を持ち込む|
+
 
 ### std::holds_alternative<T>(今どの型が入っているか確認)
 
@@ -77,6 +218,123 @@ if (int* p = std::get_if<int>(&v)) {
 }
 ```
 
+
+
+## キーワード(C++20)
+
+| 分類 | キーワード | 役割 |
+|---|---|---|
+| 基本型 | `bool` `char` `char8_t`(C++20) `char16_t` `char32_t` `wchar_t` `short` `int` `long` `signed` `unsigned` `float` `double` `void` | 組み込み型の名前 |
+| 型の指定・推論 | `auto` `decltype` | 型をコンパイラに推論させる / 式の型を取得する |
+| 型修飾・定数 | `const` `volatile` `mutable` `constexpr` `consteval`(C++20) `constinit`(C++20) | 変更不可、最適化抑制、`const` 内での変更許可、コンパイル時評価の指定 |
+| 記憶域・リンケージ | `static` `extern` `thread_local` `inline` `register`(C++17で廃止) | 寿命、可視範囲(リンケージ)、ODR の扱いの指定 |
+| 型の定義 | `class` `struct` `union` `enum` `typedef` | ユーザー定義型・型の別名の宣言 |
+| 名前空間・名前の導入 | `namespace` `using` | 名前の区切りと引き込み |
+| アクセス制御 | `public` `protected` `private` `friend` | メンバの公開範囲、特別な許可 |
+| クラスの振る舞い | `virtual` `explicit` `this` `operator` | 動的束縛、暗黙変換の禁止、自オブジェクトへのポインタ、演算子関数の名前 |
+| テンプレート | `template` `typename` `concept`(C++20) `requires`(C++20) | 型を後から決めるコード、型への制約 |
+| 制御構文 | `if` `else` `switch` `case` `default` `for` `while` `do` `break` `continue` `goto` `return` | 分岐・繰り返し・脱出 |
+| 例外 | `try` `catch` `throw` `noexcept` | 例外の送出・捕捉、例外を投げない約束 |
+| 動的メモリ | `new` `delete` | ヒープの確保と解放 |
+| キャスト | `static_cast` `dynamic_cast` `const_cast` `reinterpret_cast` | 用途別の型変換 |
+| コンパイル時の問い合わせ | `sizeof` `alignof` `alignas` `typeid` `static_assert` | サイズ・アライメント・型情報の取得、コンパイル時の検証 |
+| リテラル | `true` `false` `nullptr` | 真偽値、ヌルポインタ |
+| コルーチン(C++20) | `co_await` `co_yield` `co_return` | コルーチンの中断・生成・終了 |
+| その他 | `asm` `export` | インラインアセンブリ、モジュールの公開(C++20) |
+
+### 型指定・推論
+
+#### auto
+
+`auto`は「型をコンパイラに推論させる」ためのキーワード。変数宣言のときに使う。
+
+#### decltype
+
+`decltype`は「式の型を取得する」ためのキーワード。変数宣言のときに使う
+
+### 型修飾・定数
+
+#### constexpr
+
+`constexpr`は「コンパイル時に評価できる」ことを宣言するキーワード。
+
+||意味|値が決まる時期|
+|---|---|---|
+|`const`|「初期化後に変更しない」という約束|コンパイル時でも実行時でもいい|
+|`constexpr`|「コンパイル時に決まる定数」であることの保証|必ずコンパイル時|
+
+```cpp
+int n = readFromFile();
+
+const int a = n; //値は変更しないが、値は実行時に決まる。
+constexpr int b = n; // ✘ nはコンパイル時に決まらないためエラー。
+constexpr int c = 10; // ○ 10はコンパイル時に決まる。
+int array[c]; // ○ cはコンパイル時に決まるため、配列のサイズとして使える。
+int buf2[a]; // ✘ aはコンパイル時に決まらないため、配列のサイズとして使えない。
+```
+
+
+### テンプレート
+
+テンプレートは、型を後から決めるコードを書くための機能。関数やクラスを具体的な型を決めずに一度書いておき、実際に使うときに呼び出し側の型に合わせてコンパイラが実態を生成してくれる。
+
+#### template
+
+同じ処理を型ごとに書き直すのは無駄
+
+```cpp
+int maxValue(int a, int b){
+    return a > b ? a : b;
+}
+double maxValue(double a, double b){
+    return a > b ? a : b;
+}
+```
+
+型安全のまま使い回すために`template`が生まれた。
+
+```cpp
+template <class T>
+
+T maxValue(T a, T b){
+    return a > b ? a : b;
+}
+```
+
+- `template <...>`: は実体ではなく、設計図。使われるまで、コードが生成されない。
+- 呼び出しで`T`が決まると、コンパイラがその型で実体を作る=インスタンス化。
+
+```cpp
+maxValue(3, 5);        // T = int として実体化
+maxValue(3.5, 2.1);    // T = double として実体化
+```
+
+※引数はコンパイラで推論されるが、戻り値は推論されないため明示する必要あり。
+
+```cpp
+convert<double>(3); // intをdoubleに変換する
+convert<double,int>(3.5); // doubleをintに変換する
+convert(3); //コンパイルエラー
+```
+
+##### templateの種類
+
+|種類|例|備考|
+|---|---|---|
+|関数テンプレート|`template <class T> T maxValue(T a, T b)`|引数から`T`を推論できる|
+|クラステンプレート|`template <class T> class MyClass { ... }`|`MyClass<int>`のようにインスタンス化の時に型を明示する。|
+|変数テンプレート|`template <class T> constexpr T pi = T{3.14159};`||
+|エイリアステンプレート|`template <class T> using Vec = std::vector<T, A<T>>;`||
+|メンバテンプレート|クラスの中の`template <class U> void f(U);`||
+
+##### 可変長テンプレート
+
+```cpp
+template <class... T>
+struct Overloaded : TS... {using Ts::operator()...;};
+```
+
+`...`でパックを宣言し、使う側の`...`で展開する。
 
 ## オーバーロードセットイディオム(TorchLayerBuilder.hppにて使用)
 
@@ -441,6 +699,8 @@ static void logInternal(const char *msg);  // 他の .cpp からは参照・リ�
 
 - 「メンバを**読むだけ**」→ `static` ではなく末尾 `const`
 - 「`.cpp` 限定にしたい**型**」→ `static` ではなく無名名前空間
+
+
 
 ## 参照を返す関数 / 値を返す関数 と const
 
