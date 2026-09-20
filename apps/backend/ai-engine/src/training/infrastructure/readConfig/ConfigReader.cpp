@@ -1,5 +1,6 @@
 #include "training/infrastructure/readConfig/ConfigReader.hpp"
 
+#include <cstdint>
 #include <fstream>
 #include <optional>
 #include <sstream>
@@ -22,6 +23,59 @@ namespace
         {
             throw std::runtime_error(key + " value is not a number: " + value);
         }
+    }
+
+    // 整数として読む。std::stoll は "12abc" を 12 として受理してしまうため、
+    // 変換後に末尾が残っていないかも確認する。
+    int64_t parseInt64(const std::string &value, const std::string &key)
+    {
+        if (value.empty())
+        {
+            throw std::runtime_error(key + " value is empty");
+        }
+        try
+        {
+            size_t pos = 0;
+            const long long parsed = std::stoll(value, &pos);
+            if (pos != value.size())
+            {
+                throw std::invalid_argument("trailing characters");
+            }
+            return static_cast<int64_t>(parsed);
+        }
+        catch (...)
+        {
+            throw std::runtime_error(key + " value is not an integer: " + value);
+        }
+    }
+
+    LossType parseLossType(const std::string &value)
+    {
+        if (value == "CrossEntropy")
+        {
+            return LossType::CrossEntropy;
+        }
+        if (value == "Mse_loss")
+        {
+            return LossType::MseLoss;
+        }
+        if (value == "Dice_loss")
+        {
+            return LossType::DiceLoss;
+        }
+        if (value == "Focal_loss")
+        {
+            return LossType::FocalLoss;
+        }
+        if (value == "Combo_loss")
+        {
+            return LossType::ComboLoss;
+        }
+        if (value == "Boundary_loss")
+        {
+            return LossType::BoundaryLoss;
+        }
+        throw std::runtime_error("Unknown loss type: " + value);
     }
 
     bool parseBool(const std::string &value, const std::string &key)
@@ -101,6 +155,51 @@ namespace
 
         throw std::runtime_error("buildOptimizerConfig: 未知の OptimizerType");
     }
+
+    struct LossConfigFields
+    {
+        LossType type = LossType::CrossEntropy;
+        std::optional<int> numClasses;
+        std::optional<double> gamma;
+        std::optional<double> alpha;
+    };
+
+    LossConfig buildLossConfig(const LossConfigFields &fields)
+    {
+        switch (fields.type)
+        {
+        case LossType::CrossEntropy:
+            return CrossEntropyConfig{};
+        case LossType::MseLoss:
+            return MseLossConfig{};
+        case LossType::DiceLoss:
+            if (!fields.numClasses.has_value())
+            {
+                throw std::runtime_error("numClasses is required for DiceLoss");
+            }
+            return DiceLossConfig{*fields.numClasses};
+        case LossType::FocalLoss:
+            if (!fields.numClasses.has_value() || !fields.gamma.has_value() || !fields.alpha.has_value())
+            {
+                throw std::runtime_error("numClasses, gamma, and alpha are required for FocalLoss");
+            }
+            return FocalLossConfig{*fields.numClasses, *fields.gamma, *fields.alpha};
+        case LossType::ComboLoss:
+            if (!fields.numClasses.has_value())
+            {
+                throw std::runtime_error("numClasses is required for ComboLoss");
+            }
+            return ComboLossConfig{*fields.numClasses, fields.alpha.value_or(0.5)};
+        case LossType::BoundaryLoss:
+            if (!fields.numClasses.has_value())
+            {
+                throw std::runtime_error("numClasses is required for BoundaryLoss");
+            }
+            return BoundaryLossConfig{*fields.numClasses};
+        default:
+            throw std::runtime_error("buildLossConfig: 未知の LossType");
+        }
+    }
 } // namespace
 
 ConfigReader::ConfigReader() {}
@@ -109,6 +208,7 @@ AppConfig ConfigReader::readAll(const std::string &filePath)
 {
     AppConfig appConfig;
     OptimizerFields optimizerFields;
+    LossConfigFields lossFields;
     std::ifstream file(filePath);
 
     if (!file.is_open())
@@ -281,6 +381,50 @@ AppConfig ConfigReader::readAll(const std::string &filePath)
             {
                 optimizerFields.nesterov = parseBool(value, key);
             }
+            // ---- Loss ----
+            // loss_type 未指定なら CrossEntropy。種別に関係ないキーは無視される
+            // (例: Dice_loss を選んで gamma を書いても効かない)。
+            else if (key == "loss_type")
+            {
+                lossFields.type = parseLossType(value);
+            }
+            else if (key == "num_classes")
+            {
+                const int64_t parsedValue = parseInt64(value, key);
+                if (parsedValue < 1)
+                {
+                    throw std::runtime_error("num_classes value must be at least 1: " + value);
+                }
+                lossFields.numClasses = static_cast<int>(parsedValue);
+            }
+            else if (key == "gamma")
+            {
+                const double parsedValue = parseDouble(value, key);
+                if (parsedValue < 0.0)
+                {
+                    throw std::runtime_error("gamma value must not be negative: " + value);
+                }
+                lossFields.gamma = parsedValue;
+            }
+            else if (key == "alpha")
+            {
+                const double parsedValue = parseDouble(value, key);
+                if (parsedValue < 0.0 || parsedValue > 1.0)
+                {
+                    throw std::runtime_error("alpha value is out of range [0.0, 1.0]: " + value);
+                }
+                lossFields.alpha = parsedValue;
+            }
+            else if (key == "ignore_index")
+            {
+                // マスクは uint8 で前処理されるため、範囲外は黙って切り詰められる前にここで弾く。
+                const int64_t parsedValue = parseInt64(value, key);
+                if (parsedValue < 0 || parsedValue > 255)
+                {
+                    throw std::runtime_error("ignore_index value is out of range [0, 255]: " + value);
+                }
+                appConfig.ignoreIndex = parsedValue;
+            }
             else if (key == "model_name")
             {
                 if (value.empty())
@@ -442,6 +586,7 @@ AppConfig ConfigReader::readAll(const std::string &filePath)
 
     // 全行を読み終えてから種別に応じた Config を組み立てる。
     appConfig.optimizer = buildOptimizerConfig(optimizerFields);
+    appConfig.loss = buildLossConfig(lossFields);
 
     return appConfig;
 }

@@ -3,6 +3,8 @@
 #include "training/entities/domain-objects/LossType.hpp"
 
 #include <cstdint>
+#include <stdexcept>
+#include <type_traits>
 #include <variant>
 
 // Loss ごとの設定。OptimizerConfig と同じ std::variant 方式(種別ごとに
@@ -23,13 +25,12 @@ struct MseLossConfig
 {
 };
 
-// numClasses / ignoreIndex は Dice_loss / Focal_loss / Combo_loss / Boundary_loss
+// numClasses は Dice_loss / Focal_loss / Combo_loss / Boundary_loss
 // 全てに共通(LossType.hpp のコメントの通り、softmax 活性化済みの確率を入力とする)。
 
 struct DiceLossConfig
 {
     int numClasses;
-    int64_t ignoreIndex = 255;
 };
 
 struct FocalLossConfig
@@ -37,20 +38,17 @@ struct FocalLossConfig
     int numClasses;
     double gamma;
     double alpha;
-    int64_t ignoreIndex = 255;
 };
 
 struct ComboLossConfig
 {
     int numClasses;
     double alpha = 0.5;
-    int64_t ignoreIndex = 255;
 };
 
 struct BoundaryLossConfig
 {
     int numClasses;
-    int64_t ignoreIndex = 255;
 };
 
 // variant の並び順は LossType と対応させておく。
@@ -76,10 +74,6 @@ inline LossType LossTypeOf(const LossConfig &config)
             {
                 return LossType::MseLoss;
             }
-            else if constexpr (std::is_same_v<T, MseLossConfig>)
-            {
-                return LossType::MseLoss;
-            }
             else if constexpr (std::is_same_v<T, DiceLossConfig>)
             {
                 return LossType::DiceLoss;
@@ -98,8 +92,7 @@ inline LossType LossTypeOf(const LossConfig &config)
             }
             else
             {
-                throw std::exception("未対応のLossConfig型です");
-                break;
+                throw std::runtime_error("未対応のLossConfig型です");
             }
         },
         config);

@@ -2,15 +2,21 @@
 
 #include "OptimizerConfig.hpp"
 #include "ActivationConfig.hpp"
+#include "LossConfig.hpp"
 #include "ComputeDevice.hpp"
 #include "ModelArchitectureType.hpp"
 #include <cstddef>
+#include <cstdint>
 #include <string>
 
 struct AppConfig
 {
     std::string modelName;
     OptimizerConfig optimizer;
+    LossConfig loss;
+    // マスクの予約ラベル値(Letterbox 余白)。前処理が余白に埋め、Loss・評価が無視する。
+    // 値は 3 者で一致していなければならないため、ここを唯一の情報源とする。
+    int64_t ignoreIndex = 255;
     ActivationConfig activation;
     std::string datasetPath;          // 学習用画像・アノテーション画像が置かれているデータセットのルートディレクトリ
     std::string outputDir = "models"; // チェックポイント(ベストモデルの重み)の保存先ディレクトリ

@@ -20,11 +20,11 @@
 // infrastructure(具象クラス)
 #include "training/infrastructure/torchFunc/TorchLayerBuilder.hpp"
 #include "training/infrastructure/torchFunc/TorchOptimizerFactory.hpp"
+#include "training/infrastructure/torchFunc/TorchLossFactory.hpp"
 #include "training/infrastructure/torchModel/TorchModel.hpp"
 #include "training/infrastructure/torchModel/TorchModelFactory.hpp"
 #include "training/infrastructure/torchModel/TorchCheckpointStore.hpp"
 #include "training/infrastructure/torchModel/CheckpointModelLoader.hpp"
-#include "training/infrastructure/torchFunc/CrossEntropy.hpp"
 #include "training/infrastructure/readConfig/ConfigReader.hpp"
 
 #include "training/infrastructure/image/OpenCvImageDecoder.hpp"
@@ -194,6 +194,7 @@ void runTraining()
     // 同じ factory を使うため、cold start 側もここを通しておく。
     auto modelFactory = std::make_shared<TorchModelFactory>();
     auto optimizerFactory = std::make_shared<TorchOptimizerFactory>();
+    auto lossFactory = std::make_shared<TorchLossFactory>();
 
     // ---- 再開元の決定 ----
     // 1. resume_from が指定されていればそれを使う(GUI のファイル選択結果もここに入る)
@@ -258,11 +259,11 @@ void runTraining()
         optimizer = optimizerFactory->create(params, appConfig.optimizer);
     }
 
-    auto loss = std::make_shared<CrossEntropy>();
+    auto loss = lossFactory->create(appConfig.loss, appConfig.ignoreIndex);
 
-    // マスクの Letterbox 余白を埋める値。損失(CrossEntropy)と評価(mIoU/accuracy)の
+    // マスクの Letterbox 余白を埋める値。損失(MseLoss を除く)と評価(mIoU/accuracy)の
     // 双方でこの値のピクセルを無視する。maskPreProcessor の ignoreIndex と一致させること。
-    constexpr int64_t maskIgnoreIndex = 255;
+    const int64_t maskIgnoreIndex = appConfig.ignoreIndex;
 
     auto trainer = std::make_shared<TorchModelTrainer>(model, loss, optimizer);
     auto evaluator = std::make_shared<TorchModelEvaluator>(*model, *loss, numClasses, maskIgnoreIndex);
