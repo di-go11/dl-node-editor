@@ -382,33 +382,6 @@ Overloaded(Ts...) -> Overloaded<Ts...>;  // CTAD(クラステンプレート実�
 ```
 
 
-### templateとは
-
-ジェネリックプログラミングの仕組みで、「型をあとから決められるコード」を書くための機能。関数やクラスを具体的な型を決めずに一度書いておき、実際に使うときに呼び出し側の型に合わせてコンパイラが実態を生成してくれる
-
-```c++
-
-template <class T>
-T maxValue(T a, T b){
-    return a > b ? a : b;
-}
-
-maxValue(3, 5);        // T = int として実体化
-maxValue(3.5, 2.1);    // T = double として実体化
-maxValue(std::string("a"), std::string("b")); // T = std::string として実体化
-```
-
-int用,double用,std::string用と3つ別々に関数を書かなくても一つの定義で済む。Tはプレースホルダーで呼び出されたときの実引数の型からコンパイラが自動的に推論する。(**これをテンプレート実引数推論**)という。
-
-```c++
-template <class... T>
-```
-通常、`class T`は「1つの型」を受け取るが、このように定義したときは、「0個以上の、任意の個数の型」をまとめて受け取れる。このパラメータ自体を**パラメータパック**とよび、この機能を**可変長テンプレート**とよぶ。
-
-### visitor パターンとは
-
-型ごとに異なる処理を、型のクラス階層を汚さず外側から適応すること
-
 ## static_castとCスタイルキャスト
 
 ### Cスタイルキャスト(`(型)値`)
@@ -1579,3 +1552,62 @@ Base b = makeBad();                    // b.f() は Base::f() を呼ぶ(動的�
 | 具象型がコンパイル時に確定している | 具象型の**値**(スタック)。ファクトリ不要 |
 | 既存の多態オブジェクトを所有を移さず返す | `IBase&` / `IBase*`(寿命は別途保証) |
 
+
+## プロセス管理
+
+プログラムの実行単位を**プロセス**とよび、プロセス内で命令を逐次的に実行する単位を**スレッド**とよぶ。
+
+### スレッド
+
+スレッドの基本的な特徴は以下の通りになる。
+
+- 共有メモリ:スレッド間でメモリ空間を共有するため、データのやり取りが高速に行える。
+- 並列処理:複数のスレッドを同時に実行することで、処理の高速化が可能になる。
+
+#### スレッドの作成と管理
+
+C++11以降では、標準ライブラリの`<thread>`を使用してスレッドを作成し、管理することができる。
+
+```cpp
+#include <iostream>
+#include <thread>
+
+void threadFunction(int id){
+    std::cout << "Thread " << id << " is running." << std::endl;
+}
+
+int main() {
+    std::thread t1(threadFunction, 1);
+    std::thread t2(threadFunction, 2);
+
+    t1.join(); // スレッドt1の終了を待つ
+    t2.join(); // スレッドt2の終了を待つ
+
+    return 0;
+}
+```
+
+#### スレッド間の同期
+
+スレッド間でデータを共有する際、同期が必要となる。C++11以降では、`<mutex>`を使用してミューテックスを利用することで、スレッド間の競合状態を防ぐことができる。
+
+```cpp
+#include <iostream>
+#include <thread>
+#include <mutex>
+
+std::mutex mtx;
+void threadFunction(int id){
+    std::lock_guard<std::mutex> lock(mtx); // ミューテックスをロック
+    std::cout << "Thread " << id << " is running." << std::endl;
+}
+
+int main() {
+    std::thread t1(threadFunction, 1);
+    std::thread t2(threadFunction, 2);
+
+    t1.join(); // スレッドt1の終了を待つ
+    t2.join(); // スレッドt2の終了を待つ
+
+    return 0;
+}
