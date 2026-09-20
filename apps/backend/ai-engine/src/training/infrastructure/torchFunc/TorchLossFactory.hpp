@@ -5,5 +5,5 @@
 class TorchLossFactory : public ILossFactory
 {
 public:
-    std::shared_ptr<ILoss> create(const LossConfig &config, int64_t ignoreIndex) override;
+    std::shared_ptr<ILoss> create(const LossConfig &config, int numClasses, int64_t ignoreIndex) override;
 };

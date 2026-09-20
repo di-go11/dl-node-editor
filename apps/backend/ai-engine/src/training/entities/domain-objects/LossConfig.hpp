@@ -25,30 +25,28 @@ struct MseLossConfig
 {
 };
 
-// numClasses は Dice_loss / Focal_loss / Combo_loss / Boundary_loss
-// 全てに共通(LossType.hpp のコメントの通り、softmax 活性化済みの確率を入力とする)。
+// クラス数(numClasses)と ignoreIndex は Config ではなく ILossFactory::create の引数で受け取る
+// (データセット由来の値で、モデル出力チャネル数・評価器と同じ値を使う必要があるため)。
+// Dice_loss / Focal_loss / Combo_loss / Boundary_loss はこれらを使う
+// (LossType.hpp のコメントの通り、softmax 活性化済みの確率を入力とする)。
 
 struct DiceLossConfig
 {
-    int numClasses;
 };
 
 struct FocalLossConfig
 {
-    int numClasses;
     double gamma;
     double alpha;
 };
 
 struct ComboLossConfig
 {
-    int numClasses;
     double alpha = 0.5;
 };
 
 struct BoundaryLossConfig
 {
-    int numClasses;
 };
 
 // variant の並び順は LossType と対応させておく。

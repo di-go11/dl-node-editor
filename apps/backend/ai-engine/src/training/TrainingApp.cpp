@@ -259,7 +259,7 @@ void runTraining()
         optimizer = optimizerFactory->create(params, appConfig.optimizer);
     }
 
-    auto loss = lossFactory->create(appConfig.loss, appConfig.ignoreIndex);
+    auto loss = lossFactory->create(appConfig.loss, numClasses, appConfig.ignoreIndex);
 
     // マスクの Letterbox 余白を埋める値。損失(MseLoss を除く)と評価(mIoU/accuracy)の
     // 双方でこの値のピクセルを無視する。maskPreProcessor の ignoreIndex と一致させること。

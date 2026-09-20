@@ -159,7 +159,6 @@ namespace
     struct LossConfigFields
     {
         LossType type = LossType::CrossEntropy;
-        std::optional<int> numClasses;
         std::optional<double> gamma;
         std::optional<double> alpha;
     };
@@ -173,29 +172,17 @@ namespace
         case LossType::MseLoss:
             return MseLossConfig{};
         case LossType::DiceLoss:
-            if (!fields.numClasses.has_value())
-            {
-                throw std::runtime_error("numClasses is required for DiceLoss");
-            }
-            return DiceLossConfig{*fields.numClasses};
+            return DiceLossConfig{};
         case LossType::FocalLoss:
-            if (!fields.numClasses.has_value() || !fields.gamma.has_value() || !fields.alpha.has_value())
+            if (!fields.gamma.has_value() || !fields.alpha.has_value())
             {
-                throw std::runtime_error("numClasses, gamma, and alpha are required for FocalLoss");
+                throw std::runtime_error("gamma and alpha are required for FocalLoss");
             }
-            return FocalLossConfig{*fields.numClasses, *fields.gamma, *fields.alpha};
+            return FocalLossConfig{*fields.gamma, *fields.alpha};
         case LossType::ComboLoss:
-            if (!fields.numClasses.has_value())
-            {
-                throw std::runtime_error("numClasses is required for ComboLoss");
-            }
-            return ComboLossConfig{*fields.numClasses, fields.alpha.value_or(0.5)};
+            return ComboLossConfig{fields.alpha.value_or(0.5)};
         case LossType::BoundaryLoss:
-            if (!fields.numClasses.has_value())
-            {
-                throw std::runtime_error("numClasses is required for BoundaryLoss");
-            }
-            return BoundaryLossConfig{*fields.numClasses};
+            return BoundaryLossConfig{};
         default:
             throw std::runtime_error("buildLossConfig: 未知の LossType");
         }
@@ -387,15 +374,6 @@ AppConfig ConfigReader::readAll(const std::string &filePath)
             else if (key == "loss_type")
             {
                 lossFields.type = parseLossType(value);
-            }
-            else if (key == "num_classes")
-            {
-                const int64_t parsedValue = parseInt64(value, key);
-                if (parsedValue < 1)
-                {
-                    throw std::runtime_error("num_classes value must be at least 1: " + value);
-                }
-                lossFields.numClasses = static_cast<int>(parsedValue);
             }
             else if (key == "gamma")
             {

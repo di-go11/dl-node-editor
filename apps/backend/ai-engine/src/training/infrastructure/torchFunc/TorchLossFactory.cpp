@@ -22,7 +22,7 @@ namespace
     Overloaded(Ts...) -> Overloaded<Ts...>;
 }
 
-std::shared_ptr<ILoss> TorchLossFactory::create(const LossConfig &config, const int64_t ignoreIndex)
+std::shared_ptr<ILoss> TorchLossFactory::create(const LossConfig &config, const int numClasses, const int64_t ignoreIndex)
 {
     return std::visit(
         Overloaded{
@@ -34,21 +34,21 @@ std::shared_ptr<ILoss> TorchLossFactory::create(const LossConfig &config, const 
             {
                 return std::make_shared<MseLoss>();
             },
-            [&](const DiceLossConfig &c) -> std::shared_ptr<ILoss>
+            [&](const DiceLossConfig &) -> std::shared_ptr<ILoss>
             {
-                return std::make_shared<DiceLoss>(c.numClasses, ignoreIndex);
+                return std::make_shared<DiceLoss>(numClasses, ignoreIndex);
             },
             [&](const FocalLossConfig &c) -> std::shared_ptr<ILoss>
             {
-                return std::make_shared<FocalLoss>(c.numClasses, c.gamma, c.alpha, ignoreIndex);
+                return std::make_shared<FocalLoss>(numClasses, c.gamma, c.alpha, ignoreIndex);
             },
             [&](const ComboLossConfig &c) -> std::shared_ptr<ILoss>
             {
-                return std::make_shared<ComboLoss>(c.numClasses, c.alpha, ignoreIndex);
+                return std::make_shared<ComboLoss>(numClasses, c.alpha, ignoreIndex);
             },
-            [&](const BoundaryLossConfig &c) -> std::shared_ptr<ILoss>
+            [&](const BoundaryLossConfig &) -> std::shared_ptr<ILoss>
             {
-                return std::make_shared<BoundaryLoss>(c.numClasses, ignoreIndex);
+                return std::make_shared<BoundaryLoss>(numClasses, ignoreIndex);
             }},
         config);
 }
