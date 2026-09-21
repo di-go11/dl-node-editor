@@ -6,7 +6,7 @@
 
 ColorMaskLabelConverter::ColorMaskLabelConverter(const ColorLabelMap &labelMap) : _labelMap(labelMap) {}
 
-ImageData ColorMaskLabelConverter::convert(const ImageData &colorMask)
+ImageData ColorMaskLabelConverter::convert(const ImageData &colorMask) const
 {
     const size_t channels = colorMask.getChannels();
     const size_t height = colorMask.getHeight();

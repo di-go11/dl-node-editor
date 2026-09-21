@@ -7,7 +7,7 @@ class ColorMaskLabelConverter
 {
 public:
     ColorMaskLabelConverter(const ColorLabelMap &labelMap);
-    ImageData convert(const ImageData &colorMask);
+    ImageData convert(const ImageData &colorMask) const;
 
 private:
     ColorLabelMap _labelMap;
