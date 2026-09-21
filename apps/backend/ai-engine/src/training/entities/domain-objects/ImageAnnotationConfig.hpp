@@ -14,20 +14,5 @@ struct PascalVocConfig
     bool includeDifficult = false;
 };
 
-inline ImageAnnotationType annotationTypeOf(const PascalVocConfig &)
-{
-    return ImageAnnotationType::PASCAL_VOC;
-}
-
 // variant の並び順は ImageAnnotationType と対応させておく。
 using ImageAnnotationConfig = std::variant<PascalVocConfig>;
-
-inline ImageAnnotationType annotationTypeOf(const ImageAnnotationConfig &config)
-{
-    return std::visit(
-        [](const auto &c) -> ImageAnnotationType
-        {
-            return annotationTypeOf(c);
-        },
-        config);
-}

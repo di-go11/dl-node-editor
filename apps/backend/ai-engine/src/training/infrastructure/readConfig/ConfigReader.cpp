@@ -256,7 +256,7 @@ namespace
 
     // modality を1回だけ解釈し、その結果で task と dataset の両方を組み立てる。
     // 「画像のデータなのに波形の task」といった不一致は、ここでは構造上起きない。
-    static_assert(std::variant_size_v<TrainingTaskType> == 1 && std::variant_size_v<DatasetType> == 1,
+    static_assert(std::variant_size_v<TrainingTaskType> == 1 && std::variant_size_v<DatasetAnnotationConfig> == 1,
                   "モダリティを追加したら applyModality に分岐を追加すること");
 
     void applyModality(const TaskFields &task, const DatasetFields &dataset, AppConfig &out)
