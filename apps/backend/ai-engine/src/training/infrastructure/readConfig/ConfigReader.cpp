@@ -187,6 +187,95 @@ namespace
             throw std::runtime_error("buildLossConfig: 未知の LossType");
         }
     }
+
+    struct DatasetFields
+    {
+        // 種別は文字列のまま貯める。どの種別 enum で解釈するかは modality(TaskFields)が
+        // 決めるため、行を読んでいる最中には解釈できない(行順が自由なので)。
+        // 未指定なら従来どおり PASCAL VOC として扱う。
+        std::string datasetPath;
+        std::string typeName = "PascalVoc";
+        std::optional<bool> includeDifficult;
+    };
+
+    // modality: 何の学習か(Image など)。task の解釈と、DatasetFields::typeName の解釈の
+    // 両方を決める唯一の情報源。未指定なら従来どおり画像のセグメンテーション。
+    struct TaskFields
+    {
+        std::string modality = "Image";
+        std::string task = "Segmentation";
+    };
+
+    ImageTaskType parseImageTaskType(const std::string &task)
+    {
+        if (task == "Classification")
+        {
+            return ImageTaskType::IMAGE_CLASSIFICATION;
+        }
+        else if (task == "Detection")
+        {
+            return ImageTaskType::OBJECT_DETECTION;
+        }
+        else if (task == "Segmentation")
+        {
+            return ImageTaskType::SEMANTIC_SEGMENTATION;
+        }
+        else
+        {
+            throw std::runtime_error("Unknown image task: " + task);
+        }
+    }
+
+    ImageAnnotationType parseImageAnnotationType(const std::string &typeName)
+    {
+        if (typeName == "PascalVoc")
+        {
+            return ImageAnnotationType::PASCAL_VOC;
+        }
+        throw std::runtime_error("Unknown image dataset type: " + typeName);
+    }
+
+    // 画像用。モダリティを足すときは、同名で別の種別 enum を受けるオーバーロードを追加する。
+    ImageAnnotationConfig buildAnnotationConfig(ImageAnnotationType type, const DatasetFields &fields)
+    {
+        switch (type)
+        {
+        case ImageAnnotationType::PASCAL_VOC:
+        {
+            PascalVocConfig config;
+            if (fields.includeDifficult.has_value())
+            {
+                config.includeDifficult = *fields.includeDifficult;
+            }
+            return config;
+        }
+        default:
+            throw std::runtime_error("buildAnnotationConfig: 未知の ImageAnnotationType");
+        }
+    }
+
+    // modality を1回だけ解釈し、その結果で task と dataset の両方を組み立てる。
+    // 「画像のデータなのに波形の task」といった不一致は、ここでは構造上起きない。
+    static_assert(std::variant_size_v<TrainingTaskType> == 1 && std::variant_size_v<DatasetType> == 1,
+                  "モダリティを追加したら applyModality に分岐を追加すること");
+
+    void applyModality(const TaskFields &task, const DatasetFields &dataset, AppConfig &out)
+    {
+        if (dataset.datasetPath.empty())
+        {
+            throw std::runtime_error("dataset_path is not specified");
+        }
+
+        if (task.modality == "Image")
+        {
+            out.task = parseImageTaskType(task.task);
+            out.dataset.datasetPath = dataset.datasetPath;
+            out.dataset.annotationConfig =
+                DatasetAnnotationConfig{buildAnnotationConfig(parseImageAnnotationType(dataset.typeName), dataset)};
+            return;
+        }
+        throw std::runtime_error("Unknown training_task: " + task.modality);
+    }
 } // namespace
 
 ConfigReader::ConfigReader() {}
@@ -196,6 +285,8 @@ AppConfig ConfigReader::readAll(const std::string &filePath)
     AppConfig appConfig;
     OptimizerFields optimizerFields;
     LossConfigFields lossFields;
+    DatasetFields datasetFields;
+    TaskFields taskFields;
     std::ifstream file(filePath);
 
     if (!file.is_open())
@@ -323,7 +414,7 @@ AppConfig ConfigReader::readAll(const std::string &filePath)
                 {
                     throw std::runtime_error("Dataset path value is empty");
                 }
-                appConfig.datasetPath = value;
+                datasetFields.datasetPath = value;
             }
             else if (key == "output_dir")
             {
@@ -411,6 +502,34 @@ AppConfig ConfigReader::readAll(const std::string &filePath)
                 }
                 // チェックポイントのファイル名(<modelName>_best.pt / _last.pt)に使われる。
                 appConfig.modelName = value;
+            }
+            else if (key == "training_task")
+            {
+                if (value.empty())
+                {
+                    throw std::runtime_error("training_task value is empty");
+                }
+                taskFields.modality = value;
+            }
+            else if (key == "training_task_type")
+            {
+                if (value.empty())
+                {
+                    throw std::runtime_error("training_task_type value is empty");
+                }
+                taskFields.task = value;
+            }
+            else if (key == "dataset_type")
+            {
+                if (value.empty())
+                {
+                    throw std::runtime_error("dataset_type value is empty");
+                }
+                datasetFields.typeName = value;
+            }
+            else if (key == "include_difficult")
+            {
+                datasetFields.includeDifficult = parseBool(value, key);
             }
             else if (key == "model_architecture")
             {
@@ -565,6 +684,7 @@ AppConfig ConfigReader::readAll(const std::string &filePath)
     // 全行を読み終えてから種別に応じた Config を組み立てる。
     appConfig.optimizer = buildOptimizerConfig(optimizerFields);
     appConfig.loss = buildLossConfig(lossFields);
+    applyModality(taskFields, datasetFields, appConfig);
 
     return appConfig;
 }

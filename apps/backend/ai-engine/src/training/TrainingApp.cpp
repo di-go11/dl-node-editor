@@ -185,7 +185,7 @@ void runTraining()
 
     // labelmap.txt からクラス数を決める(モデル出力チャンネル数の単一の参照元)。
     const std::string labelMapPath =
-        (std::filesystem::path(appConfig.datasetPath) / "labelmap.txt").string();
+        (std::filesystem::path(appConfig.dataset.datasetPath) / "labelmap.txt").string();
     const ColorLabelMap labelMap = LabelMapFileReader{}.read(labelMapPath);
     const int numClasses = static_cast<int>(labelMap.entryCount());
     std::cout << "numClasses = " << numClasses << std::endl;
@@ -287,9 +287,9 @@ void runTraining()
     DatasetSplit trainsplit = DatasetSplit::Train;
     DatasetSplit valsplit = DatasetSplit::Validation;
     auto trainDataset = std::make_shared<VocDatasetRepository>(
-        appConfig.datasetPath, decoder, imagePreProcessor, maskPreProcessor, param, trainsplit);
+        appConfig.dataset.datasetPath, decoder, imagePreProcessor, maskPreProcessor, param, trainsplit);
     auto validationDataset = std::make_shared<VocDatasetRepository>(
-        appConfig.datasetPath, decoder, imagePreProcessor, maskPreProcessor, param, valsplit);
+        appConfig.dataset.datasetPath, decoder, imagePreProcessor, maskPreProcessor, param, valsplit);
 
     TrainingDatasets datasets;
     datasets.trainDataset = trainDataset;

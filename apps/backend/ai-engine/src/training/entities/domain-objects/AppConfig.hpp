@@ -5,6 +5,8 @@
 #include "LossConfig.hpp"
 #include "ComputeDevice.hpp"
 #include "ModelArchitectureType.hpp"
+#include "Tasks/TrainingTaskType.hpp"
+#include "DatasetConfig.hpp"
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -12,13 +14,15 @@
 struct AppConfig
 {
     std::string modelName;
+    TrainingTaskType task;
+    DatasetConfig dataset;
     OptimizerConfig optimizer;
+    ActivationConfig activation;
     LossConfig loss;
     // マスクの予約ラベル値(Letterbox 余白)。前処理が余白に埋め、Loss・評価が無視する。
     // 値は 3 者で一致していなければならないため、ここを唯一の情報源とする。
     int64_t ignoreIndex = 255;
-    ActivationConfig activation;
-    std::string datasetPath;          // 学習用画像・アノテーション画像が置かれているデータセットのルートディレクトリ
+
     std::string outputDir = "models"; // チェックポイント(ベストモデルの重み)の保存先ディレクトリ
 
     // 学習再開(resume)の設定。
@@ -39,4 +43,7 @@ struct AppConfig
 
     // 学習するモデル構造。TrainingApp.cpp の buildXxxGraph() の選択に使う。
     ModelArchitectureType architecture = ModelArchitectureType::Sample;
+
+    // 学習タスク(検出/セグメンテーションなど)。Loss・モデル出力・評価・データ読み込みが
+    // 共通で参照するため、ここを唯一の情報源とし、各 factory へは引数で渡す。
 };
