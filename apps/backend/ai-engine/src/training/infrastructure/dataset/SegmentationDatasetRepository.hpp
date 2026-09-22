@@ -25,6 +25,6 @@ public:
 private:
     std::shared_ptr<ISegmentationData> _source;
     std::shared_ptr<IImagePreprocessor> _imagePreProcessor, _maskPreProcessor;
-    int _batchSize;
+    unsigned int _batchSize;
     size_t _currentIndex = 0;
 };

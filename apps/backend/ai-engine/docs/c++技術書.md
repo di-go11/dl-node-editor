@@ -218,6 +218,21 @@ if (int* p = std::get_if<int>(&v)) {
 }
 ```
 
+### std::min 
+
+- `#include <algorithm>`必須
+
+２つの値のうち小さい方を返す。テンプレート化されているため、型に依存せず使える。
+
+```c++
+#include <algorithm>
+
+int a = 10, b = 20;
+
+std::cout << std::min(a, b) << std::endl; // 10
+```
+
+
 
 
 ## キーワード(C++20)
