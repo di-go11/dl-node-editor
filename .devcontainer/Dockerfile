@@ -1,4 +1,4 @@
-FROM nvidia/cuda:12.6.2-cudnn-devel-ubuntu22.04
+FROM nvidia/cuda:12.6.2-cudnn-devel-ubuntu22.04 AS base
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -63,6 +63,32 @@ ENV CCACHE_MAXSIZE=5G
 ENV CMAKE_C_COMPILER_LAUNCHER=ccache
 ENV CMAKE_CXX_COMPILER_LAUNCHER=ccache
 RUN mkdir -p /ccache && ccache --version
+
+# ===== ここまで共通の"base"ステージ======
+
+# ===== CI(jenkins agent)専用ステージ。 --target ci-agentで明示指定されたときのみビルドされる======
+FROM base AS ci-agent
+
+# JenkinsのagentプロセスはJVM上で動くため、controllerと合わせてJDK21を追加
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    openjdk-21-jre-headless \
+    curl \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN useradd -m -d /home/jenkins jenkins \
+    && mkdir -p /home/jenkins/agent \
+    && chown -R jenkins:jenkins /home/jenkins
+
+COPY jenkins-agent-entrypoint.sh /usr/local/bin/jenkins-agent-entrypoint.sh
+RUN chmod +x /usr/local/bin/jenkins-agent-entrypoint.sh
+
+USER jenkins
+WORKDIR /home/jenkins/agent
+ENTRYPOINT ["/usr/local/bin/jenkins-agent-entrypoint.sh"]
+
+# --- 開発用(devcontainer)ステージ。今まで通りのデフォルトビルド対象 ---
+FROM base AS dev
 
 # 6. docker-compose.yml に合わせて作業ディレクトリを戻す
 WORKDIR /workspaces/apps/backend/ai-engine
