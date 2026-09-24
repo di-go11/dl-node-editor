@@ -232,8 +232,174 @@ int a = 10, b = 20;
 std::cout << std::min(a, b) << std::endl; // 10
 ```
 
+### スレッド操作
 
+#### std::mutex
 
+- `#include <mutex>`必須
+
+##### namespace宣言
+
+本クラスは`std`名前空間に属するため、`std::mutex`と書く必要がある。`using namespace std;`を使うと`mutex`だけで書けるようになる。
+
+```c++
+namespace std {
+    class mutex;
+}
+```
+
+##### 概要
+
+`std::mutex`は「排他制御のためのロック」を提供するクラス。複数のスレッドが同じ変数に同時にアクセスするのを防ぐクラスである。`lock()`メンバ関数によってリソースのロックを取得し、`unlock()`メンバ関数でリソースのロックを手放す。このクラスのデストラクタは自動的に`unlock()`メンバ関数を呼び出すことはないため、**通常このクラスのメンバ関数は直接呼び出さず**、`lock_guard`や`unique_lock`といったロック管理クラスと併用する。
+
+##### メンバ関数一覧
+
+| 名前 | 説明 | 対応バージョン|
+|---|---|---|
+|(`(constructor)`)[https://cpprefjp.github.io/reference/mutex/mutex/op_constructor.html]| コンストラクタ | C++11|
+|(`(destructor)`)[https://cpprefjp.github.io/reference/mutex/mutex/op_destructor.html]|| デストラクタ | C++11|
+|`operator=(const mutex&) = delete;`| コピー代入演算子 | C++11|
+|`lock`|ロックを取得する| C++11|
+|`try_lock`|ロックを取得できればtrue、できなければfalseを返す| C++11|
+|`unlock`|ロックを解放する| C++11|
+|`native_handle`|ネイティブハンドルを取得する| C++11|
+
+##### 使用例
+
+ソースコード
+
+```c++
+#include <iostream>
+#include <thread>
+#include <mutex>
+#include <vector>
+
+class X {
+  std::mutex mtx_;
+  std::vector<int> data_;
+public:
+  // vectorオブジェクトへのアクセスを排他的にする
+  void add_value(int value)
+  {
+    std::lock_guard<std::mutex> lock(mtx_);
+    data_.push_back(value);
+  }
+
+  void print()
+  {
+    for (int x : data_) {
+      std::cout << x << std::endl;
+    }
+  }
+};
+
+int main()
+{
+  X x;
+
+  std::thread t1([&x]{ x.add_value(1); });
+  std::thread t2([&x]{ x.add_value(2); });
+
+  t1.join();
+  t2.join();
+
+  x.print();
+}
+```
+
+出力
+
+```c++
+1
+2
+```
+
+#### 対応バージョン
+
+- 言語
+  - c++11
+- 処理系
+　- Clang:10.0.1
+  - GCC: 4.7.0
+  - Visual C++: 2012,2013,2015
+
+#### std::thread
+
+- `#include <thread>`必須
+
+```c++
+namespace std {
+    class thread;
+}
+```
+
+##### 概要
+
+クラス`thread`は、新しい実行のスレッドの作成/待機/その他操作を行う機構を提供する。
+
+###### threadオブジェクトとスレッドとの関係性
+
+`thread`オブジェクトとスレッドは1:1の関係で対応付けられるが、両者は同一ではないことに留意。`thread`コンストラクタによって新しく生成されたスレッドは、その`thread`オブジェクトに関係づけられる。
+`thread`コンストラクタでは新しいスレッドを1つ作成し、同コンストラクタを呼び出したスレッドはそのまま後続処理を続ける。一方で、新しいスレッド上では`thread`コンストラクタに与えた関数オブジェクトが呼び出される。つまりプログラム内に複数のスレッドが存在し、平行にそれぞれの処理を行うことが可能となる。なお、複数のスレッドが真に並行実行されるか否かは**処理系に依存する**。(例えば、2Core環境で4つのスレッドを作成することは可能だが、同時処理されるのは2スレッド以下に制限される。)
+
+新しいスレッド上で呼び出される関数オブジェクトから例外が投げられた場合、`std::terminate()`が呼び出されてプログラムは終了する。
+
+また、デフォルト構築された`thread`オブジェクトは、何も指さないからの`thread`オブジェクトとなる。
+
+###### join操作とdetach操作
+
+`thread`オブジェクトとスレッドが関連付けられた状態では、`thread`オブジェクトのメンバ関数`join()`を介してそのスレッド完了を待機することができる(join操作)。メンバ関数`join()`が呼び出された時点で`thread`オブジェクトに関連付けられたスレッドがまだ処理継続中だった場合、その対象スレッドが完了するまで呼び出し元スレッドがブロックされる。このjoin操作が終わった`thred`オブジェクトは、何も指さない空の`thread`オブジェクトとなる。
+
+##### メンバ関数
+
+|名前|説明|対応バージョン|
+|---|---|---|
+|`(constructor)`|コンストラクタ|C++11|
+|`(destructor)`|デストラクタ|C++11|
+|`operator=(const thread&) = delete;`|コピー代入演算子|C++11|
+|`swap`|別の`thread`オブジェクトと入れ替える|C++11|
+|`joinable`|スレッドがjoin可能かどうかを返す|C++11|
+|`join`|スレッドの完了を待機する|C++11|
+|`detach`|スレッドをデタッチする|C++11|
+|`get_id`|関連付けられているスレッドのスレッド識別子を取得する|C++11|
+|`hardware_concurrency`|同時に実行可能なスレッド数を返す|C++11|
+
+静的メンバ関数
+
+|名前|説明|対応バージョン|
+|---|---|---|
+|`hardware_concurrency`|処理系(GCC,Clangなど)によりサポートされるスレッド並行数を取得する。|C++11|
+
+##### メンバ型
+
+|名前|説明|対応バージョン|
+|---|---|---|
+|`id`|スレッド識別子(class)|C++11|
+|`native_handle_type`|ネイティブハンドルの型|C++11|
+|`name_hint`|スレッド名を設定するスレッド属性(class template)|C++29|
+|`stack_size_hint`|スレッドスタックサイズを設定するスレッド属性(class)|C++29|
+
+##### 非メンバ関数
+
+|名前|説明|対応バージョン|
+|---|---|---|
+|`swap`|2つの`thread`オブジェクトを入れ替える|C++11|
+
+##### 使い方
+
+```c++
+#include <cassert>
+#include <thread>
+
+int main()
+{
+    int x = 0, y=0;
+    std::thread t([&]{++x;});
+    --y;
+    t.join();
+    assert(x == 1 && y == -1);
+    return 0;
+}
 
 ## キーワード(C++20)
 
@@ -350,6 +516,38 @@ struct Overloaded : TS... {using Ts::operator()...;};
 ```
 
 `...`でパックを宣言し、使う側の`...`で展開する。
+
+### クラスの振る舞い
+
+#### explicit
+
+`explicit`は、「1引数で呼び出せるコンストラクタ」が**暗黙の型変換に使われてしまうのを防ぐ**ためのキーワード。
+
+C++では、一つの引数で呼び出し可能なコンストラクタ(他の引数がデフォルト値をもつ場合も同様)は、何も指定しなければ暗黙の変換コンストラクタとして扱われる。つまり、`MyCalss(int x)`のようなコンストラクタを持つクラスがある場合、コンパイラは、`int`型の値を`MyClass`型に自動変換してしまう。
+
+具体的には以下のようなコードが意図せずコンパイラを通ってしまうことがある。
+
+```cpp
+void process(MyClass obj);
+
+class Myclass {
+public:
+    MyClass(int x) { ... } // 暗黙の変換コンストラクタ
+}
+
+int x = 42;
+
+process(x); // xはMyClassに暗黙的に変換される 本来、xはint型であり、MyClass型のオブジェクトを作る意図はないのに、コンパイラが自動的に変換してしまう
+```
+
+よって、
+```cpp
+class MyClass {
+    public:
+        explicit MyClass(int x) { ... } // 暗黙の変換を防ぐ
+}
+```
+デフォルト値を持たない変数の個数が一つの場合、`explicit`をつけなければいけない。
 
 ## オーバーロードセットイディオム(TorchLayerBuilder.hppにて使用)
 
