@@ -26,11 +26,11 @@
 #include "training/infrastructure/torchModel/TorchCheckpointStore.hpp"
 #include "training/infrastructure/torchModel/CheckpointModelLoader.hpp"
 #include "training/infrastructure/readConfig/ConfigReader.hpp"
-
+#include "training/infrastructure/dataset/DatasetRepositoryFactory.hpp"
+#include "training/infrastructure/dataset/PreFetchDatasetRepository.hpp"
 #include "training/infrastructure/image/OpenCvImageDecoder.hpp"
 #include "training/infrastructure/image/ResizePreprocessorFactory.hpp"
 #include "training/infrastructure/dataset/LabelMapFileReader.hpp"
-#include "training/infrastructure/dataset/VocDatasetRepository.hpp"
 #include "training/infrastructure/torchFunc/DeviceToTorch.hpp"
 
 #include <filesystem>
@@ -185,7 +185,7 @@ void runTraining()
 
     // labelmap.txt からクラス数を決める(モデル出力チャンネル数の単一の参照元)。
     const std::string labelMapPath =
-        (std::filesystem::path(appConfig.datasetPath) / "labelmap.txt").string();
+        (std::filesystem::path(appConfig.dataset.datasetPath) / "labelmap.txt").string();
     const ColorLabelMap labelMap = LabelMapFileReader{}.read(labelMapPath);
     const int numClasses = static_cast<int>(labelMap.entryCount());
     std::cout << "numClasses = " << numClasses << std::endl;
@@ -279,17 +279,14 @@ void runTraining()
     geometry.height = appConfig.input_height;
     geometry.aspectRatioPolicy = LetterboxPolicy{};
     ResizePreprocessorFactory preprocessorFactory(geometry);
-
-    auto imagePreProcessor = preprocessorFactory.forImage();
-    auto maskPreProcessor = preprocessorFactory.forMask(static_cast<uint8_t>(maskIgnoreIndex));
-
     //
     DatasetSplit trainsplit = DatasetSplit::Train;
     DatasetSplit valsplit = DatasetSplit::Validation;
-    auto trainDataset = std::make_shared<VocDatasetRepository>(
-        appConfig.datasetPath, decoder, imagePreProcessor, maskPreProcessor, param, trainsplit);
-    auto validationDataset = std::make_shared<VocDatasetRepository>(
-        appConfig.datasetPath, decoder, imagePreProcessor, maskPreProcessor, param, valsplit);
+    auto datasetRepository = std::make_shared<DatasetRepositoryFactory>(decoder, std::make_shared<LabelMapFileReader>(), preprocessorFactory, static_cast<uint8_t>(maskIgnoreIndex), param);
+
+    // Decorator で包み、次バッチの読み込みを学習と並行して行う
+    auto trainDataset = std::make_shared<PreFetchDatasetRepository>(datasetRepository->create(appConfig.task, appConfig.dataset, trainsplit));
+    auto validationDataset = std::make_shared<PreFetchDatasetRepository>(datasetRepository->create(appConfig.task, appConfig.dataset, valsplit));
 
     TrainingDatasets datasets;
     datasets.trainDataset = trainDataset;

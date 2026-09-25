@@ -40,7 +40,7 @@
 #include "training/application/impl/TrainingResumeState.hpp"
 
 #include "training/infrastructure/dataset/LabelMapFileReader.hpp"
-#include "training/infrastructure/dataset/VocDatasetRepository.hpp"
+#include "training/infrastructure/dataset/DatasetRepositoryFactory.hpp"
 #include "training/infrastructure/image/OpenCvImageDecoder.hpp"
 #include "training/infrastructure/image/ResizePreprocessorFactory.hpp"
 #include "training/infrastructure/torchFunc/CrossEntropy.hpp"
@@ -64,163 +64,163 @@ namespace fs = std::filesystem;
 
 namespace
 {
-// 実行 device は CMake の -DSMOKE_DEVICE で切り替える(既定 cpu)。
-// CUDA 指定でも torch::cuda が使えない環境では CPU にフォールバックする
-// (GPU ランナー無しでもこのテストが走るように)。
-ComputeDevice resolveTestDevice()
-{
-    ComputeDevice requested = parseComputeDevice(SMOKE_DEVICE);
-    if (requested.type == ComputeDeviceType::Cuda && !torch::cuda::is_available())
+    // 実行 device は CMake の -DSMOKE_DEVICE で切り替える(既定 cpu)。
+    // CUDA 指定でも torch::cuda が使えない環境では CPU にフォールバックする
+    // (GPU ランナー無しでもこのテストが走るように)。
+    ComputeDevice resolveTestDevice()
     {
-        std::cout << "[info] SMOKE_DEVICE=" << SMOKE_DEVICE
-                  << " but CUDA is unavailable; falling back to cpu." << std::endl;
-        return ComputeDevice{ComputeDeviceType::Cpu, 0};
-    }
-    return requested;
-}
-
-const ComputeDevice kTestDevice = resolveTestDevice();
-
-int failureCount = 0;
-
-void check(bool cond, const std::string &msg)
-{
-    std::cout << (cond ? "[PASS] " : "[FAIL] ") << msg << std::endl;
-    if (!cond)
-    {
-        ++failureCount;
-    }
-}
-
-constexpr int64_t kIgnoreIndex = 255;
-
-std::vector<std::string> readIds(const fs::path &listFile, std::size_t limit)
-{
-    std::ifstream f(listFile);
-    std::vector<std::string> ids;
-    std::string line;
-    while (ids.size() < limit && std::getline(f, line))
-    {
-        const auto s = line.find_first_not_of(" \t\r\n");
-        if (s == std::string::npos)
+        ComputeDevice requested = parseComputeDevice(SMOKE_DEVICE);
+        if (requested.type == ComputeDeviceType::Cuda && !torch::cuda::is_available())
         {
-            continue;
+            std::cout << "[info] SMOKE_DEVICE=" << SMOKE_DEVICE
+                      << " but CUDA is unavailable; falling back to cpu." << std::endl;
+            return ComputeDevice{ComputeDeviceType::Cpu, 0};
         }
-        const auto e = line.find_last_not_of(" \t\r\n");
-        ids.push_back(line.substr(s, e - s + 1));
+        return requested;
     }
-    return ids;
-}
 
-fs::path resolveJpeg(const fs::path &jpegDir, const std::string &id)
-{
-    for (const char *ext : {".jpg", ".jpeg"})
+    const ComputeDevice kTestDevice = resolveTestDevice();
+
+    int failureCount = 0;
+
+    void check(bool cond, const std::string &msg)
     {
-        if (fs::exists(jpegDir / (id + ext)))
+        std::cout << (cond ? "[PASS] " : "[FAIL] ") << msg << std::endl;
+        if (!cond)
         {
-            return jpegDir / (id + ext);
+            ++failureCount;
         }
     }
-    return {};
-}
 
-// 本物の VOC から数サンプルだけ抜き出した最小データセットを tmp に作る。
-// 戻り値: 作れた train / val の件数
-struct TinySplitCounts
-{
-    std::size_t train = 0;
-    std::size_t val = 0;
-};
+    constexpr int64_t kIgnoreIndex = 255;
 
-TinySplitCounts buildTinyDataset(const fs::path &src, const fs::path &dst)
-{
-    fs::remove_all(dst);
-    fs::create_directories(dst / "JPEGImages");
-    fs::create_directories(dst / "SegmentationClassP");
-    fs::create_directories(dst / "ImageSets" / "Segmentation");
-    fs::copy_file(src / "labelmap.txt", dst / "labelmap.txt");
-
-    auto copySplit = [&](const char *listName, std::size_t limit) -> std::size_t
+    std::vector<std::string> readIds(const fs::path &listFile, std::size_t limit)
     {
-        const std::vector<std::string> ids = readIds(src / "ImageSets" / "Segmentation" / listName, limit * 3);
-        std::ofstream out(dst / "ImageSets" / "Segmentation" / listName);
-        std::size_t n = 0;
-        for (const auto &id : ids)
+        std::ifstream f(listFile);
+        std::vector<std::string> ids;
+        std::string line;
+        while (ids.size() < limit && std::getline(f, line))
         {
-            if (n >= limit)
-            {
-                break;
-            }
-            const fs::path jpg = resolveJpeg(src / "JPEGImages", id);
-            const fs::path mask = src / "SegmentationClassP" / (id + ".png");
-            if (jpg.empty() || !fs::exists(mask))
+            const auto s = line.find_first_not_of(" \t\r\n");
+            if (s == std::string::npos)
             {
                 continue;
             }
-            fs::copy_file(jpg, dst / "JPEGImages" / jpg.filename());
-            fs::copy_file(mask, dst / "SegmentationClassP" / mask.filename());
-            out << id << "\n";
-            ++n;
+            const auto e = line.find_last_not_of(" \t\r\n");
+            ids.push_back(line.substr(s, e - s + 1));
         }
-        return n;
+        return ids;
+    }
+
+    fs::path resolveJpeg(const fs::path &jpegDir, const std::string &id)
+    {
+        for (const char *ext : {".jpg", ".jpeg"})
+        {
+            if (fs::exists(jpegDir / (id + ext)))
+            {
+                return jpegDir / (id + ext);
+            }
+        }
+        return {};
+    }
+
+    // 本物の VOC から数サンプルだけ抜き出した最小データセットを tmp に作る。
+    // 戻り値: 作れた train / val の件数
+    struct TinySplitCounts
+    {
+        std::size_t train = 0;
+        std::size_t val = 0;
     };
 
-    TinySplitCounts c;
-    c.train = copySplit("train.txt", 4);
-    c.val = copySplit("val.txt", 2);
-    return c;
-}
-
-ModelGraph oneConvGraph(int numClasses)
-{
-    ModelGraph g;
-    Conv2DParams conv;
-    conv.inChannels = 3;
-    conv.outChannels = numClasses;
-    conv.kernelSize = 3;
-    conv.stride = 1;
-    conv.padding = 1;
-    g.layers.push_back(LayersConfig{conv});
-    return g;
-}
-
-std::vector<at::Tensor> snapshot(const std::vector<at::Tensor> &p)
-{
-    std::vector<at::Tensor> out;
-    for (const auto &t : p)
+    TinySplitCounts buildTinyDataset(const fs::path &src, const fs::path &dst)
     {
-        out.push_back(t.detach().clone());
-    }
-    return out;
-}
+        fs::remove_all(dst);
+        fs::create_directories(dst / "JPEGImages");
+        fs::create_directories(dst / "SegmentationClassP");
+        fs::create_directories(dst / "ImageSets" / "Segmentation");
+        fs::copy_file(src / "labelmap.txt", dst / "labelmap.txt");
 
-bool anyChanged(const std::vector<at::Tensor> &a, const std::vector<at::Tensor> &b)
-{
-    for (std::size_t i = 0; i < a.size(); ++i)
-    {
-        if (!torch::allclose(a[i], b[i]))
+        auto copySplit = [&](const char *listName, std::size_t limit) -> std::size_t
         {
-            return true;
-        }
-    }
-    return false;
-}
+            const std::vector<std::string> ids = readIds(src / "ImageSets" / "Segmentation" / listName, limit * 3);
+            std::ofstream out(dst / "ImageSets" / "Segmentation" / listName);
+            std::size_t n = 0;
+            for (const auto &id : ids)
+            {
+                if (n >= limit)
+                {
+                    break;
+                }
+                const fs::path jpg = resolveJpeg(src / "JPEGImages", id);
+                const fs::path mask = src / "SegmentationClassP" / (id + ".png");
+                if (jpg.empty() || !fs::exists(mask))
+                {
+                    continue;
+                }
+                fs::copy_file(jpg, dst / "JPEGImages" / jpg.filename());
+                fs::copy_file(mask, dst / "SegmentationClassP" / mask.filename());
+                out << id << "\n";
+                ++n;
+            }
+            return n;
+        };
 
-bool allClose(const std::vector<at::Tensor> &a, const std::vector<at::Tensor> &b, double tol = 1e-5)
-{
-    if (a.size() != b.size())
+        TinySplitCounts c;
+        c.train = copySplit("train.txt", 4);
+        c.val = copySplit("val.txt", 2);
+        return c;
+    }
+
+    ModelGraph oneConvGraph(int numClasses)
     {
+        ModelGraph g;
+        Conv2DParams conv;
+        conv.inChannels = 3;
+        conv.outChannels = numClasses;
+        conv.kernelSize = 3;
+        conv.stride = 1;
+        conv.padding = 1;
+        g.layers.push_back(LayersConfig{conv});
+        return g;
+    }
+
+    std::vector<at::Tensor> snapshot(const std::vector<at::Tensor> &p)
+    {
+        std::vector<at::Tensor> out;
+        for (const auto &t : p)
+        {
+            out.push_back(t.detach().clone());
+        }
+        return out;
+    }
+
+    bool anyChanged(const std::vector<at::Tensor> &a, const std::vector<at::Tensor> &b)
+    {
+        for (std::size_t i = 0; i < a.size(); ++i)
+        {
+            if (!torch::allclose(a[i], b[i]))
+            {
+                return true;
+            }
+        }
         return false;
     }
-    for (std::size_t i = 0; i < a.size(); ++i)
+
+    bool allClose(const std::vector<at::Tensor> &a, const std::vector<at::Tensor> &b, double tol = 1e-5)
     {
-        if (!torch::allclose(a[i], b[i], /*rtol=*/tol, /*atol=*/tol))
+        if (a.size() != b.size())
         {
             return false;
         }
+        for (std::size_t i = 0; i < a.size(); ++i)
+        {
+            if (!torch::allclose(a[i], b[i], /*rtol=*/tol, /*atol=*/tol))
+            {
+                return false;
+            }
+        }
+        return true;
     }
-    return true;
-}
 } // namespace
 
 int main()
@@ -261,10 +261,10 @@ int main()
     auto imgPp = ppf.forImage();
     auto maskPp = ppf.forMask(static_cast<uint8_t>(kIgnoreIndex));
 
-    auto trainDs = std::make_shared<VocDatasetRepository>(
-        dst.string(), decoder, imgPp, maskPp, param, DatasetSplit::Train);
-    auto valDs = std::make_shared<VocDatasetRepository>(
-        dst.string(), decoder, imgPp, maskPp, param, DatasetSplit::Validation);
+    auto datasetRepository = std::make_shared<DatasetRepositoryFactory>(decoder, std::make_shared<LabelMapFileReader>(), ppf, static_cast<uint8_t>(kIgnoreIndex), param);
+
+    auto trainDs = datasetRepository->create(ImageTaskType::SEMANTIC_SEGMENTATION, DatasetConfig{dst.string(), ImageAnnotationConfig{PascalVocConfig{}}}, DatasetSplit::Train);
+    auto valDs = datasetRepository->create(ImageTaskType::SEMANTIC_SEGMENTATION, DatasetConfig{dst.string(), ImageAnnotationConfig{PascalVocConfig{}}}, DatasetSplit::Validation);
 
     auto modelFactory = std::make_shared<TorchModelFactory>();
     auto optimizerFactory = std::make_shared<TorchOptimizerFactory>();

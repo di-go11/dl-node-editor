@@ -2,5 +2,10 @@
   "cmake.sourceDirectory": "/workspaces/apps/backend/ai-engine",
   "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
   "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
+  "C_Cpp.inlayHints.autoDeclarationTypes.enabled": true,
+  "C_Cpp.inlayHints.autoDeclarationTypes.showOnLeft": false,
+  "C_Cpp.inlayHints.parameterNames.enabled": true,
+  "C_Cpp.inlayHints.referenceOperator.enabled": true,
+
   "cmake.ignoreCMakeListsMissing": true
 }
