@@ -7,6 +7,7 @@
 3. casc.yaml(jenkinsサーバーの初期設定をスクリプト化できる。)
 4. plugins.txt(gitやサードパーティapiなど必要なプラグインを宣言する)
 5. .env(admin情報やagentコンテナとcontrollerコンテナが接続する際に必要となる暗号鍵やagent名を登録できる)
+6. jenkins-agent-entrypoint.sh(jenkins agentを登録するため)
 
 ### 各ファイルの説明
 
@@ -144,6 +145,25 @@ JENKINS_ADMIN_PASSWORD=<jenkinsサーバーの管理者パスワード(ホスト
 # jenkins-agentコンテナがcontrollerに接続する際に使う
 JENKINS_AGENT_NAME=<コンテナ宣言時にいれたagent名>
 JENKINS_SECRET=<jenkinsのagentのタブから取得できる暗号鍵>
+```
+
+#### jenkins-agent-entryppoint.sh
+
+```sh
+#!/bin/bash
+set -euo pipefail
+
+: "${JENKINS_URL:?JENKINS_URL is required}"
+: "${JENKINS_AGENT_NAME:?JENKINS_AGENT_NAME is required}"
+: "${JENKINS_SECRET:?JENKINS_SECRET is required}"
+
+curl -fsSL -o /home/jenkins/agent/agent.jar "${JENKINS_URL%/}/jnlpJars/agent.jar"
+
+exec java -jar /home/jenkins/agent/agent.jar \
+    -url "${JENKINS_URL}" \
+    -name "${JENKINS_AGENT_NAME}" \
+    -secret "${JENKINS_SECRET}" \
+    -workDir "/home/jenkins/agent"
 ```
 
 ## jenkinsの動作プラン
