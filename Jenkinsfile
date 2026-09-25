@@ -6,7 +6,7 @@ pipeline{
         buildDiscarder(logRotator(numToKeepStr: '20')) // 直近20回分だけ残す
     }
     triggers{
-        pollSCM('H/30 9-22 * * * ')
+        pollSCM('TZ=Asia/Tokyo\nH/30 9-22 * * * ')
     }
     stages{
         stage('Checkout'){
