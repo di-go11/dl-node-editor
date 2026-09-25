@@ -71,8 +71,10 @@ RUN mkdir -p /ccache && ccache --version
 FROM base AS ci-agent
 
 # JenkinsのagentプロセスはJVM上で動くため、controllerと合わせてJDK21を追加
+# openssh-client: checkout scm が SSH(Deploy Key)で clone する際に ssh コマンドが必要
 RUN apt-get update && apt-get install -y --no-install-recommends \
     openjdk-21-jre-headless \
+    openssh-client \
     curl \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
