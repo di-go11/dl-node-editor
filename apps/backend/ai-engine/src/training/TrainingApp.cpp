@@ -27,6 +27,7 @@
 #include "training/infrastructure/torchModel/CheckpointModelLoader.hpp"
 #include "training/infrastructure/readConfig/ConfigReader.hpp"
 #include "training/infrastructure/dataset/DatasetRepositoryFactory.hpp"
+#include "training/infrastructure/dataset/PreFetchDatasetRepository.hpp"
 #include "training/infrastructure/image/OpenCvImageDecoder.hpp"
 #include "training/infrastructure/image/ResizePreprocessorFactory.hpp"
 #include "training/infrastructure/dataset/LabelMapFileReader.hpp"
@@ -283,8 +284,9 @@ void runTraining()
     DatasetSplit valsplit = DatasetSplit::Validation;
     auto datasetRepository = std::make_shared<DatasetRepositoryFactory>(decoder, std::make_shared<LabelMapFileReader>(), preprocessorFactory, static_cast<uint8_t>(maskIgnoreIndex), param);
 
-    auto trainDataset = datasetRepository->create(appConfig.task, appConfig.dataset, trainsplit);
-    auto validationDataset = datasetRepository->create(appConfig.task, appConfig.dataset, valsplit);
+    // Decorator で包み、次バッチの読み込みを学習と並行して行う
+    auto trainDataset = std::make_shared<PreFetchDatasetRepository>(datasetRepository->create(appConfig.task, appConfig.dataset, trainsplit));
+    auto validationDataset = std::make_shared<PreFetchDatasetRepository>(datasetRepository->create(appConfig.task, appConfig.dataset, valsplit));
 
     TrainingDatasets datasets;
     datasets.trainDataset = trainDataset;
