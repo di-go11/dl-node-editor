@@ -87,6 +87,30 @@
 - 他の利用者の学習と競合しないよう、実行時間帯や対象ブランチを絞る
 - `nvidia-container-toolkit` 経由で agent に GPU を渡す
 
+### Phase 5（将来）: Multibranch Pipeline への移行
+
+現状は「Pipeline script from SCM」の単一ジョブで、ブランチ指定子を `*/main` にして `main` だけを監視している。
+この構成では、マージ前の `feat/xxx` ブランチは検証されない（ブランチが `main` から派生していても関係なく、
+指定子にマッチしないブランチではパイプラインは回らない）。
+
+マージ前にテストを通したいので、**Multibranch Pipeline** ジョブへ移行する。
+Jenkins がリポジトリのブランチを自動検出し、`Jenkinsfile` があるブランチごとにジョブを作ってビルドしてくれる。
+
+移行時に決めること・注意点:
+
+- **ブランチの検出方法**: Webhook が使えないため、Multibranch 側の定期スキャン（Scan Multibranch Pipeline Triggers）で
+  新規ブランチを検出する。既存の SCM ポーリング方針（Phase 2）と揃える
+- **ソースの種類**: 汎用の Git ソース（Deploy Key を再利用）か、GitHub Branch Source プラグイン（PR の検出ができるが
+  トークン管理が増える）か
+- **対象ブランチの絞り込み**: 全ブランチをビルドすると agent（`numExecutors: 1`）でキューが詰まる。
+  `main` / `feat/*` などに絞る、古いブランチのビルド履歴を自動破棄する設定を入れる
+- **`Jenkinsfile` の `pollSCM`**: Multibranch では新規ブランチの検出は定期スキャンが担当するため、
+  Jenkinsfile 側の `triggers` との役割分担を整理する
+- **ジョブ定義のコード化**: GUI で動作確認したあと、`casc.yaml` の Job DSL（`multibranchPipelineJob`）で定義して
+  再現可能にする（`job-dsl` プラグインが追加で必要）
+
+前提: 単一ジョブ（`*/main`）で `Checkout → Configure → Build → Test` が通ることを先に確認しておく。
+
 ## セキュリティ上のチェックリスト
 
 - [ ] Jenkins のポートを学内のみ、可能なら `127.0.0.1` にのみ公開する
