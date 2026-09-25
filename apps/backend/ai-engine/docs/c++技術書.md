@@ -454,6 +454,60 @@ int array[c]; // ○ cはコンパイル時に決まるため、配列のサイ�
 int buf2[a]; // ✘ aはコンパイル時に決まらないため、配列のサイズとして使えない。
 ```
 
+### std::optional
+
+```c++
+namespace std {
+  template <class T>
+  class optional;
+
+  // 参照に対する部分特殊化 (C++26)
+  template <class T>
+  class optional<T&>;
+
+
+  // viewコンセプトを有効化する (C++26)
+  template<class T>
+  constexpr bool ranges::enable_view<optional<T>> = true;
+
+  // std::formatによるフォーマットを無効化する (C++26)
+  template<class T>
+  constexpr auto format_kind<optional<T>> = range_format::disabled;
+
+  // borrowed_rangeコンセプトを有効化する (C++26)
+  template<class T>
+  constexpr bool ranges::enable_borrowed_range<optional<T&>> = true;
+}
+```
+
+#### 概要
+
+`optional`クラスは、任意の型`T`の値を有効値として、あらゆる型に共通の無効値状態を表現できる型。
+
+このクラスには、大きく2つの用途がある:
+1. オブジェクトの初期化タイミングを遅延させる。
+2. エラー報告のために、あらゆる型に共通の無効値表現をもたせる
+
+オブジェクトは定義した時点で初期化が行われるが、`optional`クラスはその初期化タイミングを遅延させるために使用できる。この用途には、`std::shared_ptr`のようなスマートポインタを使用することもできるが(インターフェースで戻り値を統一させて、std::make_sharedで戻り値として吐き出させたりしてポリモーフィズムを実現したり...)、このクラスは動的メモリ確保を行わないため、リソース管理ではなく初期化タイミングを遅延させるだけであれば、このクラスのほうが適している。
+
+#### テンプレートパラメータ制約
+
+プライマリテンプレート`optional<T>`の型`T`が以下のいずれかに該当してはならない。
+
+- 参照型
+- (CV修飾された)`std::in_place_t`
+- (CV修飾された)`std::nullopt_t`
+また、型`T`は`std::destructible`である必要がある。
+
+#### メンバ関数
+
+代入
+|名前|説明|対応バージョン|
+|---|---|---|
+|`operator=`|代入演算子|C++17|
+|`emplace`|要素型のコンストラクタ引数から直接構築する|C++17|
+|`swap`|別の`optional`オブジェクトと入れ替える|C++17|
+|`reset`|有効地を保持していない状態にする|C++17|
 
 ### テンプレート
 
