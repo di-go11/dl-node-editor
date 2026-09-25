@@ -3,6 +3,7 @@ pipeline{
     options{
         disableConcurrentBuilds() // 同時実行を一つに制限
         timeout(time: 30, unit: 'MINUTES') //30分でタイムアウト
+        buildDiscarder(logRotator(numToKeepStr: '20')) // 直近20回分だけ残す
     }
     triggers{
         pollSCM('H/30 9-22 * * * ')
