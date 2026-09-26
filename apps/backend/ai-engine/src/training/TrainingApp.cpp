@@ -51,6 +51,7 @@
 #include "training/application/impl/TrainModelUsecase.hpp"
 #include "training/application/impl/TrainingDatasets.hpp"
 #include "training/application/impl/TrainingResumeState.hpp"
+#include "training/adapters/impl/timer/TimedImageDecoder.hpp"
 
 namespace
 {
@@ -293,6 +294,7 @@ void runTraining()
     TrainModelUsecase usecase(param, appConfig, trainer, evaluator, checkpointStore);
 
     auto decoder = std::make_shared<OpenCvImageDecoder>();
+    auto timedDecoder = std::make_shared<TimedImageDecoder>(decoder, timeRecorder, "image.decode");
 
     // 画像・マスク共通のジオメトリ。補間/パディングだけ用途別に切り替える。
     ResizePreprocessorFactory::Geometry geometry;
@@ -303,7 +305,7 @@ void runTraining()
     //
     DatasetSplit trainsplit = DatasetSplit::Train;
     DatasetSplit valsplit = DatasetSplit::Validation;
-    auto datasetRepository = std::make_shared<DatasetRepositoryFactory>(decoder, std::make_shared<LabelMapFileReader>(), preprocessorFactory, static_cast<uint8_t>(maskIgnoreIndex), param, timeRecorder);
+    auto datasetRepository = std::make_shared<DatasetRepositoryFactory>(timedDecoder, std::make_shared<LabelMapFileReader>(), preprocessorFactory, static_cast<uint8_t>(maskIgnoreIndex), param, timeRecorder);
 
     // Decorator で包み、次バッチの読み込みを学習と並行して行う。
     // さらに PreFetch の内側と外側を TimedDatasetRepository で包み、処理時間を計測する。
