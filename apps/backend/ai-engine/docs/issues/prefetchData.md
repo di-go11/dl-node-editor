@@ -28,6 +28,7 @@ TorchModelTrainer ──▶ IDatasetRepository        ← 変更なし(Trainer�
 - `.config` の `enable_time_measurement = true` で有効化する。学習終了時(`runTraining()` を抜けるとき)に集計表が出る
 - `PreFetch` の内側と外側を包み、`*.produce`(ワーカーが1バッチを作る時間)と `*.wait`(学習ループが待った時間)を測る
 - `TimedVocSegmentationData`(`ISegmentationData` の Decorator)で、1サンプルの `getImage` / `getMask` を測る。区間名は分割ごとに分ける(`train.segdata.*` / `val.segdata.*`)。`DatasetRepositoryFactory` が `ITimeRecorder` を受け取って組み立てる
+- `TimedImageDecoder`(`IImageDecoder` の Decorator)で、デコードの時間を測る。画像(JPEG)とマスク(PNG)が同じインスタンスを通るため、区間名は拡張子で分ける(`image.decode.jpeg` / `image.decode.png`)。`TrainingApp.cpp` で、ファクトリに渡す前に、`OpenCvImageDecoder` を包む
 
 ### 計測結果(1回目: Debug ビルド)
 
@@ -84,6 +85,39 @@ val.wait_hasNext                59      3365.211      57.037       0.000      74
 
 - Debug の `train.produce_getNextBatch` は、1回目 267.9 ms、2回目 265.0 ms、3回目(`segdata` の Decorator 追加後)287.8 ms で、実行ごとに 7% 程度ばらついた
 
+### Release ビルドでの内訳(デコーダの計測を追加)
+
+`TimedImageDecoder` を追加し、`getImage` / `getMask` の内訳を測った(Release ビルド、同じ条件)。`image.decode.*` は、学習・検証で共通の区間(各 326 回 = 学習 267 + 検証 59)なので、平均値で比べる。前回の Release の結果(`train.produce_getNextBatch` 平均 69.1 ms)と、ほぼ同じで(今回 66.8 ms)、再現している。
+
+```
+Name                         Count     Total(ms)    Mean(ms)     Min(ms)     Max(ms)
+image.decode.jpeg              326      5933.094      18.200      13.591      31.146
+image.decode.png               326      2966.802       9.101       8.346      13.860
+train.produce_getNextBatch     267     17842.581      66.826      61.194      90.334
+train.produce_hasNext          268         0.114       0.000       0.000       0.001
+train.segdata.getImage         267      6018.376      22.541      17.737      34.459
+train.segdata.getMask          267     10601.691      39.707      37.785      53.718
+train.wait_getNextBatch        266         5.123       0.019       0.003       0.078
+train.wait_hasNext             267     13358.967      50.034       0.000      71.125
+val.produce_getNextBatch        59      3842.565      65.128      61.481      85.515
+val.produce_hasNext             60         0.032       0.001       0.000       0.002
+val.segdata.getImage            59      1197.139      20.290      17.560      25.845
+val.segdata.getMask             59      2373.187      40.224      38.665      56.427
+val.wait_getNextBatch           58         1.145       0.020       0.013       0.079
+val.wait_hasNext                59      3281.534      55.619       0.000      72.970
+```
+
+学習用の1サンプルの内訳(平均、ms。差分は計算による)
+
+| 処理 | 時間 | 生産時間に占める割合 |
+|---|---|---|
+| **色 → クラス ID の変換(`getMask` − `image.decode.png`)** | **約 30.6** | **約 46%** |
+| JPEG のデコード(`image.decode.jpeg`) | 18.2 | 約 27% |
+| PNG のデコード(`image.decode.png`) | 9.1 | 約 14% |
+| 画像側のその他(`getImage` − `image.decode.jpeg`。デコーダ内の RGB 変換・並べ替え・コピーなど) | 約 4.3 | 約 6% |
+| 残り(リサイズ・正規化・バッチ組み立て。produce − getImage − getMask) | 約 4.6 | 約 7% |
+| 合計(`train.produce_getNextBatch`) | 66.8 | 100% |
+
 ### わかったこと / 推測(Release / Debug の両方の計測を踏まえた最新)
 
 わかったこと(計測で確認済み)
@@ -93,11 +127,18 @@ val.wait_hasNext                59      3365.211      57.037       0.000      74
 - Release でも、学習ループはデータ待ちが多い。学習の待ち時間の合計(13.8 秒)は、生産時間の合計(18.5 秒)の約 75%
 - 1回の計算時間(推定: 生産時間 − 待ち時間)は、Release で約 17.5 ms。生産時間(約 69 ms)は、その約 4 倍(Debug では約 12 倍と見積もっていた)。ワーカー数の目安は約 4 本
 - 1サンプルの内訳(Release): `getMask` 約 59%、`getImage` 約 34%、リサイズ・正規化・バッチ組み立てが約 7%。リサイズ・正規化を GPU に移す案は、効果が小さい
+- **`getMask` の大部分は、PNG のデコードではなく、色 → クラス ID の変換だった。** `getMask` 39.7 ms のうち、PNG のデコードが約 9.1 ms、変換が約 30.6 ms(約 77%)。変換だけで、生産時間(66.8 ms)の約 46% を占め、1つの処理として最大
+- 変換は、約 230 万画素(1200×1920)で約 30 ms、つまり 1画素あたり約 13 ns(Release でも)
+- JPEG のデコードは、約 18.2 ms(約 27%)。PNG のデコード(約 9.1 ms)より重い
 - Debug ビルドでの CPU 使用率の測定では、ワーカーが 1コアをほぼ使い切っていた(約 94%)。Release では未測定
 
 推測(未確認)
 
-- `getMask`(40.7 ms)の内訳(PNG のデコードと `ColorMaskLabelConverter::convert`)は未分離。マスクの PNG は平均約 4.5KB と小さく、デコードは軽いと考えられる。一方、変換は 1200×1920 = 約 230 万画素ごとに、`RgbColor` の構築(`std::vector<uint8_t>` のヒープ確保を伴う)、`ImageData::at()` の呼び出し(別の翻訳単位の関数。LTO なしでは、Release でもインライン展開されない)、`resolveClassId` の線形探索を行うため、変換が支配的と推測している
+- 変換が遅い原因は、コードを読んだ範囲では、画素ごとに次の処理を行っているためと考えている。プロファイラなどでは、未確認
+  - `RgbColor` の構築(コンストラクタが `std::vector<uint8_t>` に `{r, g, b}` を代入するため、画素ごとにヒープ確保が発生する)
+  - `ImageData::at()` の呼び出し(別の翻訳単位の関数で、LTO なしでは、Release でもインライン展開されない。呼び出しごとに `getHeight()` / `getWidth()` を計算する)
+  - `resolveClassId` による、登録エントリの線形探索(アクセサ関数の呼び出しを伴う)
+- 変換を約 3 ms まで縮められた場合、生産時間は約 39 ms、計算時間(推定 約 17 ms)との比は約 2.3 倍となり、必要なワーカー数の目安は 2〜3 本に下がる見込み(見積もり)
 - 9p の I/O の寄与は、分離できていない(Release でも未確認)
 - 学習マシンや CI が、Debug と Release のどちらでビルドしているかは、未確認
 
@@ -106,16 +147,17 @@ val.wait_hasNext                59      3365.211      57.037       0.000      74
 順序: 内訳の計測 → 設計の決定 → 並列化 → 調整。ワーカー数を可変にすることは、並列化の設計が決まってからの作業になる(現在の `PreFetch` は、状態を持つ内側のリポジトリを1本のワーカーが順に呼ぶ設計のため、数を増やすだけでは動かない)。
 
 - [ ] 学習マシンと CI(Jenkins)のビルドの種類を確認する。Debug のままなら、性能を測る・学習を走らせるビルドは Release にする
-- [ ] 段階2の計測: 1サンプルの内訳を測る(`ISegmentationData` の Decorator は実装済み。残りは `getMask` の内訳と、前処理の Decorator)
+- [x] 段階2の計測: 1サンプルの内訳を測る(主要な処理は分離できた。前処理の Decorator は、残りが約 7% と小さいため、優先度が低い)
   - [x] `ISegmentationData` の Decorator(`getImage` と `getMask` を別々に測る。`TimedVocSegmentationData`)
-  - [ ] `getMask` の内訳(PNG のデコードと `ColorMaskLabelConverter::convert`)を分ける
-  - `IImagePreprocessor` の Decorator(画像用とマスク用は別インスタンスなので、名前で区別できる)
-  - `IImageDecoder` の Decorator(画像の JPEG とマスクの PNG が同じインスタンスを通るため、拡張子で名前を分ける)
+  - [x] `IImageDecoder` の Decorator(画像の JPEG とマスクの PNG が同じインスタンスを通るため、拡張子で名前を分ける。`TimedImageDecoder`)
+  - [x] `getMask` の内訳(PNG のデコードと `ColorMaskLabelConverter::convert`)を分ける。結果: PNG のデコード 約 9.1 ms、変換 約 30.6 ms
+  - [ ] (優先度低)`IImagePreprocessor` の Decorator(画像用とマスク用は別インスタンスなので、名前で区別できる)。残り(リサイズ・正規化・組み立て)は約 4.6 ms
   - 継ぎ目のない箇所(`ColorMaskLabelConverter` は具象クラスを値で保持、`ImageNormalizer::normalize` は static 関数)は、差分で求める(例: `getMask` − PNG デコード、`getNextBatch` − サンプルごとの処理の合計)。差分で足りなければ、`ILabelConverter` / `IImageNormalizer` のようなインターフェースを切り出す
   - 処理クラスに `ITimeRecorder` を持たせず、Decorator で外側から包む。`DatasetRepositoryFactory` に `ITimeRecorder` を渡し、`IImageDecoder` は `TrainingApp.cpp` で、ファクトリに渡す前に包む
 - [ ] I/O の寄与を切り分ける: 同じデータをコンテナ内のローカル領域(`/tmp` など)にコピーして、`/workspaces`(9p)と比較する
 - [ ] 内訳に基づいて、遅い処理そのものを改善できるか検討する(アルゴリズムの見直し、事前リサイズ、`cv::IMREAD_REDUCED_COLOR_2` による縮小デコードなど)
-  - [ ] `ColorMaskLabelConverter` の改善(画素ごとの `RgbColor` の構築とヒープ確保をやめる、24bit の色をキーにした対応表を事前に作る、`ImageData::raw()` を直接走査する、など)。`getMask` が、Release でも生産時間の約 59% を占めるため、優先度が高い
+  - [ ] `ColorMaskLabelConverter` の改善(画素ごとの `RgbColor` の構築とヒープ確保をやめる、24bit の色をキーにした対応表を事前に作る、`ImageData::raw()` を直接走査する、など)。変換が、Release でも生産時間の約 46%(約 30.6 ms)を占める最大の処理のため、**優先度が最も高い**。変換結果が変わらないことを、テストで確認しながら進める(既存の `image_pipeline_test` などで、変換の結果を検査しているかは、要確認)
+  - [ ] JPEG のデコード(約 18.2 ms、約 27%)は、OpenCV のビルド済みライブラリの処理で、自前のコードでは縮めにくい。入力サイズ(256×256)が元(1200×1920)より、十分小さいため、`cv::IMREAD_REDUCED_COLOR_*` による縮小デコードが候補だが、リサイズの結果(画質・Letterbox)が変わるため、精度への影響を確認する
 - [ ] 並列化の設計を決める(下の「未決定事項」)
 - [ ] 決めた設計に、ワーカー数のパラメータ(`.config` の `num_workers` など。既定 1 = 現状の動作)を持たせる
 - [ ] ワーカー数を変えながら計測機能で確認し、調整する
@@ -134,7 +176,7 @@ val.wait_hasNext                59      3365.211      57.037       0.000      74
   - 案A: 1バッチ内のサンプルごとの処理を並列にする(`batch_size` が並列度の上限になる。`batch_size=1` では効果がない)
   - 案B: 複数のワーカーが別々のバッチを作る(PyTorch の `num_workers` 方式。「何番目のバッチ」と指定すれば作れる、状態を持たない形と、順序付きのキューが必要。`IDatasetRepository` の設計の見直しを伴う)
   - 案C: libtorch の DataLoader(`workers(N)`)を使う(上の当初の構成図の方向)
-  - 案D: 1サンプルの処理自体を速くする(Release でも `getMask` が約 59% を占めるため有力。並列化より先に検討する)
+  - 案D: 1サンプルの処理自体を速くする(Release でも、色 → クラス ID の変換が生産時間の約 46% を占めることが計測で分かったため、有力。並列化より先に検討する。変換を縮めた後で、ワーカー数の目安を再計測して、並列化の要否を判断する)
 - 先読みバッファの深さ(現状 1 枠)を増やすか。生産が計算より遅い間は、増やしても効果がない
 - ワーカーと、OpenCV / libtorch が内部に持つスレッドプールの、CPU の取り合い(オーバーサブスクリプション)への対処
 - 同時に処理中のバッチ数に応じたメモリ使用量(devcontainer は約 7GB)
