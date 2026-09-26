@@ -312,3 +312,24 @@ target_link_libraries(loss_function_test PRIVATE ai_engine_lib "${TORCH_LIBRARIE
 target_link_options(loss_function_test PRIVATE "-Wl,--allow-shlib-undefined")
 set_property(TARGET loss_function_test PROPERTY CXX_STANDARD 17)
 
+# libtorchを使用するテスト
+
+## 1. TorchLossFactoryとTorchLossConfigの整合性テスト
+add_executable(torch_loss_factory_test tests/torch_loss_factory_test.cpp)
+target_include_directories(torch_loss_factory_test PRIVATE
+	${CMAKE_CURRENT_SOURCE_DIR}/src
+	${CMAKE_CURRENT_SOURCE_DIR}
+	${TORCH_INCLUDE_DIRS}
+)
+target_link_libraries(torch_loss_factory_test PRIVATE ai_engine_lib "${TORCH_LIBRARIES}")
+target_link_options(torch_loss_factory_test PRIVATE "-Wl,--allow-shlib-undefined")
+set_property(TARGET torch_loss_factory_test PROPERTY CXX_STANDARD 17)
+
+# =====CIテスト用の設定=====
+enable_testing()
+
+add_test(NAME torch_loss_factory_test COMMAND torch_loss_factory_test)
+add_test(NAME image_pipeline_test COMMAND image_pipeline_test)
+
+set_tests_properties(torch_loss_factory_test PROPERTIES LABELS "cpu")
+set_tests_properties(image_pipeline_test PROPERTIES LABELS "cpu")
