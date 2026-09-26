@@ -6,10 +6,17 @@ BufferTimeRecorder::BufferTimeRecorder(std::shared_ptr<ITimeReportWriter> report
 
 BufferTimeRecorder::~BufferTimeRecorder()
 {
-    std::lock_guard<std::mutex> lock(_mutex);
-    if (!_timeSpans.empty())
+    // 破棄されるのは最後の所有者が手放したときで、他のスレッドは record を呼ばないため、ロックは不要。
+    // デストラクタから例外を出すと std::terminate になる。計測の失敗で学習を止めないよう、ここで握りつぶす。
+    try
     {
-        _reportWriter->writeReport(_timeSpans);
+        if (_reportWriter && !_timeSpans.empty())
+        {
+            _reportWriter->writeReport(_timeSpans);
+        }
+    }
+    catch (...)
+    {
     }
 }
 

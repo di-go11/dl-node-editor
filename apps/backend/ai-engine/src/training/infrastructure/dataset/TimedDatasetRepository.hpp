@@ -18,7 +18,9 @@ public:
     TrainingBatch getNextBatch() override;
 
 private:
-    std::string _name;
+    // 区間の名前は、呼び出しのたびに文字列を組み立てないよう、コンストラクタで1回だけ作る。
+    std::string _hasNextName;
+    std::string _getNextBatchName;
 
     std::shared_ptr<IDatasetRepository> _datasetRepository;
     std::shared_ptr<ITimeRecorder> _timeRecorder;

@@ -15,7 +15,6 @@ public:
     ScopedTimer &operator=(const ScopedTimer &) = delete; // 　代入によるオブジェクトのコピー禁止
 private:
     ITimeRecorder &_timeRecorder;
-    std::string _name;
     ProcessTimeSpan _processTimeSpan;
 };
 

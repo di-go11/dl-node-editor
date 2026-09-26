@@ -670,6 +670,10 @@ AppConfig ConfigReader::readAll(const std::string &filePath)
                 // parseComputeDevice に一任する(不正値は例外を投げる)。
                 appConfig.device = parseComputeDevice(value);
             }
+            else if (key == "enable_time_measurement")
+            {
+                appConfig.enableTimeMeasurement = parseBool(value, key);
+            }
             else
             {
                 throw std::runtime_error("Unknown config key: " + key);
