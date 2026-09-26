@@ -9,6 +9,7 @@
 #include "training/application/interfaces/image/IImageDecoder.hpp"
 #include "training/infrastructure/dataset/LabelMapFileReader.hpp"
 #include "training/infrastructure/image/ResizePreprocessorFactory.hpp"
+#include "training/application/interfaces/ITimeRecorder.hpp"
 
 #include <cstdint>
 #include <memory>
@@ -24,7 +25,8 @@ public:
                              std::shared_ptr<LabelMapFileReader> labelMapReader,
                              ResizePreprocessorFactory preprocessorFactory,
                              uint8_t maskIgnoreIndex,
-                             std::shared_ptr<TrainParam> trainParam);
+                             std::shared_ptr<TrainParam> trainParam,
+                             std::shared_ptr<ITimeRecorder> timeRecorder);
 
     std::shared_ptr<IDatasetRepository> create(const TrainingTaskType &taskType, const DatasetConfig &config, DatasetSplit split) const override;
 
@@ -40,4 +42,5 @@ private:
     ResizePreprocessorFactory _preprocessorFactory;
     uint8_t _maskIgnoreIndex;
     std::shared_ptr<TrainParam> _trainParam;
+    std::shared_ptr<ITimeRecorder> _timeRecorder;
 };

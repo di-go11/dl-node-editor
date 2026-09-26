@@ -303,7 +303,7 @@ void runTraining()
     //
     DatasetSplit trainsplit = DatasetSplit::Train;
     DatasetSplit valsplit = DatasetSplit::Validation;
-    auto datasetRepository = std::make_shared<DatasetRepositoryFactory>(decoder, std::make_shared<LabelMapFileReader>(), preprocessorFactory, static_cast<uint8_t>(maskIgnoreIndex), param);
+    auto datasetRepository = std::make_shared<DatasetRepositoryFactory>(decoder, std::make_shared<LabelMapFileReader>(), preprocessorFactory, static_cast<uint8_t>(maskIgnoreIndex), param, timeRecorder);
 
     // Decorator で包み、次バッチの読み込みを学習と並行して行う。
     // さらに PreFetch の内側と外側を TimedDatasetRepository で包み、処理時間を計測する。
