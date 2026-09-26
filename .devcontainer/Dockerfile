@@ -1,4 +1,4 @@
-FROM nvidia/cuda:13.2.1-cudnn-devel-ubuntu22.04
+FROM nvidia/cuda:13.2.1-cudnn-devel-ubuntu22.04 AS base
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -64,6 +64,43 @@ ENV CCACHE_MAXSIZE=5G
 ENV CMAKE_C_COMPILER_LAUNCHER=ccache
 ENV CMAKE_CXX_COMPILER_LAUNCHER=ccache
 RUN mkdir -p /ccache && ccache --version
+
+# ===== ここまで共通の"base"ステージ======
+
+# ===== CI(jenkins agent)専用ステージ。 --target ci-agentで明示指定されたときのみビルドされる======
+FROM base AS ci-agent
+
+# JenkinsのagentプロセスはJVM上で動くため、controllerと合わせてJDK21を追加
+# openssh-client: checkout scm が SSH(Deploy Key)で clone する際に ssh コマンドが必要
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    openjdk-21-jre-headless \
+    openssh-client \
+    curl \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN useradd -m -d /home/jenkins jenkins \
+    && mkdir -p /home/jenkins/agent /home/jenkins/.ccache \
+    && chown -R jenkins:jenkins /home/jenkins
+
+# base ステージの CCACHE_DIR=/ccache は root 所有のボリュームを想定しており、
+# 非root(jenkins)で実行する agent からは書き込めない。書き込めないと ccache が
+# "Failed to create temporary file ... Permission denied" で異常終了し、
+# nvcc が呼ぶ gcc(ccache 経由)も失敗して CMake の CUDA コンパイラ識別が
+# "unknown" になり configure が落ちる。jenkins 所有のディレクトリに切り替える。
+# docker-compose 側でここに名前付きボリュームをマウントすると、
+# イメージ内の所有者(jenkins)が初回に引き継がれる。
+ENV CCACHE_DIR=/home/jenkins/.ccache
+
+COPY jenkins-agent-entrypoint.sh /usr/local/bin/jenkins-agent-entrypoint.sh
+RUN chmod +x /usr/local/bin/jenkins-agent-entrypoint.sh
+
+USER jenkins
+WORKDIR /home/jenkins/agent
+ENTRYPOINT ["/usr/local/bin/jenkins-agent-entrypoint.sh"]
+
+# --- 開発用(devcontainer)ステージ。今まで通りのデフォルトビルド対象 ---
+FROM base AS dev
 
 # 6. docker-compose.yml に合わせて作業ディレクトリを戻す
 WORKDIR /workspaces/apps/backend/ai-engine
