@@ -56,6 +56,7 @@
 #include "training/application/impl/TrainingResumeState.hpp"
 #include "training/adapters/impl/timer/TimedImageDecoder.hpp"
 #include "training/adapters/impl/parallelProcessFn/SequentialExecutor.hpp"
+#include "training/adapters/impl/parallelProcessFn/ThreadExecutor.hpp"
 
 namespace
 {
@@ -201,7 +202,7 @@ namespace
         }
         else if (threadCount > 1)
         {
-            throw std::runtime_error("ParallelExecutor with threadCount > 1 is not implemented yet.");
+            return std::make_shared<ThreadExecutor>(threadCount);
         }
         else
         {

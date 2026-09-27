@@ -3,6 +3,8 @@
 
 #include "training/application/interfaces/parallelProcessFn/IParallelExecutor.hpp"
 
+#include <functional>
+
 class SequentialExecutor : public IParallelExecutor
 {
 public:
