@@ -244,6 +244,44 @@ val.wait_hasNext                59      1584.108      26.849       0.000      42
 - 9p の I/O の寄与は、分離できていない(Release でも未確認)
 - 学習マシンや CI が、Debug と Release のどちらでビルドしているかは、未確認
 
+### 案A(1バッチ内のサンプルを並列化)の実装結果
+
+学習データ 2000 枚以上・バッチサイズ 16 / 32 で使う予定であることを踏まえ、案A(バッチ内のサンプルごとの読み込みを並列化する)を実装した。設計と実装の考え方は [並列処理の考え方.md](../並列処理の考え方.md) を参照。
+
+実装(ユーザー自身による実装。3段階で進めた)
+
+- `IParallelExecutor`(`application/interfaces/parallelProcessFn/`): `parallelFor(count, body)` の契約。`body` は `const std::function<void(size_t)> &`(右辺値のラムダを直接渡せるようにするため `const` 参照にした)
+- `SequentialExecutor`: 呼び出したスレッドで、逐次に実行する版。基準(正解)として使う。`.config` の `thread_count = 1` で選ばれる
+- `ThreadExecutor`: `std::thread` を `min(threadCount, count)` 本作り、共有の `std::atomic<size_t>` カウンタ(`fetch_add`)から、各スレッドが次の添字を早い者勝ちで取っていく(動的スケジューリング)。JPEG のデコード時間が画像ごとに大きくばらつくため、静的な範囲分割より、動的な割り当てのほうが負荷が均等になりやすいと判断した
+- `SegmentationDatasetRepository::getNextBatch()` の `for` ループを `_parallelExecutor->parallelFor(count, ...)` に置き換えた。結果は `std::vector<NormalizedImageData> inputs(count)` / `std::vector<std::optional<ImageData>> targets(count)`(`ImageData` は既定コンストラクタを持たないため `optional`)に、添字の位置へ書き込む
+- `.config` の `thread_count`、`AppConfig::threadCount`、`ConfigReader` に解析を追加。`TrainingApp.cpp` の `createParallelExecutor(threadCount)` で、`1` なら `SequentialExecutor`、`1` より大きいなら `ThreadExecutor(threadCount)` を選ぶ
+
+実装中に見つかった不具合(いずれも実装の過程で発見し、修正済み)
+
+- `IParallelExecutor::parallelFor` の `body` 引数を非 `const` 参照にしていたため、呼び出し側でラムダ式(右辺値)を直接渡すとコンパイルエラーになった(「非const への参照の初期値は左辺値である必要があります」)。`const std::function<void(size_t)> &` に修正
+- `ThreadExecutor` の最初の実装は、`std::thread` を1つも作らず、`for (t = 0; t < numThreads; ++t)` の中で直接 `body` を呼んでいた(逐次実行と同じ動作。コンパイルも通り、値も正しいため、性能を計測するまで気づかなかった)。`threads.emplace_back([...]{ ... })` で実際にスレッドを作る形に修正
+- **`SegmentationDatasetRepository::getNextBatch()` に2つの不具合があった。** ① `_source->getImage(index)` / `getMask(index)` が、バッチ内の相対位置 `index` を渡しており、絶対位置 `i = start + index` を計算していたのに使っていなかった(2バッチ目以降、常に先頭の枚数を読み直す)。② 結果を `batch.input.values.push_back(...)` / `batch.target.values.push_back(...)` で追加しており、複数スレッドからの同時呼び出しでデータ競合になっていた(サンプルの完成順に並ぶため、逐次実行時の並びと一致しない)。`getImage(i)` / `getMask(i)` に修正し、`push_back` を、添字位置への書き込み(`inputs[index] = ...`)に修正した
+
+検証(実データ、Release ビルド)
+
+- 全テスト実行ファイル(13本、私が先に作った `parallel_executor_test` を含む)が `[PASS]` 214件、`[FAIL]` 0件
+- 一時的な確認プログラムで、軽い仕事(mutex + set への挿入だけ)では、スレッド生成のオーバーヘッドの間に最初の1本が全仕事を終えてしまい、複数スレッドが使われないことを確認した(20ms のスリープを仕事に加えると、指定した本数のスレッドが確実に使われることも確認した)。実際の学習(1サンプル数十ms)では、この心配は当てはまらない
+- **上記2つの不具合を修正する前は、実データで `SequentialExecutor` と `ThreadExecutor(2/4/8)` を比較すると、学習用・検証用、各3回の合計18通りが、すべて不一致だった(サンプルの並びが完成順になるため)。修正後は、同じ18通りが、すべて値・並びともビット単位で一致した**
+
+計測結果(実データ、Release、`batch_size=16`、1エポック)
+
+| `thread_count` | 1バッチの生産(平均) | 学習の待ち(合計) | 実行全体(`real`) | 高速化 |
+|---|---|---|---|---|
+| 1(逐次) | 554.9 ms | 6,885.8 ms | 14.1 s | 1.0 倍 |
+| 2 | 269.6 ms | 2,405.3 ms | 7.0 s | 2.02 倍 |
+| **4** | **164.5 ms** | **681.8 ms** | **5.5 s** | **2.55 倍** |
+| 8 | 177.8 ms | 481.3 ms | 6.1 s | 2.32 倍 |
+
+- `thread_count=4` が、この環境(8コア/16スレッド SMT)での最適点。実行全体で、逐次の約 2.55 倍
+- `thread_count=2, 4` では、JPEG のデコード時間がほとんど増えない(17.6 → 17.8 → 23.0 ms)。動的スケジューリングが、狙いどおりに機能している
+- `thread_count=8` では、JPEG のデコードが約 2.5 倍(17.6 → 44.1 ms)に増える。原因は未確認(メモリ帯域、SMT など)
+- 1バッチの生産時間(164.5 ms)は、GPU の計算時間の推定(約 165 ms、変換の改善後の計測から)とほぼ釣り合っている。GPU はほぼ飽和していると考えられる(見積もり)
+
 ### やること
 
 順序: 内訳の計測 → 設計の決定 → 並列化 → 調整。ワーカー数を可変にすることは、並列化の設計が決まってからの作業になる(現在の `PreFetch` は、状態を持つ内側のリポジトリを1本のワーカーが順に呼ぶ設計のため、数を増やすだけでは動かない)。
@@ -264,10 +302,15 @@ val.wait_hasNext                59      1584.108      26.849       0.000      42
     - 登録にない色(アンチエイリアスなどで生じる中間色)が 255 になること。従来の挙動の維持が、今回の最重要条件だった
     - 新旧の実装が、あらゆる色で一致すること。`ColorLabelMap::resolveClassId`(旧 API)は残っているので、基準の実装として使える。ランダムな色(登録色と未登録色を混ぜたもの)で作ったマスクを変換し、画素ごとに `static_cast<uint8_t>(resolveClassId(RgbColor(r, g, b)))` と一致するかを比べる(旧 API を、消さずに残す理由にもなる)
   - [ ] JPEG のデコード(約 18.1 ms、変換の改善後は、生産時間の約 50% で、最大の処理)は、OpenCV のビルド済みライブラリの処理で、自前のコードでは縮めにくい。入力サイズ(256×256)が元(1200×1920)より、十分小さいため、`cv::IMREAD_REDUCED_COLOR_*` による縮小デコードが候補だが、リサイズの結果(画質・Letterbox)が変わるため、精度への影響を確認する
-- [ ] 並列化の設計を決める(下の「未決定事項」)
-- [ ] 決めた設計に、ワーカー数のパラメータ(`.config` の `num_workers` など。既定 1 = 現状の動作)を持たせる
-- [ ] ワーカー数を変えながら計測機能で確認し、調整する
-- [ ] 単体テストを追加する(`BufferTimeRecorder` を複数スレッドから呼んでも壊れない、`CoutTimeReportWriter` の集計値、`TimedDatasetRepository` が呼び出しを素通しする)
+- [x] 並列化の設計を決める(案A に決定。理由は「未決定事項」に記載)
+- [x] 決めた設計に、ワーカー数のパラメータ(`.config` の `thread_count`。既定 1 = 逐次)を持たせる
+- [x] ワーカー数を変えながら計測機能で確認し、調整する(`thread_count=4` が、この環境での最適点)
+- [x] 実データで、逐次実行と並列実行の結果が一致することを確認する(修正前は不一致、修正後は18通りすべて一致)
+- [ ] 単体テストを追加する
+  - [ ] `BufferTimeRecorder` を複数スレッドから呼んでも壊れない、`CoutTimeReportWriter` の集計値、`TimedDatasetRepository` が呼び出しを素通しする
+  - [ ] `IParallelExecutor` / `ThreadExecutor` / `SegmentationDatasetRepository` の並列実行を対象にした、正式な単体テスト(現状は、リポジトリの外の一時的な確認プログラムでのみ検証している)
+- [ ] `thread_count=8` で JPEG のデコードが遅くなる原因を調べる(メモリ帯域、SMT など。未確認)
+- [ ] JPEG の縮小デコードを検討する(残る最大の処理、約 50%)
 
 ### 決定事項
 
@@ -275,15 +318,18 @@ val.wait_hasNext                59      1584.108      26.849       0.000      42
 - 計測のオン・オフは `.config`(`enable_time_measurement`)で切り替え、オフのときは `NullTimeRecorder`(Null Object)を注入する
 - ワーカー数は固定値にせず、設定値にする。「生産時間 ÷ 計算時間」は、Debug ビルドで約 12、Release ビルド(`RgbColor` の修正前)で約 4、修正後で約 3、変換の改善後で約 2.3 だった(条件は `batch_size=1`、256×256、この環境)。目安にすぎず、ビルドの種類・バッチサイズ・モデルを変えると、適切な数も変わる
 - 性能の計測と調整は、Release ビルド(`-O3`)で行う。Debug ビルドの値は、自前のコードが最適化されておらず、判断には使わない
+- 並列化は、案A(1バッチ内のサンプルを並列化)に決定した。実装済み。この環境での既定値は `thread_count=4`(実行全体で、逐次の約 2.55 倍)
+- 仕事の割り当ては、静的な範囲分割ではなく、共有カウンタによる動的スケジューリングにする。JPEG のデコード時間が画像ごとに大きくばらつくため
+- 並列実行の結果は、値の一致だけでなく、サンプルの並び(順序)も、逐次実行と一致していなければならない(`getNextBatch()` が返すバッチの並びが、学習の再現性に関わるため)。結果は、`push_back` ではなく、添字の位置への書き込みで、そろえる
 
 ### 未決定事項
 
-- 並列化の方式
-  - 案A: 1バッチ内のサンプルごとの処理を並列にする(`batch_size` が並列度の上限になる。`batch_size=1` では効果がない)
-  - 案B: 複数のワーカーが別々のバッチを作る(PyTorch の `num_workers` 方式。「何番目のバッチ」と指定すれば作れる、状態を持たない形と、順序付きのキューが必要。`IDatasetRepository` の設計の見直しを伴う)
-  - 案C: libtorch の DataLoader(`workers(N)`)を使う(上の当初の構成図の方向)
-  - 案D: 1サンプルの処理自体を速くする(有力で、大きな効果があった。`RgbColor` のヒープ確保の除去と、変換の改善で、生産時間が 66.8 ms から 36.1 ms(約 46%)縮んだ。変換は、もうボトルネックではなく、残りの大半は JPEG と PNG のデコード。JPEG の縮小デコードを検討した後で、ワーカー数の目安を再計測して、並列化の要否を判断する)
-- 先読みバッファの深さ(現状 1 枠)を増やすか。生産が計算より遅い間は、増やしても効果がない
+- ~~並列化の方式~~ → **決定済み(案A)**。理由: `batch_size` を 16 / 32 で使う予定であり、必要な並列度(2〜4)を、バッチ内のサンプル数で、十分まかなえる。案B・C(複数バッチの同時生産)は、`IDatasetRepository` の契約の見直し、順序付きのキュー、メモリの増加(ワーカー数 × 1バッチ分)を伴い、必要性が出てから検討する
+  - 案A: 1バッチ内のサンプルごとの処理を並列にする → 実装済み。`batch_size=1` では効果がない
+  - 案B: 複数のワーカーが別々のバッチを作る(PyTorch の `num_workers` 方式)。未実装。`train.wait_hasNext` が、`thread_count` の調整後も残る場合に、検討する
+  - 案C: libtorch の DataLoader(`workers(N)`)を使う(上の当初の構成図の方向)。未実装
+  - 案D: 1サンプルの処理自体を速くする → 実装済み(`RgbColor` の改善、変換の改善)。生産時間が 66.8 ms から 36.1 ms(約 46%)縮んだ。残る最大の処理は JPEG のデコード(約 50%)
+- 先読みバッファの深さ(現状 1 枠)を増やすか。生産が計算より遅い間は、増やしても効果がない。案A の実装後、1バッチの生産時間(164.5 ms)が、GPU の計算時間(推定 約 165 ms)と、ほぼ釣り合っているため、優先度は下がった
 - ワーカーと、OpenCV / libtorch が内部に持つスレッドプールの、CPU の取り合い(オーバーサブスクリプション)への対処
 - 同時に処理中のバッチ数に応じたメモリ使用量(devcontainer は約 7GB)
 - 完了条件の数値(`train.wait_hasNext` の合計を、エポック全体の何%以下にするか)
@@ -295,14 +341,16 @@ val.wait_hasNext                59      1584.108      26.849       0.000      42
 - `ConfigReader.cpp` の `if / else if` の連なりに、設定を追加する人が集中すると、ブランチ間でコンフリクトしやすい。セクションごとの分割を検討する
 - `CMakeLists.txt` に `enable_testing()` と `add_test` がなく、`ctest` は「No tests were found」となる(終了コードは 0)。テストは、実行ファイルを個別に実行する必要がある。CTest への登録を検討する
 - `training_smoke_test` は、`SMOKE_SRC_DATASET`(`CMakeLists.txt`)が `dataset/train` を指している。データセットを `dataset/` 直下に置く配置では、`[SKIP]`(終了コード 0)になり、何も検査しない。データの配置の取り決めを決めて、CMake の値と `.config` の `dataset_path` を揃える
+- データセットのディレクトリ名が、`dataset` から `TrainingDataset` に変わった(Windows 側での変更と見られる)。`.config` の `dataset_path` は、`TrainingDataset` に追従済みだが、`CMakeLists.txt` の `SMOKE_SRC_DATASET`(上記)や、ドキュメント中の記載は、まだ、古い名前のままの箇所が残っている可能性がある
+- ラベルマップなどの設定ファイルを開けないときの `std::runtime_error` が、`main()` などでキャッチされておらず、`std::terminate`(コアダンプ)で異常終了する。エラーメッセージを表示して、正常な終了コードで終わるようにするのが望ましい(今回の作業中に、`dataset_path` の設定ミスで、この経路を踏んだ)
 
 ### 影響範囲
 
 - 段階2: 新規 Decorator(`ISegmentationData` / `IImagePreprocessor` / `IImageDecoder` 用)、`DatasetRepositoryFactory`(`ITimeRecorder` を受け取る)、`TrainingApp.cpp`
-- 並列化: `PreFetchDatasetRepository` またはその代替、`IDatasetRepository` の契約、`AppConfig.hpp` / `ConfigReader.cpp` / `.config`(`num_workers`)
+- 並列化(実装済み): 新規 `IParallelExecutor` / `SequentialExecutor` / `ThreadExecutor`(`application/interfaces/parallelProcessFn/`、`adapters/impl/parallelProcessFn/`)、`SegmentationDatasetRepository`、`DatasetRepositoryFactory`、`TrainingApp.cpp`、`AppConfig.hpp` / `ConfigReader.cpp` / `.config`(`thread_count`)、`tests/training_smoke_test.cpp`
 
 ### 完了条件
 
-- 内訳が計測され、支配的な処理が特定されている
-- 並列化の方式が決まり、`num_workers` を設定で変えられる
-- 実データで、`train.wait_hasNext` の合計が、目標(未決定事項に挙げた数値)を下回る
+- [x] 内訳が計測され、支配的な処理が特定されている
+- [x] 並列化の方式が決まり、`thread_count` を設定で変えられる
+- [ ] 実データで、`train.wait_hasNext` の合計が、目標(未決定事項に挙げた数値)を下回る — 数値は、まだ未決定。`thread_count=4` で、待ちの合計は、生産時間の合計の約 24%(681.8 / 2,961.2、参考値)まで下がっている
