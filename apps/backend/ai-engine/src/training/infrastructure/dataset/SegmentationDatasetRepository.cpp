@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <memory>
 #include <utility>
+#include <optional>
 
 SegmentationDatasetRepository::SegmentationDatasetRepository(std::shared_ptr<ISegmentationData> source,
                                                              std::shared_ptr<IImagePreprocessor> imagePreProcessor,
@@ -37,29 +38,34 @@ bool SegmentationDatasetRepository::hasNext() const
 
 TrainingBatch SegmentationDatasetRepository::getNextBatch()
 {
-    TrainingBatch batch;
-
     const size_t start = _currentIndex;
     const size_t end = std::min(_currentIndex + static_cast<size_t>(_batchSize), _source->size());
     const size_t count = end - start; // バッチごとのサンプル数。
+
+    std::vector<NormalizedImageData> inputs(count);
+    std::vector<std::optional<ImageData>> targets(count);
 
     // executer機能のテスト(スレッド数1での逐次処理)
     _parallelExecutor->parallelFor(count, [&](size_t index)
                                    {
                                        const size_t i = start + index;
-                                       ImageData image = _source->getImage(index);
-                                       ImageData mask = _source->getMask(index);
+                                       ImageData image = _source->getImage(i);
+                                       ImageData mask = _source->getMask(i);
 
                                        // uint8のImageDataに対して、リサイズと正規化を行う。入力画像は正規化するが、マスクは正規化しない。
                                        ImageData resizedImage = _imagePreProcessor->process(image);
                                        ImageData resizedMask = _maskPreProcessor->process(mask);
 
-                                       batch.input.values.push_back(ImageNormalizer::normalize(resizedImage)); // → NormalizedImageDatas
-                                       batch.target.values.push_back(std::move(resizedMask));                  // ImageData のまま
+                                       inputs[index] = ImageNormalizer::normalize(resizedImage); // 各スレッドごとに、正規化済みの入力画像を格納する。
+                                       targets[index].emplace(std::move(resizedMask));           // 各スレッドごとに、正規化していないマスクを格納する。
                                    });
-
-    batch.input.num_samples = static_cast<int>(batch.input.values.size());
-    batch.target.num_samples = static_cast<int>(batch.target.values.size());
+    TrainingBatch batch;
+    batch.input.values = std::move(inputs);
+    batch.target.values.reserve(count);
+    for (auto &t : targets)
+    {
+        batch.target.values.push_back(std::move(*t)); // std::optionalからImageDataを取り出して、正規化していないマスクを格納する。
+    }
 
     _currentIndex = end;
 
