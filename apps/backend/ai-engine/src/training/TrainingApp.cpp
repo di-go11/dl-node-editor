@@ -40,6 +40,9 @@
 #include <filesystem>
 #include <iostream>
 
+// application(インターフェース)
+#include "training/application/interfaces/parallelProcessFn/IParallelExecutor.hpp"
+
 // adapters(インタフェース)
 #include "training/adapters/interfaces/IModel.hpp"
 #include "training/adapters/interfaces/IOptimizer.hpp"
@@ -52,6 +55,7 @@
 #include "training/application/impl/TrainingDatasets.hpp"
 #include "training/application/impl/TrainingResumeState.hpp"
 #include "training/adapters/impl/timer/TimedImageDecoder.hpp"
+#include "training/adapters/impl/parallelProcessFn/SequentialExecutor.hpp"
 
 namespace
 {
@@ -188,6 +192,23 @@ namespace
             return std::make_shared<NullTimeRecorder>();
         }
     }
+
+    std::shared_ptr<IParallelExecutor> createParallelExecutor(size_t threadCount)
+    {
+        if (threadCount == 1)
+        {
+            return std::make_shared<SequentialExecutor>();
+        }
+        else if (threadCount > 1)
+        {
+            throw std::runtime_error("ParallelExecutor with threadCount > 1 is not implemented yet.");
+        }
+        else
+        {
+            throw std::runtime_error("Invalid threadCount value: " + std::to_string(threadCount));
+        }
+    }
+
 } // namespace
 
 void runTraining()
@@ -201,6 +222,9 @@ void runTraining()
 
     // TrainParamの設定(.configから取得。将来的にGUI入力にも置き換わる想定)
     auto param = std::make_shared<TrainParam>(appConfig.epochSize, appConfig.batchSize);
+
+    // ParallelExecutorの生成。(現在は逐次処理のみだが、将来的に並列化する場合は追加する。)
+    auto parallelExecutor = createParallelExecutor(appConfig.threadCount);
 
     // ITimeRecorderの生成。(enableTimeMeasurement が false ならダミー実装)
     auto timeRecorder = createTimeRecorder(appConfig.enableTimeMeasurement);
@@ -302,10 +326,11 @@ void runTraining()
     geometry.height = appConfig.input_height;
     geometry.aspectRatioPolicy = LetterboxPolicy{};
     ResizePreprocessorFactory preprocessorFactory(geometry);
-    //
+
+    // Datasetの作成
     DatasetSplit trainsplit = DatasetSplit::Train;
     DatasetSplit valsplit = DatasetSplit::Validation;
-    auto datasetRepository = std::make_shared<DatasetRepositoryFactory>(timedDecoder, std::make_shared<LabelMapFileReader>(), preprocessorFactory, static_cast<uint8_t>(maskIgnoreIndex), param, timeRecorder);
+    auto datasetRepository = std::make_shared<DatasetRepositoryFactory>(timedDecoder, std::make_shared<LabelMapFileReader>(), preprocessorFactory, static_cast<uint8_t>(maskIgnoreIndex), param, timeRecorder, parallelExecutor);
 
     // Decorator で包み、次バッチの読み込みを学習と並行して行う。
     // さらに PreFetch の内側と外側を TimedDatasetRepository で包み、処理時間を計測する。

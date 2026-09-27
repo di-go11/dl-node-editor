@@ -40,13 +40,15 @@ DatasetRepositoryFactory::DatasetRepositoryFactory(std::shared_ptr<IImageDecoder
                                                    ResizePreprocessorFactory preprocessorFactory,
                                                    uint8_t maskIgnoreIndex,
                                                    std::shared_ptr<TrainParam> trainParam,
-                                                   std::shared_ptr<ITimeRecorder> timeRecorder)
+                                                   std::shared_ptr<ITimeRecorder> timeRecorder,
+                                                   std::shared_ptr<IParallelExecutor> parallelExecutor)
     : _decoder(std::move(decoder)),
       _labelMapReader(std::move(labelMapReader)),
       _preprocessorFactory(std::move(preprocessorFactory)),
       _maskIgnoreIndex(maskIgnoreIndex),
       _trainParam(std::move(trainParam)),
-      _timeRecorder(std::move(timeRecorder))
+      _timeRecorder(std::move(timeRecorder)),
+      _parallelExecutor(std::move(parallelExecutor))
 {
 }
 
@@ -94,7 +96,7 @@ std::shared_ptr<IDatasetRepository> DatasetRepositoryFactory::createPascalVoc(Im
         auto timedSource = std::make_shared<TimedVocSegmentationData>(source, _timeRecorder, std::string(splitName(split)) + ".segdata");
         auto imagePreProcessor = _preprocessorFactory.forImage();
         auto maskPreProcessor = _preprocessorFactory.forMask(_maskIgnoreIndex);
-        return std::make_shared<SegmentationDatasetRepository>(timedSource, imagePreProcessor, maskPreProcessor, _trainParam);
+        return std::make_shared<SegmentationDatasetRepository>(timedSource, imagePreProcessor, maskPreProcessor, _trainParam, _parallelExecutor);
     }
     default:
         throw std::runtime_error("Unsupported ImageTaskType for PascalVocConfig");

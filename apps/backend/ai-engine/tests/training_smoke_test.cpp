@@ -50,6 +50,7 @@
 #include "training/infrastructure/torchModel/TorchModelEvaluator.hpp"
 #include "training/infrastructure/torchModel/TorchModelFactory.hpp"
 #include "training/adapters/impl/timer/NullTimeRecorder.hpp"
+#include "training/adapters/impl/parallelProcessFn/SequentialExecutor.hpp"
 
 #ifndef SMOKE_SRC_DATASET
 #define SMOKE_SRC_DATASET "dataset/train"
@@ -262,7 +263,7 @@ int main()
     auto imgPp = ppf.forImage();
     auto maskPp = ppf.forMask(static_cast<uint8_t>(kIgnoreIndex));
 
-    auto datasetRepository = std::make_shared<DatasetRepositoryFactory>(decoder, std::make_shared<LabelMapFileReader>(), ppf, static_cast<uint8_t>(kIgnoreIndex), param, std::make_shared<NullTimeRecorder>());
+    auto datasetRepository = std::make_shared<DatasetRepositoryFactory>(decoder, std::make_shared<LabelMapFileReader>(), ppf, static_cast<uint8_t>(kIgnoreIndex), param, std::make_shared<NullTimeRecorder>(), std::make_shared<SequentialExecutor>());
 
     auto trainDs = datasetRepository->create(ImageTaskType::SEMANTIC_SEGMENTATION, DatasetConfig{dst.string(), ImageAnnotationConfig{PascalVocConfig{}}}, DatasetSplit::Train);
     auto valDs = datasetRepository->create(ImageTaskType::SEMANTIC_SEGMENTATION, DatasetConfig{dst.string(), ImageAnnotationConfig{PascalVocConfig{}}}, DatasetSplit::Validation);

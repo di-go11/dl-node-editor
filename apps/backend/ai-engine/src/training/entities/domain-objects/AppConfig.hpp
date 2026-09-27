@@ -19,6 +19,10 @@ struct AppConfig
     OptimizerConfig optimizer;
     ActivationConfig activation;
     LossConfig loss;
+
+    // 並列処理のスレッド数。1なら逐次処理。将来的に並列化する場合は追加する。
+    size_t threadCount = 1;
+
     // マスクの予約ラベル値(Letterbox 余白)。前処理が余白に埋め、Loss・評価が無視する。
     // 値は 3 者で一致していなければならないため、ここを唯一の情報源とする。
     int64_t ignoreIndex = 255;
