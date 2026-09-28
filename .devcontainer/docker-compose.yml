@@ -4,6 +4,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      target: dev
     volumes:
       - ../:/workspaces:cached # リポジトリルートをマウント(.gitを含めるため。backend単体マウントだとコンテナ内でgit操作ができなくなる)
       - ~/.claude:/root/.claude:cached # ホスト側のClaude設定(CLAUDE.md等)を共有

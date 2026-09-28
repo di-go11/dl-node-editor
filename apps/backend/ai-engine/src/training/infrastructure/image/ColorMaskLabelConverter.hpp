@@ -10,5 +10,7 @@ public:
     ImageData convert(const ImageData &colorMask) const;
 
 private:
-    ColorLabelMap _labelMap;
+    uint8_t lookupClassId(const uint32_t key) const;
+    std::vector<uint32_t> _keys;    // RGBを32bit整数に変換した値のキャッシュ
+    std::vector<uint8_t> _classIds; // RGBに対応するクラスIDのキャッシュ
 };
