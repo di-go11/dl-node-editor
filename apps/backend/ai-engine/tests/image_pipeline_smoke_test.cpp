@@ -42,66 +42,106 @@ namespace
         cv::rectangle(mask, cv::Rect(150, 0, 105, 255), cv::Scalar(0, 255, 0), cv::FILLED); // BGRの緑(x: 150-254)
         cv::imwrite(path, mask);
     }
+
+    // 「規定されていない色のピクセルを持つアノテーション画像」のモックを作成
+    void createMockAnnotationImageWithUnknownColor(const std::string &path)
+    {
+        cv::Mat mask(255, 255, CV_8UC3, cv::Scalar(0, 0, 0));                                 // 背景: 黒
+        cv::rectangle(mask, cv::Rect(0, 0, 100, 255), cv::Scalar(125, 125, 255), cv::FILLED); // BGRのピンク(x: 0-99)
+        cv::rectangle(mask, cv::Rect(150, 0, 105, 255), cv::Scalar(0, 255, 0), cv::FILLED);   // BGRの緑(x: 150-254)
+        cv::rectangle(mask, cv::Rect(100, 0, 50, 255), cv::Scalar(255, 0, 0), cv::FILLED);    // BGRの青(x: 100-149)
+        cv::imwrite(path, mask);
+    }
 } // namespace
 
 int main()
 {
-    const std::string imagePath = "/tmp/mock_training_image.png";
-    const std::string maskPath = "/tmp/mock_annotation_image.png";
-
-    createMockTrainingImage(imagePath);
-    createMockAnnotationImage(maskPath);
-    std::cout << "mock images created: " << imagePath << ", " << maskPath << std::endl;
-
-    OpenCvImageDecoder decoder;
-
-    // ---------- 学習用画像: デコード + 正規化 ----------
-    ImageData rawInput = decoder.decode(imagePath);
-    check(rawInput.shape().size() == 3 && rawInput.getChannels() == 3 && rawInput.getHeight() == 255 && rawInput.getWidth() == 255,
-          "decode(training image): shape == {3,255,255}");
-    check(rawInput.raw().size() == 3u * 255u * 255u,
-          "decode(training image): values.size() == 3*255*255");
-
-    NormalizedImageData normalized = ImageNormalizer::normalize(rawInput);
-    bool allInRange = true;
-    for (float v : normalized.values)
+    // スモークテスト(規定のピクセル値を持つモック画像を作成し、デコード・正規化・クラスID変換が正しく行われるかを確認)
     {
-        if (v < 0.0f || v > 1.0f)
+        const std::string imagePath = "/tmp/mock_training_image.png";
+        const std::string maskPath = "/tmp/mock_annotation_image.png";
+
+        createMockTrainingImage(imagePath);
+        createMockAnnotationImage(maskPath);
+        std::cout << "mock images created: " << imagePath << ", " << maskPath << std::endl;
+
+        OpenCvImageDecoder decoder;
+
+        // ---------- 学習用画像: デコード + 正規化 ----------
+        ImageData rawInput = decoder.decode(imagePath);
+        check(rawInput.shape().size() == 3 && rawInput.getChannels() == 3 && rawInput.getHeight() == 255 && rawInput.getWidth() == 255,
+              "decode(training image): shape == {3,255,255}");
+        check(rawInput.raw().size() == 3u * 255u * 255u,
+              "decode(training image): values.size() == 3*255*255");
+
+        NormalizedImageData normalized = ImageNormalizer::normalize(rawInput);
+        bool allInRange = true;
+        for (float v : normalized.values)
         {
-            allInRange = false;
-            break;
+            if (v < 0.0f || v > 1.0f)
+            {
+                allInRange = false;
+                break;
+            }
         }
+        check(allInRange, "normalize(): all values within [0.0, 1.0]");
+        check(normalized.shape == rawInput.shape(), "normalize(): shape preserved");
+        check(normalized.values.size() == rawInput.raw().size(), "normalize(): values size preserved");
+
+        // ---------- アノテーション画像: デコード + クラスID変換 ----------
+        ImageData rawMask = decoder.decode(maskPath);
+        check(rawMask.shape().size() == 3 && rawMask.getChannels() == 3 && rawMask.getHeight() == 255 && rawMask.getWidth() == 255,
+              "decode(mask image): shape == {3,255,255}");
+
+        ColorLabelMap labelMap;
+        labelMap.addEntry(RgbColor(0, 0, 0), 0);   // 背景
+        labelMap.addEntry(RgbColor(255, 0, 0), 1); // クラスA(赤)
+        labelMap.addEntry(RgbColor(0, 255, 0), 2); // クラスB(緑)
+
+        ColorMaskLabelConverter converter(labelMap);
+        ImageData classMap = converter.convert(rawMask);
+
+        check(classMap.shape().size() == 3 && classMap.getChannels() == 1 && classMap.getHeight() == 255 && classMap.getWidth() == 255,
+              "ColorMaskLabelConverter::convert(): shape == {1,255,255}");
+        check(classMap.raw().size() == 255u * 255u,
+              "ColorMaskLabelConverter::convert(): values.size() == 255*255");
+
+        auto classAt = [&](size_t y, size_t x) -> int
+        {
+            return static_cast<int>(classMap.at(0, y, x));
+        };
+
+        check(classAt(10, 50) == 1, "class at (y=10,x=50) in red region == 1");
+        check(classAt(10, 200) == 2, "class at (y=10,x=200) in green region == 2");
+        check(classAt(10, 125) == 0, "class at (y=10,x=125) in background == 0");
     }
-    check(allInRange, "normalize(): all values within [0.0, 1.0]");
-    check(normalized.shape == rawInput.shape(), "normalize(): shape preserved");
-    check(normalized.values.size() == rawInput.raw().size(), "normalize(): values size preserved");
-
-    // ---------- アノテーション画像: デコード + クラスID変換 ----------
-    ImageData rawMask = decoder.decode(maskPath);
-    check(rawMask.shape().size() == 3 && rawMask.getChannels() == 3 && rawMask.getHeight() == 255 && rawMask.getWidth() == 255,
-          "decode(mask image): shape == {3,255,255}");
-
-    ColorLabelMap labelMap;
-    labelMap.addEntry(RgbColor(0, 0, 0), 0);   // 背景
-    labelMap.addEntry(RgbColor(255, 0, 0), 1); // クラスA(赤)
-    labelMap.addEntry(RgbColor(0, 255, 0), 2); // クラスB(緑)
-
-    ColorMaskLabelConverter converter(labelMap);
-    ImageData classMap = converter.convert(rawMask);
-
-    check(classMap.shape().size() == 3 && classMap.getChannels() == 1 && classMap.getHeight() == 255 && classMap.getWidth() == 255,
-          "ColorMaskLabelConverter::convert(): shape == {1,255,255}");
-    check(classMap.raw().size() == 255u * 255u,
-          "ColorMaskLabelConverter::convert(): values.size() == 255*255");
-
-    auto classAt = [&](size_t y, size_t x) -> int
+    // スモークテスト(規定されていない色のピクセルを持つアノテーション画像を作成し、クラスID変換が正しく行われるかを確認)
     {
-        return static_cast<int>(classMap.at(0, y, x));
-    };
+        const std::string maskPath = "/tmp/mock_annotation_image_with_unknown_color.png";
+        createMockAnnotationImageWithUnknownColor(maskPath);
+        std::cout << "mock annotation image with unknown color created: " << maskPath << std::endl;
 
-    check(classAt(10, 50) == 1, "class at (y=10,x=50) in red region == 1");
-    check(classAt(10, 200) == 2, "class at (y=10,x=200) in green region == 2");
-    check(classAt(10, 125) == 0, "class at (y=10,x=125) in background == 0");
+        OpenCvImageDecoder decoder;
+        ImageData rawMask = decoder.decode(maskPath);
+
+        ColorLabelMap labelMap;
+        labelMap.addEntry(RgbColor(0, 0, 0), 0);   // 背景
+        labelMap.addEntry(RgbColor(255, 0, 0), 1); // クラスA(赤)
+        labelMap.addEntry(RgbColor(0, 255, 0), 2); // クラスB(緑)
+        labelMap.addEntry(RgbColor(0, 0, 255), 3); // クラスC(青)
+
+        ColorMaskLabelConverter converter(labelMap);
+        ImageData classMap = converter.convert(rawMask);
+
+        auto classAt = [&](size_t y, size_t x) -> int
+        {
+            return static_cast<int>(classMap.at(0, y, x));
+        };
+
+        check(classAt(10, 200) == 2, "class at (y=10,x=200) in green region == 2");
+        check(classAt(10, 125) == 3, "class at (y=10,x=125) in blue region == 3");
+        check(classAt(10, 50) == 255, "class at (y=10,x=50) in unknown color region == 255.");
+    }
 
     if (failureCount == 0)
     {

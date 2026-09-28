@@ -27,3 +27,8 @@ size_t ColorLabelMap::entryCount() const
 {
     return _entries.size();
 }
+
+const std::vector<ColorClassEntry> &ColorLabelMap::getEntries() const
+{
+    return _entries;
+}
