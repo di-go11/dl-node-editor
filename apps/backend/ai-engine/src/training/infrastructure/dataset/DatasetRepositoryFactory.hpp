@@ -1,12 +1,18 @@
 #pragma once
 
+// 継承元: IDatasetRepositoryFactory
 #include "training/application/interfaces/IDatasetRepositoryFactory.hpp"
 
+// 注入インターフェース
+#include "training/application/interfaces/ITimeRecorder.hpp"
+#include "training/application/interfaces/parallelProcessFn/IParallelExecutor.hpp"
+#include "training/application/interfaces/image/IImageDecoder.hpp"
+
+// 注入クラス
 #include "training/entities/domain-objects/Tasks/ImageTaskType.hpp"
 #include "training/entities/domain-objects/ImageAnnotationConfig.hpp"
 #include "training/entities/domain-objects/TrainParam.hpp"
 
-#include "training/application/interfaces/image/IImageDecoder.hpp"
 #include "training/infrastructure/dataset/LabelMapFileReader.hpp"
 #include "training/infrastructure/image/ResizePreprocessorFactory.hpp"
 
@@ -24,7 +30,9 @@ public:
                              std::shared_ptr<LabelMapFileReader> labelMapReader,
                              ResizePreprocessorFactory preprocessorFactory,
                              uint8_t maskIgnoreIndex,
-                             std::shared_ptr<TrainParam> trainParam);
+                             std::shared_ptr<TrainParam> trainParam,
+                             std::shared_ptr<ITimeRecorder> timeRecorder,
+                             std::shared_ptr<IParallelExecutor> parallelExecutor);
 
     std::shared_ptr<IDatasetRepository> create(const TrainingTaskType &taskType, const DatasetConfig &config, DatasetSplit split) const override;
 
@@ -40,4 +48,6 @@ private:
     ResizePreprocessorFactory _preprocessorFactory;
     uint8_t _maskIgnoreIndex;
     std::shared_ptr<TrainParam> _trainParam;
+    std::shared_ptr<ITimeRecorder> _timeRecorder;
+    std::shared_ptr<IParallelExecutor> _parallelExecutor;
 };

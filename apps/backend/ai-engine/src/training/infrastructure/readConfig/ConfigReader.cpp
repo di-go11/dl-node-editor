@@ -49,6 +49,33 @@ namespace
         }
     }
 
+    // stringからsize_tへの変換。
+    size_t parseSizeT(const std::string &value, const std::string &key)
+    {
+        if (value.empty())
+        {
+            throw std::runtime_error(key + " value is empty");
+        }
+        try
+        {
+            size_t pos = 0;
+            const int parsedInt = std::stoi(value, &pos);
+            if (pos != value.size())
+            {
+                throw std::invalid_argument("trailing characters");
+            }
+            if (parsedInt < 0)
+            {
+                throw std::invalid_argument("negative value");
+            }
+            return static_cast<size_t>(parsedInt);
+        }
+        catch (...)
+        {
+            throw std::runtime_error(key + " value is not a non-negative integer: " + value);
+        }
+    }
+
     LossType parseLossType(const std::string &value)
     {
         if (value == "CrossEntropy")
@@ -669,6 +696,14 @@ AppConfig ConfigReader::readAll(const std::string &filePath)
                 // "cpu" / "cuda" / "cuda:N" のパースは ComputeDevice entity の
                 // parseComputeDevice に一任する(不正値は例外を投げる)。
                 appConfig.device = parseComputeDevice(value);
+            }
+            else if (key == "enable_time_measurement")
+            {
+                appConfig.enableTimeMeasurement = parseBool(value, key);
+            }
+            else if (key == "thread_count")
+            {
+                appConfig.threadCount = parseSizeT(value, key);
             }
             else
             {

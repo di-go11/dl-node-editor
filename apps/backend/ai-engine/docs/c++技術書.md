@@ -269,7 +269,7 @@ namespace std {
 |名前|説明|
 |---|---|
 |`lock_guard`|途中で外すことができない。処理が軽い。|
-|`unique_lock:unlock()`|途中で外したり、またかけ直したりできる。
+|`unique_lock:unlock()`|途中で外したり、またかけ直したりできる。そのぶん処理が重い。|
 
 ##### 使用例
 
@@ -407,6 +407,44 @@ int main()
     assert(x == 1 && y == -1);
     return 0;
 }
+```
+
+### std::function
+
+- `#include <functional>`必須
+
+#### 概要
+
+「呼び出せるもの(関数、ラムダ、関数オブジェクトなど)を、中身の種類を問わず、統一した型として、持ち運べるようにする」標準ライブラリのクラス
+
+呼び出せるものリスト
+```cpp
+void freeFunction(int x) { ... }                    // 普通の関数
+auto lambda = [](int x) { ... };                     // ラムダ式
+struct Functor { void operator()(int x) { ... } };    // 関数オブジェクト(operator() を持つクラス)
+```
+
+これらは、それぞれ、違う型。ラムダ式は、コンパイラが呼び出しごとに、無名の専用の型を作るため、その型に、名前をつけることができない。
+
+```cpp
+auto lambda = [](int x) { ... }; // lambdaの型は無名クラス
+```
+
+`std::function`はこの違いを、吸収して **「引数と戻り値の形が、同じなら、同じ値として扱える箱」**を提供する。
+
+```cpp
+std::function<void(int)> f = freeFunction; // 引数がintで戻り値がvoidの関数
+f = lambda; // ラムダの代入
+f = Functor(); // 関数オブジェクト
+f(5); // どれも同じように呼び出せる
+```
+
+#### 型の書き方
+
+```cpp
+std::function<戻り値の型(引数の型1, 引数の型2, ...)>
+```
+
 
 ## キーワード(C++20)
 
