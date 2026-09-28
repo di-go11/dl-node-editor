@@ -354,3 +354,118 @@ val.wait_hasNext                59      1584.108      26.849       0.000      42
 - [x] 内訳が計測され、支配的な処理が特定されている
 - [x] 並列化の方式が決まり、`thread_count` を設定で変えられる
 - [ ] 実データで、`train.wait_hasNext` の合計が、目標(未決定事項に挙げた数値)を下回る — 数値は、まだ未決定。`thread_count=4` で、待ちの合計は、生産時間の合計の約 24%(681.8 / 2,961.2、参考値)まで下がっている
+
+
+## 追記(2026-09-28): サーバーテスト
+
+### 共通条件
+
+- バッチサイズ:16
+- エポック数:10
+- 画像サイズ:(1920,1200)->(256,256)リサイズ
+
+### 処理時間
+
+- スレッド数:1
+
+```
+==== Time report ====
+Name                         Count     Total(ms)    Mean(ms)     Min(ms)     Max(ms)
+image.decode.jpeg             3272     59258.839      18.111       9.806     101.630
+image.decode.png              3272     36301.133      11.094       7.089      80.702
+train.produce_getNextBatch     171    108120.560     632.284     298.854     846.762
+train.produce_hasNext          181         0.075       0.000       0.000       0.001
+train.segdata.getImage        2676     52144.833      19.486      11.124      48.608
+train.segdata.getMask         2676     33484.100      12.513       8.147      27.365
+train.wait_getNextBatch        170         0.849       0.005       0.002       0.025
+train.wait_hasNext             180     90296.965     501.650       0.000     832.418
+val.produce_getNextBatch        41     28828.008     703.122     422.864     964.064
+val.produce_hasNext             51         0.010       0.000       0.000       0.001
+val.segdata.getImage           596     13959.374      23.422      11.463     107.349
+val.segdata.getMask            596      8981.258      15.069       8.202      85.093
+val.wait_getNextBatch           40         0.213       0.005       0.002       0.015
+val.wait_hasNext                50     20161.704     403.234       0.000     819.755
+```
+
+- スレッド数:4
+
+```
+==== Time report ====
+Name                         Count     Total(ms)    Mean(ms)     Min(ms)     Max(ms)
+image.decode.jpeg             3272     89898.346      27.475      10.562     177.761
+image.decode.png              3272     51960.881      15.880       7.092     101.975
+train.produce_getNextBatch     171     34881.304     203.984     105.331     655.219
+train.produce_hasNext          181         0.085       0.000       0.000       0.001
+train.segdata.getImage        2676     64969.846      24.279      11.231     110.887
+train.segdata.getMask         2676     39884.256      14.904       8.299     104.341
+train.wait_getNextBatch        170         0.987       0.006       0.002       0.075
+train.wait_hasNext             180     17050.009      94.722       0.000     235.591
+val.produce_getNextBatch        41     16654.856     406.216     163.931     613.767
+val.produce_hasNext             51         0.017       0.000       0.000       0.001
+val.segdata.getImage           596     30987.715      51.993      11.936     178.622
+val.segdata.getMask            596     19739.089      33.119       8.863     103.439
+val.wait_getNextBatch           40         0.271       0.007       0.002       0.025
+val.wait_hasNext                50      4002.323      80.046       0.001     251.641
+```
+
+- スレッド数:8(cpus4)
+
+```
+==== Time report ====
+Name                         Count     Total(ms)    Mean(ms)     Min(ms)     Max(ms)
+image.decode.jpeg             3272    188431.084      57.589      12.475     220.083
+image.decode.png              3272    117165.486      35.809       7.924     201.846
+train.produce_getNextBatch     171     42664.412     249.499     126.726     688.492
+train.produce_hasNext          181         0.148       0.001       0.000       0.013
+train.segdata.getImage        2676    149644.321      55.921      14.866     213.894
+train.segdata.getMask         2676     93957.399      35.111       8.995     182.643
+train.wait_getNextBatch        170         0.944       0.006       0.002       0.033
+train.wait_hasNext             180     18286.106     101.589       0.000     331.288
+val.produce_getNextBatch        41     16363.897     399.119     120.843     693.908
+val.produce_hasNext             51         0.028       0.001       0.000       0.002
+val.segdata.getImage           596     51108.561      85.753      13.567     222.925
+val.segdata.getMask            596     39308.666      65.954       9.149     205.384
+val.wait_getNextBatch           40         0.360       0.009       0.003       0.052
+val.wait_hasNext                50      2127.858      42.557       0.001     233.918
+```
+
+- スレッド数:8(cpus8)
+
+```
+==== Time report ====
+Name                         Count     Total(ms)    Mean(ms)     Min(ms)     Max(ms)
+image.decode.jpeg             3272     97324.715      29.745      11.751     115.230
+image.decode.png              3272     55509.069      16.965       7.553      93.540
+train.produce_getNextBatch     171     22438.724     131.221      80.919     329.439
+train.produce_hasNext          181         0.082       0.000       0.000       0.006
+train.segdata.getImage        2676     78553.154      29.355      12.835     116.460
+train.segdata.getMask         2676     46720.501      17.459       8.662      97.894
+train.wait_getNextBatch        170         0.858       0.005       0.002       0.018
+train.wait_hasNext             180      5416.864      30.094       0.000     171.352
+val.produce_getNextBatch        41      8023.673     195.699     115.749     312.328
+val.produce_hasNext             51         0.054       0.001       0.000       0.002
+val.segdata.getImage           596     24860.068      41.712      15.430     116.530
+val.segdata.getMask            596     16629.012      27.901       9.703      81.091
+val.wait_getNextBatch           40         0.363       0.009       0.002       0.019
+val.wait_hasNext                50      1339.203      26.784       0.000     139.237
+```
+
+- スレッド数:8(cpus8,バッチサイズ32)
+
+```
+Name                         Count     Total(ms)    Mean(ms)     Min(ms)     Max(ms)
+image.decode.jpeg             3304     88082.368      26.659      12.588      98.372
+image.decode.png              3304     50918.717      15.411       7.042      75.604
+train.produce_getNextBatch      91     19693.187     216.409      84.144     505.291
+train.produce_hasNext          101         0.059       0.001       0.000       0.002
+train.segdata.getImage        2692     72571.458      26.958      13.248      99.369
+train.segdata.getMask         2692     44770.915      16.631       8.287      60.548
+train.wait_getNextBatch         90         0.467       0.005       0.002       0.022
+train.wait_hasNext             100      3987.113      39.871       0.000     262.066
+val.produce_getNextBatch        21      5958.508     283.738     200.815     499.350
+val.produce_hasNext             31         0.012       0.000       0.000       0.001
+val.segdata.getImage           612     20123.084      32.881      14.217     102.455
+val.segdata.getMask            612     13437.126      21.956       9.253      80.526
+val.wait_getNextBatch           20         0.159       0.008       0.002       0.017
+val.wait_hasNext                30      2249.904      74.997       0.000     250.685
+```
