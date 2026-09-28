@@ -17,6 +17,8 @@ public:
     // 登録エントリ数(= クラス数)。モデル出力チャンネル数の決定などに使う。
     size_t entryCount() const;
 
+    const std::vector<ColorClassEntry> &getEntries() const;
+
 private:
     std::vector<ColorClassEntry> _entries;
 };

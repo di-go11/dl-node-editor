@@ -14,27 +14,34 @@
 #include "training/entities/domain-objects/UnpoolingParams.hpp"
 #include "training/entities/domain-objects/ModelArchitectureType.hpp"
 #include "training/entities/domain-objects/DatasetSplit.hpp"
+#include "training/entities/domain-objects/ProcessTimeSpan.hpp"
 
 #include <stdexcept>
 
 // infrastructure(具象クラス)
 #include "training/infrastructure/torchFunc/TorchLayerBuilder.hpp"
 #include "training/infrastructure/torchFunc/TorchOptimizerFactory.hpp"
+#include "training/infrastructure/torchFunc/TorchLossFactory.hpp"
 #include "training/infrastructure/torchModel/TorchModel.hpp"
 #include "training/infrastructure/torchModel/TorchModelFactory.hpp"
 #include "training/infrastructure/torchModel/TorchCheckpointStore.hpp"
 #include "training/infrastructure/torchModel/CheckpointModelLoader.hpp"
-#include "training/infrastructure/torchFunc/CrossEntropy.hpp"
 #include "training/infrastructure/readConfig/ConfigReader.hpp"
-
+#include "training/infrastructure/dataset/DatasetRepositoryFactory.hpp"
+#include "training/infrastructure/dataset/PreFetchDatasetRepository.hpp"
 #include "training/infrastructure/image/OpenCvImageDecoder.hpp"
 #include "training/infrastructure/image/ResizePreprocessorFactory.hpp"
 #include "training/infrastructure/dataset/LabelMapFileReader.hpp"
-#include "training/infrastructure/dataset/VocDatasetRepository.hpp"
 #include "training/infrastructure/torchFunc/DeviceToTorch.hpp"
+#include "training/infrastructure/dataset/TimedDatasetRepository.hpp"
+#include "training/infrastructure/timer/CoutTimeReportWriter.hpp"
+#include "training/infrastructure/torchModel/TorchModelEvaluator.hpp"
 
 #include <filesystem>
 #include <iostream>
+
+// application(インターフェース)
+#include "training/application/interfaces/parallelProcessFn/IParallelExecutor.hpp"
 
 // adapters(インタフェース)
 #include "training/adapters/interfaces/IModel.hpp"
@@ -42,10 +49,14 @@
 
 // adapters/application(具象クラス)
 #include "training/adapters/impl/TorchModelTrainer.hpp"
-#include "training/infrastructure/torchModel/TorchModelEvaluator.hpp"
+#include "training/adapters/impl/timer/BufferTimeRecorder.hpp"
+#include "training/adapters/impl/timer/NullTimeRecorder.hpp"
 #include "training/application/impl/TrainModelUsecase.hpp"
 #include "training/application/impl/TrainingDatasets.hpp"
 #include "training/application/impl/TrainingResumeState.hpp"
+#include "training/adapters/impl/timer/TimedImageDecoder.hpp"
+#include "training/adapters/impl/parallelProcessFn/SequentialExecutor.hpp"
+#include "training/adapters/impl/parallelProcessFn/ThreadExecutor.hpp"
 
 namespace
 {
@@ -169,6 +180,36 @@ namespace
         }
         throw std::runtime_error("runTraining: unknown ModelArchitectureType");
     }
+
+    std::shared_ptr<ITimeRecorder> createTimeRecorder(bool enableTimeMeasurement)
+    {
+        if (enableTimeMeasurement)
+        {
+            auto timeReportWriter = std::make_shared<CoutTimeReportWriter>();
+            return std::make_shared<BufferTimeRecorder>(timeReportWriter);
+        }
+        else
+        {
+            return std::make_shared<NullTimeRecorder>();
+        }
+    }
+
+    std::shared_ptr<IParallelExecutor> createParallelExecutor(size_t threadCount)
+    {
+        if (threadCount == 1)
+        {
+            return std::make_shared<SequentialExecutor>();
+        }
+        else if (threadCount > 1)
+        {
+            return std::make_shared<ThreadExecutor>(threadCount);
+        }
+        else
+        {
+            throw std::runtime_error("Invalid threadCount value: " + std::to_string(threadCount));
+        }
+    }
+
 } // namespace
 
 void runTraining()
@@ -183,9 +224,15 @@ void runTraining()
     // TrainParamの設定(.configから取得。将来的にGUI入力にも置き換わる想定)
     auto param = std::make_shared<TrainParam>(appConfig.epochSize, appConfig.batchSize);
 
+    // ParallelExecutorの生成。(現在は逐次処理のみだが、将来的に並列化する場合は追加する。)
+    auto parallelExecutor = createParallelExecutor(appConfig.threadCount);
+
+    // ITimeRecorderの生成。(enableTimeMeasurement が false ならダミー実装)
+    auto timeRecorder = createTimeRecorder(appConfig.enableTimeMeasurement);
+
     // labelmap.txt からクラス数を決める(モデル出力チャンネル数の単一の参照元)。
     const std::string labelMapPath =
-        (std::filesystem::path(appConfig.datasetPath) / "labelmap.txt").string();
+        (std::filesystem::path(appConfig.dataset.datasetPath) / "labelmap.txt").string();
     const ColorLabelMap labelMap = LabelMapFileReader{}.read(labelMapPath);
     const int numClasses = static_cast<int>(labelMap.entryCount());
     std::cout << "numClasses = " << numClasses << std::endl;
@@ -194,6 +241,7 @@ void runTraining()
     // 同じ factory を使うため、cold start 側もここを通しておく。
     auto modelFactory = std::make_shared<TorchModelFactory>();
     auto optimizerFactory = std::make_shared<TorchOptimizerFactory>();
+    auto lossFactory = std::make_shared<TorchLossFactory>();
 
     // ---- 再開元の決定 ----
     // 1. resume_from が指定されていればそれを使う(GUI のファイル選択結果もここに入る)
@@ -258,11 +306,11 @@ void runTraining()
         optimizer = optimizerFactory->create(params, appConfig.optimizer);
     }
 
-    auto loss = std::make_shared<CrossEntropy>();
+    auto loss = lossFactory->create(appConfig.loss, numClasses, appConfig.ignoreIndex);
 
-    // マスクの Letterbox 余白を埋める値。損失(CrossEntropy)と評価(mIoU/accuracy)の
+    // マスクの Letterbox 余白を埋める値。損失(MseLoss を除く)と評価(mIoU/accuracy)の
     // 双方でこの値のピクセルを無視する。maskPreProcessor の ignoreIndex と一致させること。
-    constexpr int64_t maskIgnoreIndex = 255;
+    const int64_t maskIgnoreIndex = appConfig.ignoreIndex;
 
     auto trainer = std::make_shared<TorchModelTrainer>(model, loss, optimizer);
     auto evaluator = std::make_shared<TorchModelEvaluator>(*model, *loss, numClasses, maskIgnoreIndex);
@@ -271,6 +319,7 @@ void runTraining()
     TrainModelUsecase usecase(param, appConfig, trainer, evaluator, checkpointStore);
 
     auto decoder = std::make_shared<OpenCvImageDecoder>();
+    auto timedDecoder = std::make_shared<TimedImageDecoder>(decoder, timeRecorder, "image.decode");
 
     // 画像・マスク共通のジオメトリ。補間/パディングだけ用途別に切り替える。
     ResizePreprocessorFactory::Geometry geometry;
@@ -279,16 +328,24 @@ void runTraining()
     geometry.aspectRatioPolicy = LetterboxPolicy{};
     ResizePreprocessorFactory preprocessorFactory(geometry);
 
-    auto imagePreProcessor = preprocessorFactory.forImage();
-    auto maskPreProcessor = preprocessorFactory.forMask(static_cast<uint8_t>(maskIgnoreIndex));
-
-    //
+    // Datasetの作成
     DatasetSplit trainsplit = DatasetSplit::Train;
     DatasetSplit valsplit = DatasetSplit::Validation;
-    auto trainDataset = std::make_shared<VocDatasetRepository>(
-        appConfig.datasetPath, decoder, imagePreProcessor, maskPreProcessor, param, trainsplit);
-    auto validationDataset = std::make_shared<VocDatasetRepository>(
-        appConfig.datasetPath, decoder, imagePreProcessor, maskPreProcessor, param, valsplit);
+    auto datasetRepository = std::make_shared<DatasetRepositoryFactory>(timedDecoder, std::make_shared<LabelMapFileReader>(), preprocessorFactory, static_cast<uint8_t>(maskIgnoreIndex), param, timeRecorder, parallelExecutor);
+
+    // Decorator で包み、次バッチの読み込みを学習と並行して行う。
+    // さらに PreFetch の内側と外側を TimedDatasetRepository で包み、処理時間を計測する。
+    //   *.produce: ワーカースレッドが 1 バッチを作るのにかかった時間(PreFetch の内側)
+    //   *.wait   : 学習ループがバッチの到着を待った時間(PreFetch の外側。待ちは主に hasNext で発生する)
+    auto trainInner = datasetRepository->create(appConfig.task, appConfig.dataset, trainsplit);
+    auto trainProduce = std::make_shared<TimedDatasetRepository>(trainInner, timeRecorder, "train.produce");
+    auto trainPrefetch = std::make_shared<PreFetchDatasetRepository>(trainProduce);
+    auto trainDataset = std::make_shared<TimedDatasetRepository>(trainPrefetch, timeRecorder, "train.wait");
+
+    auto validationInner = datasetRepository->create(appConfig.task, appConfig.dataset, valsplit);
+    auto validationProduce = std::make_shared<TimedDatasetRepository>(validationInner, timeRecorder, "val.produce");
+    auto validationPrefetch = std::make_shared<PreFetchDatasetRepository>(validationProduce);
+    auto validationDataset = std::make_shared<TimedDatasetRepository>(validationPrefetch, timeRecorder, "val.wait");
 
     TrainingDatasets datasets;
     datasets.trainDataset = trainDataset;

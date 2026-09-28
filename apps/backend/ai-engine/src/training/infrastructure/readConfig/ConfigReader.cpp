@@ -1,5 +1,6 @@
 #include "training/infrastructure/readConfig/ConfigReader.hpp"
 
+#include <cstdint>
 #include <fstream>
 #include <optional>
 #include <sstream>
@@ -22,6 +23,86 @@ namespace
         {
             throw std::runtime_error(key + " value is not a number: " + value);
         }
+    }
+
+    // 整数として読む。std::stoll は "12abc" を 12 として受理してしまうため、
+    // 変換後に末尾が残っていないかも確認する。
+    int64_t parseInt64(const std::string &value, const std::string &key)
+    {
+        if (value.empty())
+        {
+            throw std::runtime_error(key + " value is empty");
+        }
+        try
+        {
+            size_t pos = 0;
+            const long long parsed = std::stoll(value, &pos);
+            if (pos != value.size())
+            {
+                throw std::invalid_argument("trailing characters");
+            }
+            return static_cast<int64_t>(parsed);
+        }
+        catch (...)
+        {
+            throw std::runtime_error(key + " value is not an integer: " + value);
+        }
+    }
+
+    // stringからsize_tへの変換。
+    size_t parseSizeT(const std::string &value, const std::string &key)
+    {
+        if (value.empty())
+        {
+            throw std::runtime_error(key + " value is empty");
+        }
+        try
+        {
+            size_t pos = 0;
+            const int parsedInt = std::stoi(value, &pos);
+            if (pos != value.size())
+            {
+                throw std::invalid_argument("trailing characters");
+            }
+            if (parsedInt < 0)
+            {
+                throw std::invalid_argument("negative value");
+            }
+            return static_cast<size_t>(parsedInt);
+        }
+        catch (...)
+        {
+            throw std::runtime_error(key + " value is not a non-negative integer: " + value);
+        }
+    }
+
+    LossType parseLossType(const std::string &value)
+    {
+        if (value == "CrossEntropy")
+        {
+            return LossType::CrossEntropy;
+        }
+        if (value == "Mse_loss")
+        {
+            return LossType::MseLoss;
+        }
+        if (value == "Dice_loss")
+        {
+            return LossType::DiceLoss;
+        }
+        if (value == "Focal_loss")
+        {
+            return LossType::FocalLoss;
+        }
+        if (value == "Combo_loss")
+        {
+            return LossType::ComboLoss;
+        }
+        if (value == "Boundary_loss")
+        {
+            return LossType::BoundaryLoss;
+        }
+        throw std::runtime_error("Unknown loss type: " + value);
     }
 
     bool parseBool(const std::string &value, const std::string &key)
@@ -101,6 +182,127 @@ namespace
 
         throw std::runtime_error("buildOptimizerConfig: 未知の OptimizerType");
     }
+
+    struct LossConfigFields
+    {
+        LossType type = LossType::CrossEntropy;
+        std::optional<double> gamma;
+        std::optional<double> alpha;
+    };
+
+    LossConfig buildLossConfig(const LossConfigFields &fields)
+    {
+        switch (fields.type)
+        {
+        case LossType::CrossEntropy:
+            return CrossEntropyConfig{};
+        case LossType::MseLoss:
+            return MseLossConfig{};
+        case LossType::DiceLoss:
+            return DiceLossConfig{};
+        case LossType::FocalLoss:
+            if (!fields.gamma.has_value() || !fields.alpha.has_value())
+            {
+                throw std::runtime_error("gamma and alpha are required for FocalLoss");
+            }
+            return FocalLossConfig{*fields.gamma, *fields.alpha};
+        case LossType::ComboLoss:
+            return ComboLossConfig{fields.alpha.value_or(0.5)};
+        case LossType::BoundaryLoss:
+            return BoundaryLossConfig{};
+        default:
+            throw std::runtime_error("buildLossConfig: 未知の LossType");
+        }
+    }
+
+    struct DatasetFields
+    {
+        // 種別は文字列のまま貯める。どの種別 enum で解釈するかは modality(TaskFields)が
+        // 決めるため、行を読んでいる最中には解釈できない(行順が自由なので)。
+        // 未指定なら従来どおり PASCAL VOC として扱う。
+        std::string datasetPath;
+        std::string typeName = "PascalVoc";
+        std::optional<bool> includeDifficult;
+    };
+
+    // modality: 何の学習か(Image など)。task の解釈と、DatasetFields::typeName の解釈の
+    // 両方を決める唯一の情報源。未指定なら従来どおり画像のセグメンテーション。
+    struct TaskFields
+    {
+        std::string modality = "Image";
+        std::string task = "Segmentation";
+    };
+
+    ImageTaskType parseImageTaskType(const std::string &task)
+    {
+        if (task == "Classification")
+        {
+            return ImageTaskType::IMAGE_CLASSIFICATION;
+        }
+        else if (task == "Detection")
+        {
+            return ImageTaskType::OBJECT_DETECTION;
+        }
+        else if (task == "Segmentation")
+        {
+            return ImageTaskType::SEMANTIC_SEGMENTATION;
+        }
+        else
+        {
+            throw std::runtime_error("Unknown image task: " + task);
+        }
+    }
+
+    ImageAnnotationType parseImageAnnotationType(const std::string &typeName)
+    {
+        if (typeName == "PascalVoc")
+        {
+            return ImageAnnotationType::PASCAL_VOC;
+        }
+        throw std::runtime_error("Unknown image dataset type: " + typeName);
+    }
+
+    // 画像用。モダリティを足すときは、同名で別の種別 enum を受けるオーバーロードを追加する。
+    ImageAnnotationConfig buildAnnotationConfig(ImageAnnotationType type, const DatasetFields &fields)
+    {
+        switch (type)
+        {
+        case ImageAnnotationType::PASCAL_VOC:
+        {
+            PascalVocConfig config;
+            if (fields.includeDifficult.has_value())
+            {
+                config.includeDifficult = *fields.includeDifficult;
+            }
+            return config;
+        }
+        default:
+            throw std::runtime_error("buildAnnotationConfig: 未知の ImageAnnotationType");
+        }
+    }
+
+    // modality を1回だけ解釈し、その結果で task と dataset の両方を組み立てる。
+    // 「画像のデータなのに波形の task」といった不一致は、ここでは構造上起きない。
+    static_assert(std::variant_size_v<TrainingTaskType> == 1 && std::variant_size_v<DatasetAnnotationConfig> == 1,
+                  "モダリティを追加したら applyModality に分岐を追加すること");
+
+    void applyModality(const TaskFields &task, const DatasetFields &dataset, AppConfig &out)
+    {
+        if (dataset.datasetPath.empty())
+        {
+            throw std::runtime_error("dataset_path is not specified");
+        }
+
+        if (task.modality == "Image")
+        {
+            out.task = parseImageTaskType(task.task);
+            out.dataset.datasetPath = dataset.datasetPath;
+            out.dataset.annotationConfig =
+                DatasetAnnotationConfig{buildAnnotationConfig(parseImageAnnotationType(dataset.typeName), dataset)};
+            return;
+        }
+        throw std::runtime_error("Unknown training_task: " + task.modality);
+    }
 } // namespace
 
 ConfigReader::ConfigReader() {}
@@ -109,6 +311,9 @@ AppConfig ConfigReader::readAll(const std::string &filePath)
 {
     AppConfig appConfig;
     OptimizerFields optimizerFields;
+    LossConfigFields lossFields;
+    DatasetFields datasetFields;
+    TaskFields taskFields;
     std::ifstream file(filePath);
 
     if (!file.is_open())
@@ -236,7 +441,7 @@ AppConfig ConfigReader::readAll(const std::string &filePath)
                 {
                     throw std::runtime_error("Dataset path value is empty");
                 }
-                appConfig.datasetPath = value;
+                datasetFields.datasetPath = value;
             }
             else if (key == "output_dir")
             {
@@ -281,6 +486,41 @@ AppConfig ConfigReader::readAll(const std::string &filePath)
             {
                 optimizerFields.nesterov = parseBool(value, key);
             }
+            // ---- Loss ----
+            // loss_type 未指定なら CrossEntropy。種別に関係ないキーは無視される
+            // (例: Dice_loss を選んで gamma を書いても効かない)。
+            else if (key == "loss_type")
+            {
+                lossFields.type = parseLossType(value);
+            }
+            else if (key == "gamma")
+            {
+                const double parsedValue = parseDouble(value, key);
+                if (parsedValue < 0.0)
+                {
+                    throw std::runtime_error("gamma value must not be negative: " + value);
+                }
+                lossFields.gamma = parsedValue;
+            }
+            else if (key == "alpha")
+            {
+                const double parsedValue = parseDouble(value, key);
+                if (parsedValue < 0.0 || parsedValue > 1.0)
+                {
+                    throw std::runtime_error("alpha value is out of range [0.0, 1.0]: " + value);
+                }
+                lossFields.alpha = parsedValue;
+            }
+            else if (key == "ignore_index")
+            {
+                // マスクは uint8 で前処理されるため、範囲外は黙って切り詰められる前にここで弾く。
+                const int64_t parsedValue = parseInt64(value, key);
+                if (parsedValue < 0 || parsedValue > 255)
+                {
+                    throw std::runtime_error("ignore_index value is out of range [0, 255]: " + value);
+                }
+                appConfig.ignoreIndex = parsedValue;
+            }
             else if (key == "model_name")
             {
                 if (value.empty())
@@ -289,6 +529,34 @@ AppConfig ConfigReader::readAll(const std::string &filePath)
                 }
                 // チェックポイントのファイル名(<modelName>_best.pt / _last.pt)に使われる。
                 appConfig.modelName = value;
+            }
+            else if (key == "training_task")
+            {
+                if (value.empty())
+                {
+                    throw std::runtime_error("training_task value is empty");
+                }
+                taskFields.modality = value;
+            }
+            else if (key == "training_task_type")
+            {
+                if (value.empty())
+                {
+                    throw std::runtime_error("training_task_type value is empty");
+                }
+                taskFields.task = value;
+            }
+            else if (key == "dataset_type")
+            {
+                if (value.empty())
+                {
+                    throw std::runtime_error("dataset_type value is empty");
+                }
+                datasetFields.typeName = value;
+            }
+            else if (key == "include_difficult")
+            {
+                datasetFields.includeDifficult = parseBool(value, key);
             }
             else if (key == "model_architecture")
             {
@@ -429,6 +697,14 @@ AppConfig ConfigReader::readAll(const std::string &filePath)
                 // parseComputeDevice に一任する(不正値は例外を投げる)。
                 appConfig.device = parseComputeDevice(value);
             }
+            else if (key == "enable_time_measurement")
+            {
+                appConfig.enableTimeMeasurement = parseBool(value, key);
+            }
+            else if (key == "thread_count")
+            {
+                appConfig.threadCount = parseSizeT(value, key);
+            }
             else
             {
                 throw std::runtime_error("Unknown config key: " + key);
@@ -442,6 +718,8 @@ AppConfig ConfigReader::readAll(const std::string &filePath)
 
     // 全行を読み終えてから種別に応じた Config を組み立てる。
     appConfig.optimizer = buildOptimizerConfig(optimizerFields);
+    appConfig.loss = buildLossConfig(lossFields);
+    applyModality(taskFields, datasetFields, appConfig);
 
     return appConfig;
 }

@@ -2,17 +2,31 @@
 
 #include "OptimizerConfig.hpp"
 #include "ActivationConfig.hpp"
+#include "LossConfig.hpp"
 #include "ComputeDevice.hpp"
 #include "ModelArchitectureType.hpp"
+#include "Tasks/TrainingTaskType.hpp"
+#include "DatasetConfig.hpp"
 #include <cstddef>
+#include <cstdint>
 #include <string>
 
 struct AppConfig
 {
     std::string modelName;
+    TrainingTaskType task;
+    DatasetConfig dataset;
     OptimizerConfig optimizer;
     ActivationConfig activation;
-    std::string datasetPath;          // 学習用画像・アノテーション画像が置かれているデータセットのルートディレクトリ
+    LossConfig loss;
+
+    // 並列処理のスレッド数。1なら逐次処理。将来的に並列化する場合は追加する。
+    size_t threadCount = 1;
+
+    // マスクの予約ラベル値(Letterbox 余白)。前処理が余白に埋め、Loss・評価が無視する。
+    // 値は 3 者で一致していなければならないため、ここを唯一の情報源とする。
+    int64_t ignoreIndex = 255;
+
     std::string outputDir = "models"; // チェックポイント(ベストモデルの重み)の保存先ディレクトリ
 
     // 学習再開(resume)の設定。
@@ -33,4 +47,7 @@ struct AppConfig
 
     // 学習するモデル構造。TrainingApp.cpp の buildXxxGraph() の選択に使う。
     ModelArchitectureType architecture = ModelArchitectureType::Sample;
+
+    // 処理時間計測の設定。false なら計測しない。
+    bool enableTimeMeasurement = false;
 };

@@ -1,0 +1,25 @@
+{
+  // clippy / features / formatOnSave は .devcontainer/api/devcontainer.json 側で設定済み
+
+  // 型ヒント・引数名をインライン表示する
+  "rust-analyzer.inlayHints.typeHints.enable": true,
+  "rust-analyzer.inlayHints.parameterHints.enable": true,
+
+  // proc-macro(derive や tonic/prost)と build.rs の生成コードを解析対象に含める。gRPC の生成コードを補完に出すために必要
+  "rust-analyzer.procMacro.enable": true,
+  "rust-analyzer.cargo.buildScripts.enable": true,
+
+  // rust-analyzer のビルド出力を target/rust-analyzer に分け、ターミナルの cargo build とロックを取り合わないようにする
+  "rust-analyzer.cargo.targetDir": true,
+
+  // 生成物をエクスプローラー・検索・ファイル監視から外す
+  "files.exclude": {
+    "**/target": true
+  },
+  "search.exclude": {
+    "**/target": true
+  },
+  "files.watcherExclude": {
+    "**/target/**": true
+  }
+}
