@@ -145,6 +145,7 @@ protobuf_generate(
 add_library(ai_engine_grpc STATIC
 	src/api/grpc/GrpcServer.cpp
 	src/api/grpc/CapabilitiesServiceImpl.cpp
+	src/api/grpc/TrainingServiceImpl.cpp
 	src/api/grpc/GrpcApp.cpp)
 target_include_directories(ai_engine_grpc PRIVATE
 	${CMAKE_CURRENT_SOURCE_DIR}/src)
