@@ -1,3 +1,4 @@
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum DeviceType {
     Cpu,
     Cuda,
@@ -23,15 +24,35 @@ impl Capabilities {
 
 #[cfg(test)]
 mod tests {
-    use std::println;
-
     use super::*;
 
+    fn device(device_type: DeviceType) -> Device {
+        Device {
+            name: "test-device".to_string(),
+            index: 0,
+            device_type,
+        }
+    }
+
     #[test]
-    fn cuda_available_can_be_called_repeatedly() {
+    fn cuda_available_is_false_when_no_devices() {
         let caps = Capabilities { devices: vec![] };
-        caps.cuda_available();
-        caps.cuda_available();
-        println!("{}", caps.devices.len());
+        assert_eq!(caps.cuda_available(), false);
+    }
+
+    #[test]
+    fn cuda_available_is_false_when_only_cpu_devices() {
+        let caps = Capabilities {
+            devices: vec![device(DeviceType::Cpu)],
+        };
+        assert_eq!(caps.cuda_available(), false);
+    }
+
+    #[test]
+    fn cuda_available_is_true_when_cuda_device_present() {
+        let caps = Capabilities {
+            devices: vec![device(DeviceType::Cpu), device(DeviceType::Cuda)],
+        };
+        assert_eq!(caps.cuda_available(), true);
     }
 }
