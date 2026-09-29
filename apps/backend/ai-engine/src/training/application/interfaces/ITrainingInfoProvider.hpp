@@ -1,6 +1,6 @@
 #pragma once
 
-#include "training/entities/domain-objects/MetricsConfig.hpp"
+#include "training/entities/domain-objects/Metrics/MetricsConfig.hpp"
 
 #include <string>
 
