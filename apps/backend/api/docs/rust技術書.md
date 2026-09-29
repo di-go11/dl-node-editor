@@ -857,6 +857,81 @@ default-run = "api"       # 複数バイナリがある場合のデフォルト�
 - クレートはワークスペースの中の1つの構成要素であり、それぞれが独立した`[package]`セクション(=独立したコンパイル単位)を持つ。
 - `lib.rs`で「クレートに属する全モジュールを`rustc`
 
+### Cargo.tomlの生成方法
+
+Cargo.tomlは種類によって、コマンドで自動生成するものと手動で作成するものに分かれる。
+
+|ファイル|作り方|
+|---|---|
+|ワークスペースのルートの`Cargo.toml`|**手動**で作成する(生成するコマンドはない)|
+|各クレートの`Cargo.toml`|`cargo new` / `cargo init`で**自動生成**する|
+|依存関係(`[dependencies]`など)の追記|`cargo add`で自動追記する(手で書いても同じ)|
+|`Cargo.lock`|ビルド時に完全自動生成される(手で触らない)|
+
+#### 1. ワークスペースのルートを手動で作成
+
+`/workspaces/apps/backend/api/Cargo.toml`を作成し、以下を記述する。
+
+```toml
+[workspace]
+resolver = "2"
+members = ["crates/*"] # crates/ 以下のディレクトリをすべてメンバーにする
+```
+
+先にルートを作っておくと、この後の`cargo new` / `cargo init`がワークスペースのメンバーとして認識してくれる。`members = ["crates/*"]`としておけば、クレートを増やすたびにルートを書き換える必要はない。
+
+#### 2. クレートを生成
+
+```bash
+cd /workspaces/apps/backend/api
+
+# ディレクトリがまだ無い場合: ディレクトリごと新規作成
+cargo new --lib crates/usecases   # ライブラリクレート(src/lib.rs)
+cargo new --bin crates/server     # バイナリクレート(src/main.rs)
+
+# ディレクトリ(src/*.rs)が既にある場合: 既存ファイルを残したまま Cargo.toml と lib.rs を追加
+cargo init --lib crates/entities
+```
+
+- `--lib`: ライブラリクレートとして`src/lib.rs`を生成する。他のクレートから参照される部品(`entities`, `adapters`など)に使う。
+- `--bin`: バイナリクレートとして`src/main.rs`を生成する(省略時のデフォルト)。`main`関数を持つ実行ファイルに使う。
+- 生成された`lib.rs`には`add`関数のサンプルが入っているので、`mod ○○;`や`pub use`に書き換える。
+- `lib.rs`で`mod`宣言していないファイルはコンパイル対象にならず、rust-analyzerも解析しない。
+- ファイル名はsnake_case(`get_capabilities.rs`)にする。PascalCaseにすると`mod`宣言で警告が出る。
+
+#### 3. 依存関係を追加
+
+```bash
+# 外部クレート(crates.io)を追加 → [dependencies]
+cargo add thiserror -p entities
+cargo add tonic tonic-prost prost -p adapters
+
+# ワークスペース内の別クレートを追加 → [dependencies] に path 指定で入る
+cargo add entities --path crates/entities -p adapters
+
+# ビルド時(build.rs)だけ使うクレート → [build-dependencies]
+cargo add tonic-prost-build --build -p adapters
+
+# テストだけで使うクレート → [dev-dependencies]
+cargo add tokio --dev -p usecases
+
+# feature を指定して追加
+cargo add tokio --features macros,rt-multi-thread -p server
+
+# 依存を削除
+cargo remove proto -p adapters
+```
+
+|オプション|意味|
+|---|---|
+|`-p <クレート名>`|どのクレートの`Cargo.toml`に追記するか。ワークスペースのルートで実行するときに必要|
+|`--path <パス>`|crates.ioではなく、ローカルのクレートを依存に追加する|
+|`--build`|`[build-dependencies]`に追加する。`build.rs`からだけ使える|
+|`--dev`|`[dev-dependencies]`に追加する。テストからだけ使える|
+|`--features <名前>`|クレートのオプション機能を有効にする|
+
+`cargo add`は、実行時点でRustのバージョンに合う最新版を`Cargo.toml`に書き込み、`Cargo.lock`も更新する。
+
 ### Cargoを使用したクレートの追加
 
 例えば、`rand`クレートを使用する場合。まず、Cargo.tomlに以下のように記述する。
@@ -880,6 +955,75 @@ Cargoは自分や他の人がコードをビルドするたびに、同じ生成
 クレートを本当に更新したくなった時、Cargoは`cargo update`コマンドを提供している。このコマンドは`cargo.lock`ファイルを無視して、`cargo.toml`ファイル内の全ての指定に適合する最新バージョンを算出する。成功したらCargoはそれらのバージョンを`cargo.lock`ファイルに記録する。ただ、Cargoはデフォルトで**0.8.5以上、0.9.0未満**の最新バージョンを取得する。もし、0.9.0がリリースされていた場合、Cargoはそれを取得しない。これは、SemVerの仕様に従っているためである。
 
 0.9.0を取得したい場合は、Cargo.tomlの`rand`のバージョン指定を0.9.0に変更する必要がある。
+
+### ビルド・チェック・テストのコマンド
+
+コマンドはワークスペースのルート(`/workspaces/apps/backend/api`)で実行する。`-p`を付けないとワークスペース全体が対象になる。
+
+|コマンド|何をするか|実行ファイルを作るか|
+|---|---|---|
+|`cargo check`|型エラー・借用エラーなどのコンパイルチェックだけを行う|作らない(速い)|
+|`cargo clippy`|`check`に加えて、Rustらしくない書き方や非効率な書き方を警告する(lint)|作らない|
+|`cargo build`|コンパイルして実行ファイル・ライブラリを作る|作る|
+|`cargo run`|`build`してからバイナリクレートを実行する|作る|
+|`cargo test`|テスト用にビルドして`#[test]` / `#[tokio::test]`を実行する|テスト用を作る|
+|`cargo fmt`|rustfmtでコードを整形する|―|
+|`cargo clean`|`target/`を丸ごと削除する|―|
+
+#### check / clippy
+
+```bash
+cargo check                              # 最速のコンパイルチェック
+cargo clippy --workspace --all-targets   # 全クレートの本体 + テストコードまで lint する
+cargo clippy --fix --lib -p entities --tests   # clippy の提案を自動で適用する
+```
+
+- `--all-targets`: 本体(lib/bin)だけでなく、テストコード(`#[cfg(test)]`)もチェック対象にする。付けないとテストの中の警告は出ない。
+- devcontainerの設定(`"rust-analyzer.check.command": "clippy"`)により、VS Codeはファイル保存のたびに裏でclippyを実行している。エディタ上の赤線・黄線はこの結果。
+
+#### build / run
+
+```bash
+cargo build                   # 開発用ビルド(最適化なし・デバッグ情報あり)→ target/debug/
+cargo build --release         # 本番用ビルド(最適化あり・ビルドは遅いが実行は速い)→ target/release/
+cargo build -p adapters       # 指定したクレート(と、その依存)だけビルドする
+
+cargo run -p server           # バイナリクレート server をビルドして実行する
+cargo run -p server -- --port 8080   # -- の後ろはプログラム自身への引数になる
+```
+
+- ビルドの成果物はワークスペースのルートの`target/`にまとめて出力される(`.gitignore`で除外済み)。
+- `build.rs`があるクレート(`adapters`)は、本体より先に`build.rs`が実行される。`.proto`を変更すると次のビルドで`pb`のコードが自動で再生成される。生成物は`target/debug/build/adapters-xxxx/out/`に置かれる。
+
+#### test
+
+```bash
+cargo test --workspace                     # 全クレートのテストを実行
+cargo test -p adapters                     # adapters のテストだけ実行
+cargo test -p adapters deviceinfo          # テスト名に "deviceinfo" を含むものだけ実行
+cargo test -p entities -- --nocapture      # 成功したテストの println! も表示する
+```
+
+- `cargo test <文字列>`: テスト名(`モジュール名::関数名`)の部分一致で絞り込む。
+- `--`の後ろはテストランナーへのオプション。`--nocapture`を付けないと、成功したテストの標準出力は表示されない。
+- VS Codeでは`#[test]`の上に出る **▶ Run Test** からも実行できる(rust-analyzerの機能)。
+
+#### fmt
+
+```bash
+cargo fmt            # ワークスペース全体を整形する
+cargo fmt --check    # 整形はせず、差分があるかだけを確認する(CI向け)
+```
+
+- 保存時の自動整形(`formatOnSave`)は開いて保存したファイルにしか効かないため、まとめて整形したいときは`cargo fmt`を使う。
+
+#### コミット前の確認
+
+```bash
+cargo fmt --check && cargo clippy --workspace --all-targets && cargo test --workspace
+```
+
+`&&`でつなぐと、前のコマンドが失敗した時点で止まる。3つとも通ればコミットしてよい状態。
 
 ## トレイト(Trait)
 
