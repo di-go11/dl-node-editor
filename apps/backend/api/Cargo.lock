@@ -12,6 +12,7 @@ dependencies = [
  "tonic",
  "tonic-prost",
  "tonic-prost-build",
+ "usecases",
 ]
 
 [[package]]
@@ -651,6 +652,17 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.6",
+]
+
+[[package]]
+name = "server"
+version = "0.1.0"
+dependencies = [
+ "adapters",
+ "entities",
+ "tokio",
+ "tonic",
+ "usecases",
 ]
 
 [[package]]
