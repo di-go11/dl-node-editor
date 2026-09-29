@@ -40,8 +40,8 @@ enum ActivationType {
     ACTIVATION_TYPE_SOFTMAX = 3;
     ACTIVATION_TYPE_TANH = 4;
 }
-message IndexedPoolingParams {int64 kernelSize = 1; int64 stride = 2; int64 padding = 3;}
-message UnpoolingParams {int64 kernelSize = 1; int64 stride = 2; int64 padding = 3;}
+message IndexedPoolingParams {int64 kernel_size = 1; int64 stride = 2; int64 padding = 3;}
+message UnpoolingParams {int64 kernel_size = 1; int64 stride = 2; int64 padding = 3;}
 
 message LayerConfig {
     oneof params {
@@ -74,7 +74,26 @@ message OptimizerConfig {
 }
 
 // ---loss---
-message LossConfig{} // まだlossに関するドメインを作成していないため後で
+
+message CrossEntropyConfig {}
+message MseLossConfig {}
+message DiceLossConfig {}
+message FocalLossConfig { double gamma = 1; double alpha = 2; }
+message ComboLossConfig { double alpha = 1; } // Cross Entropy 項の重み。(1-alpha) が Dice 項の重み。送る側が必ず値を埋める(未設定だと 0.0 になる)
+message BoundaryLossConfig {}
+
+// 並び順は C++ の LossConfig(std::variant)/ LossType と対応させる。
+// numClasses / ignoreIndex はデータセット由来の値なのでここには持たない。
+message LossConfig {
+    oneof config {
+        CrossEntropyConfig cross_entropy = 1;
+        MseLossConfig mse = 2;
+        DiceLossConfig dice = 3;
+        FocalLossConfig focal = 4;
+        ComboLossConfig combo = 5;
+        BoundaryLossConfig boundary = 6;
+    }
+}
 
 
 // ---merge---
@@ -84,35 +103,42 @@ message StartTrainingRequest {
     ModelGraph model_graph = 2;
     OptimizerConfig optimizer = 3;
     LossConfig loss = 4;
+    uint32 epoch = 5;
+    uint32 batch = 6;
+    string dataset_path = 7;
+    string device = 8;
 }
 
 message StartTrainingResponse {
-    TrainingStatus status = 1;
+    string job_id = 1;
+    TrainingStatus status = 2;
 }
 
-message StopTrainingRequest {}
-
+message StopTrainingRequest {string job_id = 1;}
 message StopTrainingResponse {
     TrainingStatus status = 1;
 }
 
 // ---StreamProgress---
 
-message StreamProgressRequest {}
+message StreamProgressRequest {string job_id = 1;}
 
 message StreamProgressResponse{
-    uint32 epoch = 1;
-    double train_loss = 2;
-    double val_loss = 3;
+    uint32 epoch = 1; // 終了したエポック数
+    double train_loss = 2; // 学習時の損失
+    double val_loss = 3; // バリデーション時の損失
     TrainingStatus status = 4; // RUNNING / COMPLITED /FAILED / STOPPED
     oneof metrics{
-        SegmentationMetrics segmentation = 5;
+        SegmentationMetrics segmentation = 5; // セグメンテーション時のメトリクス(mioU,pixel_acc)
     }
+    uint64 epoch_elapsed_ms = 6; // 処理済みエポックにかかった時間
+    uint64 total_elapsed_ms = 7; // 累計処理時間
+    string error_message = 8; // status が FAILED のときの原因
 }
 
 message SegmentationMetrics{
     double val_pixel_acc = 1;
-    double val_mioU = 2;
+    double val_miou = 2;
 }
 
 enum TrainingStatus {

@@ -91,7 +91,9 @@ set_property(TARGET ai_engine_lib PROPERTY CXX_STANDARD 17)
 set(PROTO_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/protoGenerated)
 file(MAKE_DIRECTORY ${PROTO_GEN_DIR})
 
-add_library(ai_engine_proto STATIC ${PROTO_DIR}/capabilities.proto)
+add_library(ai_engine_proto STATIC 
+		${PROTO_DIR}/capabilities.proto
+		${PROTO_DIR}/training.proto)
 target_link_libraries(ai_engine_proto PUBLIC gRPC::grpc++ SystemProtobuf::libprotobuf)
 target_include_directories(ai_engine_proto PUBLIC ${PROTO_GEN_DIR})
 set_property(TARGET ai_engine_proto PROPERTY CXX_STANDARD 17)
