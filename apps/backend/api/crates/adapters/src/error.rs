@@ -4,4 +4,6 @@ use thiserror::Error;
 pub enum ConversionError {
     #[error("device type is unspecified")]
     UnspecifiedDeviceType,
+    #[error("unknown device type: {0}")]
+    UnknownDeviceType(i32),
 }

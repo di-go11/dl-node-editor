@@ -3,7 +3,7 @@ pub enum DeviceType {
     Cpu,
     Cuda,
 }
-
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Device {
     pub name: String,
     pub index: u32,
@@ -37,7 +37,7 @@ mod tests {
     #[test]
     fn cuda_available_is_false_when_no_devices() {
         let caps = Capabilities { devices: vec![] };
-        assert_eq!(caps.cuda_available(), false);
+        assert!(!caps.cuda_available());
     }
 
     #[test]
@@ -45,7 +45,7 @@ mod tests {
         let caps = Capabilities {
             devices: vec![device(DeviceType::Cpu)],
         };
-        assert_eq!(caps.cuda_available(), false);
+        assert!(!caps.cuda_available())
     }
 
     #[test]
@@ -53,6 +53,6 @@ mod tests {
         let caps = Capabilities {
             devices: vec![device(DeviceType::Cpu), device(DeviceType::Cuda)],
         };
-        assert_eq!(caps.cuda_available(), true);
+        assert!(caps.cuda_available())
     }
 }
