@@ -153,6 +153,26 @@ v = std::string("hi"); // std::string を保持
 - 第2引数; 対象の`std::variant`変数
 - `variant`が実際に保持している型を判定し、その型の値を引数として第1引数の関数を呼び出す。デザインパターンでの**visitorパターン**をC++で実現したもの。
 
+#### std::visitとstd::variatntの組み合わせによるVisitorパターン
+
+```c++
+using V = std::variant<int, double, std::string>;
+namespace {
+    template <class... Ts> // 可変長のテンプレート。複数の型を受け取る。
+    struct Overloaded : Ts... /*渡された全てのラムダの型を基底クラスとして継承する。*/{
+        using Ts::operator()...; // 基底クラスはラムダ関数であり、必ずOperator()のメンバを持つ。複数の基底からメンバ同名のメンバが見つかるとambiguousとしてエラーする。using宣言で全基底のoperator()を派生クラスのスコープとして持ち込むと、それらが1つのオーバーロード集合になる。...はパラメータパックの展開で, using LambdaA::operator(); using LambdaB::operator(); に展開される。
+    };
+    template <class... Ts>
+    Overloaded(Ts...) -> Overloaded<Ts...>; // 推論ガイド。overloaded{ラムダA, ラムダB} と書いたとき、テンプレート引数 Ts... を自動で推論させるための宣言。
+}
+
+std::visit(Overloaded{
+    [](const int &i) { std::cout << "int: " << i << "\n"; },
+    [](const double &d) { std::cout << "double: " << d << "\n"; },
+    [](const std::string &s) { std::cout << "string: " << s << "\n"; }
+}, v);
+```
+
 ##### ジェネリックラムダ `[](const auto &c) -> 複数の型を生成できるクラスor構造体`
 
 - 引数型`auto`を使うことで、どの型が来ても呼び出せる。**テンプレート化されたラムダ関数(c++14以降)**。実体としてはコンパイラが`operator()`をテンプレートメンバ関数として持つ無名クラスを生成し、`std::visit`は`variant`が実際に保持している方で、そのテンプレートを暗黙にインスタンス化する。`->`の後ろは戻り値型を保証するための構文。
