@@ -1,5 +1,5 @@
 use crate::pb::capabilities::v1 as pb;
-use entities::{Device, DeviceType};
+use entities::{Capabilities, Device, DeviceType};
 
 use crate::ConversionError;
 
@@ -24,6 +24,18 @@ impl TryFrom<pb::DeviceInfo> for Device {
             index: value.device_index,
             device_type: device_type.try_into()?,
         })
+    }
+}
+
+impl TryFrom<pb::CapabilitiesResponse> for Capabilities {
+    type Error = ConversionError;
+    fn try_from(value: pb::CapabilitiesResponse) -> Result<Self, Self::Error> {
+        let devices = value
+            .devices
+            .into_iter()
+            .map(Device::try_from)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Capabilities::new(devices)?)
     }
 }
 
@@ -94,5 +106,83 @@ mod deviceinfo_to_device_tests {
     #[test]
     fn unknown_device_type_is_rejected() {
         test_try_from(device_info(99), Err(ConversionError::UnknownDeviceType(99)));
+    }
+}
+
+#[cfg(test)]
+mod capabilities_response_to_capabilities_tests {
+    use super::*;
+    use entities::CapabilitiesError;
+
+    fn device_info(device_type: pb::DeviceType, index: u32) -> pb::DeviceInfo {
+        pb::DeviceInfo {
+            device_name: "test-device".to_string(),
+            device_index: index,
+            device_type: device_type as i32,
+        }
+    }
+
+    // 正常系
+    #[test]
+    fn valid_response_converts_to_domain_capabilities() {
+        let response = pb::CapabilitiesResponse {
+            cuda_available: true,
+            devices: vec![
+                device_info(pb::DeviceType::Cpu, 0),
+                device_info(pb::DeviceType::Cuda, 0),
+            ],
+        };
+        let caps = Capabilities::try_from(response).unwrap();
+        assert_eq!(
+            caps.devices(),
+            &[
+                Device {
+                    name: "test-device".to_string(),
+                    index: 0,
+                    device_type: DeviceType::Cpu,
+                },
+                Device {
+                    name: "test-device".to_string(),
+                    index: 0,
+                    device_type: DeviceType::Cuda,
+                },
+            ]
+        );
+        assert!(caps.cuda_available());
+    }
+
+    // 異常系:デバイス単体の変換エラーがそのまま返る
+    #[test]
+    fn response_with_unknown_device_type_is_rejected() {
+        let response = pb::CapabilitiesResponse {
+            cuda_available: false,
+            devices: vec![
+                device_info(pb::DeviceType::Cpu, 0),
+                pb::DeviceInfo {
+                    device_name: "broken".to_string(),
+                    device_index: 0,
+                    device_type: 99,
+                },
+            ],
+        };
+        assert_eq!(
+            Capabilities::try_from(response),
+            Err(ConversionError::UnknownDeviceType(99))
+        );
+    }
+
+    // 異常系:ドメインの約束事(CPU必須)違反は InvalidCapabilities に包まれて返る
+    #[test]
+    fn response_without_cpu_is_rejected() {
+        let response = pb::CapabilitiesResponse {
+            cuda_available: true,
+            devices: vec![device_info(pb::DeviceType::Cuda, 0)],
+        };
+        assert_eq!(
+            Capabilities::try_from(response),
+            Err(ConversionError::InvalidCapabilities(
+                CapabilitiesError::MissingCpu
+            ))
+        );
     }
 }

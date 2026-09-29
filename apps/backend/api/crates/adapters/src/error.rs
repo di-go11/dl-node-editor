@@ -6,4 +6,6 @@ pub enum ConversionError {
     UnspecifiedDeviceType,
     #[error("unknown device type: {0}")]
     UnknownDeviceType(i32),
+    #[error(transparent)]
+    InvalidCapabilities(#[from] entities::CapabilitiesError),
 }
