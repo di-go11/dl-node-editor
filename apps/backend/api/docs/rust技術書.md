@@ -593,20 +593,269 @@ fn dangle() -> &String {
 
 このコードのように、関数スコープを抜けることで無効となる変数の参照を渡してしまうと、値もアドレスも無効となった参照を返すこととなる。Rustでは、コンパイル時にこのようなコードを検知し、コンパイルエラーとしてくれる。
 
-## クレート
+### モジュールとクレート
 
-Rustソースコードを集めたもの。
+#### クレート
+
+Rustソースコードを集めたもの。`cargo`を実行するのではなく、単一のソースコードファイルを渡して`rustc`を実行した場合でも、コンパイラはそのファイルをクレートとしてみなす。クレートは、モジュールを含むことができモジュールは、クレーとともにコンパイルされる他のファイル内で定義することができる。
 
 - **バイナリクレート**: 実行可能ファイルから生成されるクレート
-- **ライブラリクレート**: 他のクレートから参照されるクレート。単独で実行することができない。
+- **ライブラリクレート**: 他のクレートから参照されるクレート。単独で実行することができない。一般的に「クレート」と呼ばれる場合は、ライブラリクレートを指す。
+- **クレートルート**: Rustコンパイラの開始地点となり、クレートのルートモジュールを作るソースファイル。
+- **パッケージ**: ある機能群を提供する1つ以上のクレートのまとまり。Cargo.tomlを含むディレクトリがパッケージのルートディレクトリとなる。
 
-### クレート内の自由関数
+#### モジュール
 
-### クレート内のトレイト
+モジュールの宣言
+```rust
+mod front_of_house; // front_of_house.rsをモジュールとして宣言する
+```
 
+#### モジュールの階層と公開
+
+```rust
+mod front_of_house {
+    pub mod hosting {
+        fn add_to_waitlist() {}
+    }
+}
+
+pub fn eat_at_restaurant() {
+    // Absolute path
+    // 絶対パス
+    crate::front_of_house::hosting::add_to_waitlist();
+
+    // Relative path
+    // 相対パス
+    front_of_house::hosting::add_to_waitlist();
+}
+```
+
+このコードだと、エラーになる。なぜなら、`hosting`モジュールは`pub`で公開されているが、`add_to_waitlist`関数は公開されていないため、外部からアクセスできないため。
+
+モジュールツリーについては、**lib.rs**にまとめるのがベストプラクティスとされている。
+
+#### パスによるモジュールや関数へのアクセス(super, create)
+
+モジュールや関数へのアクセスは、**パス**を使って行う。パス指定にはRust独自の**絶対パス**と**相対パス**の2種類がある。
+
+
+|キーワード|意味|ファイルシステムでの類比|
+|---|---|---|
+|`crate`|クレートのルートから絶対的に指定する|/ (ルートディレクトリ)|
+|`super`|現在のモジュールの親へ、相対的に1段上がる|../ (1つ上の階層)|
+|`self`|現在のモジュール自身|./ (カレントディレクトリ)|
+
+```rust
+// lib.rs (クレートルート)
+pub fn root_fn() {}
+
+mod device_type {
+    // ここは entities::device_type モジュール
+
+    pub fn parent_fn() {}
+
+    mod capabilities {
+        // ここは entities::device_type::capabilities モジュール
+
+        fn f() {
+            super::parent_fn();   // 1段上の device_type モジュールの関数を呼ぶ(相対パス)
+            crate::root_fn();     // クレートルートの関数を呼ぶ(絶対パス)
+        }
+    }
+}
+```
+
+- `super::super`とすることで、2段上のモジュールにアクセスすることができる。
+
+
+このコードの上位クレート中に、`deliver_order`関数と`back_of_house`モジュールがあるとする。`back_of_house`モジュールの中から、親モジュールであるcargoクレートの中にある`deliver_order`関数を呼び出すためには、`super::deliver_order()`と書く必要がある。
+
+`super`は「現在のモジュールから見て一つ上の階層のモジュール」を指すキーワード。
+
+#### self
+
+`self`には「現在のモジュール自身」としてパスキーの機能と、メソッド引数としての機能がある。
+
+1. 現在のモジュール自身としてパスキーの機能
+
+`device_type`モジュール自身と、その中の型を同時にインポートしたい場合
+
+```rust
+// self を使わない場合(モジュール名を2回書く必要がある)
+use device_type::DeviceType;
+use device_type;
+
+// self を使う場合(1行にまとめられる)
+use device_type::{self, DeviceType};
+//                ^^^^ これは device_type モジュール自身を指す
+```
+
+現在のモジュール内の要素を明示する
+
+```rust
+mod device_type {
+    pub struct DeviceType;
+
+    pub fn describe () {
+        // 以下の2つの行は同じ意味
+        let _d = DeviceType;
+        let _d = self::DeviceType; 
+    }
+}
+```
+
+つまり、「今いる場所を明示したい時にだけ使う、省略可能な相対パス」と考えればOK。
+
+2. メソッドの引数としての`self`(こっちのほうがよく使う)
+
+Rustでは、`self`という単語を**メソッドの第一引数**として使われる。パス指定とは無関係である。
+
+```rust
+// crates/entities/src/device_type.rs (想定される定義に近い形)
+pub struct DeviceType {
+    name: String,
+}
+
+impl DeviceType {
+    // self を「値として」受け取る → 呼び出し元の所有権を奪う(ムーブ)
+    fn into_name(self) -> String {
+        self.name
+    }
+
+    // &self → 読み取り専用の借用。最も多用されるパターン
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    // &mut self → 書き換え可能な借用
+    fn set_name(&mut self, name: String) {
+        self.name = name;
+    }
+}
+```
+
+|書き方|意味|所有権|
+|---|---|---|
+|`self`|所有権を奪う(そのインスタンスは以後使えなくなる)|ムーブ|
+|`&self`|読み取り専用で借りる|不変借用|
+|`&mut self`|書き換え可能で借りる|可変借用|
+
+この`self`は「インスタンス自身」を指す。
+逆に、メソッドを実装している構造体以外のインスタンスを渡す場合は、`self`ではなく、構造体名を使う。
+
+```rust
+struct DeviceType { name: String }
+struct Capabilities { max_memory: u64 }
+
+impl DeviceType {
+    fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+fn main() {
+    let cap = Capabilities { max_memory: 1024 };
+    
+    DeviceType::name(&cap); 
+    // エラー: expected `&DeviceType`, found `&Capabilities`
+    // (mismatched types)
+}
+```
+`self`に対して、異なる型を渡すとエラーが生じる。
+
+##### 現在のモジュール自身としてパスキーの機能
+
+`device_type`モジュール自身と、その中の型
+```rust
+// self を使わない場合(モジュール名を2回書く必要がある)
+use device_type::DeviceType;
+use device_type;
+
+// self を使う場合(1行にまとめられる)
+use device_type::{self, DeviceType};
+//                 ^^^^ これは device_type モジュール自身を指す
+```
 ## Cargo
 
 Rustのプロジェクト管理ツール。クレートの作成、依存関係の管理、ビルド、テストなどを担当する。
+
+### Cargo.toml
+
+Cargo.tomlはTOML(Tom's Obvious, Minimal Language)形式で書かれた設定ファイルで、Rustのビルドツール兼パッケージマネージャとなる。`[package]`はTOMLの「テーブル」と呼ばれる構文単位で、其のクレート(Rustにおけるコンパイル単位・配布単位)自体メタデータを記述する場所。これに対し、`[dependencies]`は依存関係、`[workspace]`は複数クレートの束ね方といった、別の関心事を表すテーブルである。
+
+#### `[package]`
+
+##### 必須フィールド
+
+```toml
+[package]
+name = "hello_cargo" # クレート名
+version = "0.1.0" # クレートのバージョン
+edition = "2021" # Rustのエディション
+```
+
+|フィールド|意味|原理・理由|
+|---|---|---|
+|`name`|クレート名|crates.ioなどのレジストリで一意な識別子としてつかわれる。ハイフンはアンダースコアと同一視される。|
+|`version`|クレートのバージョン番号|SemVer `MAJOR.MINOR.PATCH`に従う。依存関係の互換性判定にCargoがこの規約を利用するため、自由な文字列ではなく規約への準拠が要求される。|
+|`edition`|言語エディション|`2015`, `2018`, `2021`,`2024`のいずれか。Rustは後方互換性を保ったまま言語仕様を進化させるため、エディションという単位でコンパイラの解釈モードを切り替える仕組みを採用している|
+
+##### バージョン番号の付け方
+
+※
+MAJOR,MINOR,PATCH
+|桁|上げる条件|具体例|
+|---|---|---|
+|MAJOR|後方互換性を破壊する変更|公開関数の引数を変更・削除、構造体フィールドの型変更|
+|MINOR|後方互換性を保った機能追加|新しい公開関数やモジュールの追加|
+|PATCH|後方互換性を保ったバグ修正|ロジックの内部修正、ドキュメント修正|
+
+1. 開発初期・API未確定 → 0.1.0 のまま固定し、内部的な変更は気にせず進める(社内利用クレートで publish = false ならこの状態を長く維持しても実害はない)。
+2. 最初の安定版を公開する時 → 1.0.0 に上げる。「これ以降は互換性を守る」という利用者への約束がここから始まる。
+3. 以降は上表の基準に従って機械的に判断する。
+
+##### 任意フィールド
+
+```toml
+[package]
+name = "entities" 
+version = "0.1.0"
+edition = "2021"
+description = "ドメインエンティティを定義するクレート"
+license = "MIT"
+authors = ["dago <d_goo-tech@outlook.jp>"]
+repository = "https://github.com/..."
+readme = "README.md"
+publish = false          # crates.io への公開を禁止する
+default-run = "api"       # 複数バイナリがある場合のデフォルト実行対象
+```
+
+##### 「プロジェクト」と「クレート」の階層関係
+
+```
+/workspaces/apps/backend/api/          ← ワークスペース(=プロジェクト全体)
+├─ Cargo.toml                          ← [workspace] 定義
+│
+└─ crates/
+   ├─ entities/                        ← 1つのクレート(ライブラリ)
+   │   ├─ Cargo.toml                   ← [package] name = "entities"
+   │   └─ src/
+   │       ├─ lib.rs                   ← クレートのエントリーポイント
+   │       └─ device_type.rs           ← lib.rs 配下のモジュール
+   │
+   └─ adapters/                        ← 1つのクレート(ライブラリ)
+       ├─ Cargo.toml                   ← [package] name = "adapters"
+       ├─ build.rs                     ← ビルド時に実行される特殊スクリプト
+       └─ src/
+           ├─ lib.rs                   ← クレートのエントリーポイント
+           ├─ error.rs                 ← lib.rs 配下のモジュール
+           └─ try_from.rs              ← lib.rs 配下のモジュール
+```
+
+- ワークスペースは複数のクレートを束ねる、Cargoレベルの概念で、プロジェクトのルートのtomlで`[workspace]`を宣言することで定義される。
+- クレートはワークスペースの中の1つの構成要素であり、それぞれが独立した`[package]`セクション(=独立したコンパイル単位)を持つ。
+- `lib.rs`で「クレートに属する全モジュールを`rustc`
 
 ### Cargoを使用したクレートの追加
 
@@ -697,3 +946,13 @@ fn print_speak_Dog(animal: &Dog) {
 | 柔軟性 | 型はコンパイル時に確定が必要 | 実行時に異なる型を混在させたコレクションなどが可能 |
 
 これが「Rustのゼロコスト抽象化」という思想の具体的な中身である。抽象化(トレイトによる契約)を導入しても、静的ディスパッチを選ぶ限り、手書きで型ごとに書いたコードと同等の実行効率が得られる、という設計原理である。クリーンアーキテクチャの文脈で言えば、「DIPによる抽象化」と「パフォーマンス」を両立させたい場合に、`dyn Trait`ではなくジェネリクス+トレイト境界を選ぶ理由がここにある。
+
+## 標準ライブラリ
+
+### assert
+
+`assert!`(および`assert_eq!`, `assert_ne!`)は、テストやデバッグのために条件を検証するマクロである。条件が偽の場合、プログラムはパニックを起こし、スタックトレースとともに終了する。
+
+- `assert!(条件)`: 条件が`false`なら`assertion failed: 条件式`というメッセージでパニック。
+- `assert_eq!(左辺, 右辺)`: 左辺と右辺が等しくない場合、`assertion failed: 左辺 == 右辺`というメッージでパニック。
+- `assert_ne!(左辺, 右辺)`: 左辺と右辺が等しい場合、`assertion failed: 左辺 != 右辺`というメッセージでパニック。
