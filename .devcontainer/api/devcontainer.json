@@ -2,6 +2,8 @@
   "name": "API Dev",
   "dockerComposeFile": "../docker-compose.yml",
   "service": "api-dev",
+  "runServices": ["api-dev"], // このサービスだけ起動する(未指定だと compose の全サービスが起動する)
+  "shutdownAction": "none", // ウィンドウを閉じても compose 全体を止めない(既定の stopCompose だと ai-engine-dev まで止まる)
   "workspaceFolder": "/workspaces/apps/backend/api",
   "customizations": {
     "vscode": {
