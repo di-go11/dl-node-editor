@@ -1,5 +1,5 @@
 #pragma once
 
-// 学習パイプラインの合成層(composition root)。main.cpp から呼ばれる。
-// .config を読み、cold start / resume を判定し、学習ループを最後まで回す。
+// CLI 用の合成層(composition root)。main.cpp から呼ばれる。
+// .config を読み、モデル構造を組み立てて runTrainingJob(TrainingJob.hpp)に渡す。
 void runTraining();
