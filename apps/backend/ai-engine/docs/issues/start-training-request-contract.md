@@ -140,16 +140,56 @@ Rust を経由しない呼び出しへの防御と、サーバー上のデータ
 
 ## タスク
 
-- [ ] `training.proto` に `DataSpec` 関連のメッセージ、`save_last_every`、`resume_from` を追加する
-- [ ] `PoolingType` に `POOLING_TYPE_AVERAGE` を追加する
-- [ ] 契約(必ず設定する項目・範囲)を proto のコメントに書く
-- [ ] C++: `StartTrainingRequest` → `StartTrainingCommand` の変換を gRPC 層に実装する
-- [ ] C++: 変換時の最低限の拒否(0 と oneof / enum の指定漏れ)を `INVALID_ARGUMENT` で返す
-- [ ] C++: `dataset_path` / `resume_from` の許可ディレクトリ確認
-- [ ] C++: クラス数・層のつながり・入力サイズの整合確認(学習開始前)
-- [ ] Rust: 既定値を埋めて `StartTrainingRequest` を組み立てる
-- [ ] Rust: 上の 1〜4 の制限を送信前に確認する
+### 完了
+
+- [x] `training.proto` に `DataSpec` 関連のメッセージ、`save_last_every`、`resume_from` を追加する(`6d43f64`)
+- [x] `PoolingType` に `POOLING_TYPE_AVERAGE` を追加する(`6d43f64`)
+- [x] 契約(必ず設定する項目・範囲)を proto のコメントに書く(`6d43f64`)
+- [x] C++: `StartTrainingRequest` → `StartTrainingCommand` の変換を gRPC 層に実装する(`88b304e`、`api/grpc/TrainingProtoMapper`)
+- [x] C++: 変換時の最低限の拒否(0 と oneof / enum の指定漏れ)を `INVALID_ARGUMENT` で返す(`88b304e`)
+  - あわせて `model_name` の文字種(英数字・`-`・`_`)と `device` の形式も確認している
+- [x] C++: `TrainingService`(StartTraining / StreamProgress / StopTraining)とジョブ管理(`TrainingJobManager`)を実装する(`88b304e`)
+
+### C++ 側(残り)
+
+- [ ] `dataset_path` / `resume_from` の許可ディレクトリ確認
+  - 許可ディレクトリをサーバー側の設定に持たせ、StartTraining の変換時に「存在する」「許可ディレクトリの配下である」を確認する。`..` やシンボリックリンクで外に出られないよう、正規化したパスで比べる
+  - NG は `INVALID_ARGUMENT`(存在しないものは `NOT_FOUND` にするかも決める)
+- [ ] クラス数・層のつながり・入力サイズの整合確認(学習開始前)
+  - クラス数: モデル最終層の出力チャンネル数 = labelmap のクラス数
+  - 層のつながり: 前の層の out channels と次の層の in channels の一致、IndexedPooling / Unpooling の対応(個数と順番)
+  - 入力サイズ: Pooling の段数で割り切れるか(SegNet なら 5 段なので 32 の倍数)
+  - labelmap はサーバー上のデータセットにあるため、StartTraining の変換時ではなく、`runTrainingJob` の組み立て時に確認することになる。現状、この時点の失敗はジョブの `FAILED` として StreamProgress で返る。StartTraining の時点で `INVALID_ARGUMENT` にしたいなら、labelmap の読み込みをジョブ開始前に行う必要がある
+- [ ] サーバー側の設定の持ち方を決める
+  - 現状(`GrpcApp::loadServerConfig`)は、カレントディレクトリに `.config` があればそのサーバー設定(checkpoint の保存先・スレッド数・処理時間の計測)を流用し、なければ既定値を使う暫定の形
+  - `.config` にはジョブの依頼の項目も同居しており、`--serve` でも全項目が正しくないと読み込みで失敗する
+  - gRPC サーバー用の設定ファイルを分けるか、環境変数・起動引数で渡すかを決める。上の許可ディレクトリもここに持たせる
 - [ ] `FocalLossConfig` にドメイン側の既定値を持たせる(現状は未初期化)
+
+### Rust 側(残り)
+
+- [ ] 既定値を埋めて `StartTrainingRequest` を組み立てる
+  - 上の「1. 未設定(0)のまま送ると困る項目」の既定値(`ignore_index` = 255、入力サイズ = 256、Adam の beta1 / beta2 / eps など)を必ず入れる
+- [ ] 上の 1〜4 の制限を送信前に確認する
+  - `device` は Capabilities が返したデバイスから選ばせる
+- [ ] `TrainingService` のクライアントを実装する(StartTraining / StreamProgress / StopTraining)
+  - gRPC のステータス: `INVALID_ARGUMENT`(値が不正)、`FAILED_PRECONDITION`(ほかのジョブが実行中)、`NOT_FOUND`(存在しない `job_id`)
+  - StopTraining の戻り値はまだ `RUNNING` のことがある。実際に止まったかは StreamProgress の `STOPPED` で判断する
+  - StreamProgress は終了の状態(`COMPLETED` / `FAILED` / `STOPPED`)を送ったら閉じる。`epoch` は終了したエポック数で、1 エポックも終わっていない間は 0(`metrics` は未設定)
+- [ ] proto の変更後に `cargo build` が通ることを確認する(C++ 側の環境に cargo がなく未確認)
+
+## 進捗メモ(2026-09-30、C++ 側)
+
+grpcurl で実データ(`TrainingDataset/train`、Conv 1 層、CPU)を使って確認した。
+
+- StartTraining → StreamProgress: `RUNNING`(epoch 0)→ epoch 1 → epoch 2 → `COMPLETED` の順に届き、ストリームが閉じる
+- 実行中の StartTraining は `FailedPrecondition`、不正なリクエストは `InvalidArgument`、存在しない `job_id` の StopTraining は `NotFound`
+- StopTraining: 2 エポック目の途中で要求 → そのエポックを終えてから `STOPPED`。抜けたエポックの `last` checkpoint は保存される
+
+既知の制限:
+
+- 停止はエポックの区切りでしか効かない。1 エポックが長いと StopTraining が効くまで時間がかかる。バッチごとに止めるには `IModelTrainer::trainOneEpoch` などに停止フラグを渡す必要がある
+- StreamProgress は最新の状態だけを送る。送信が遅れている間に 2 エポック分の更新があると、途中の 1 つは飛ばされる(エポックは十数秒以上かかるため、実際にはまず起きない)
 
 ## 未決定事項
 
@@ -157,9 +197,9 @@ Rust を経由しない呼び出しへの防御と、サーバー上のデータ
 - 将来、パスではなく ID や名前でデータセット・checkpoint を指定する形にするか
 - 入力サイズの上限を設けるか(GPU メモリ不足の防止)
 
-## 参考: レスポンス側のずれ
+## 参考: レスポンス側のずれ(解消済み)
 
-この issue の範囲外だが、`StreamProgressResponse` の `SegmentationMetrics` は `val_pixel_acc` / `val_miou` しかなく、ドメインの `SegmentationMetricsConfig` にある `fw_iou` / `mean_class_accuracy` / `per_class_iou` がない。分類の指標のメッセージもない。proto を変えるときに一緒に揃えるのが効率的。
+`StreamProgressResponse` の `SegmentationMetrics` に `fw_iou` / `mean_class_accuracy` / `per_class_iou` を追加し、`ClassificationMetrics` を `oneof metrics` に入れた(`6d43f64`)。フィールド名は `val_` を外して `pixel_acc` / `miou` に揃えた。
 
 ## 関連
 
