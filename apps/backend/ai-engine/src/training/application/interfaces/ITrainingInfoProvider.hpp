@@ -3,6 +3,7 @@
 #include "training/entities/domain-objects/EpochReport.hpp"
 #include "training/entities/domain-objects/TrainingStatus.hpp"
 
+#include <chrono>
 #include <cstdint>
 #include <string>
 
@@ -21,4 +22,7 @@ class ITrainingInfoProvider
 public:
     virtual ~ITrainingInfoProvider() = default;
     virtual TrainingProcessSnapshot getTrainingProcessSnapshot() = 0;
+    // snapshot.version が lastVersion より大きくなるまで(最大 timeout)待ち、その時点の snapshot を返す。
+    // タイムアウトした場合は version が lastVersion のままの snapshot が返るので、呼び出し側は version で判断する。
+    virtual TrainingProcessSnapshot waitForUpdate(uint64_t lastVersion, std::chrono::milliseconds timeout) = 0;
 };

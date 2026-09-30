@@ -20,9 +20,7 @@ public:
     void onEpochCompleted(const EpochReport &report) override;
 
     TrainingProcessSnapshot getTrainingProcessSnapshot() override;
-    // snapshot.version が lastVersion より大きくなるまで(最大 timeout)待ち、その時点の snapshot を返す。
-    // タイムアウトした場合は version が lastVersion のままの snapshot が返るので、呼び出し側は version で判断する。
-    TrainingProcessSnapshot waitForUpdate(uint64_t lastVersion, std::chrono::milliseconds timeout);
+    TrainingProcessSnapshot waitForUpdate(uint64_t lastVersion, std::chrono::milliseconds timeout) override;
 
 private:
     std::mutex _mutex;

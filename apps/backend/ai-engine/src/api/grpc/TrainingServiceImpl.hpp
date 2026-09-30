@@ -2,16 +2,16 @@
 
 #include "training.grpc.pb.h"
 
-#include "training/application/interfaces/ITrainingInfoProvider.hpp"
-
-#include <memory>
+#include "training/application/interfaces/ITrainingJobManager.hpp"
 
 // gRPC inbound adapter。training::v1::TrainingService::Service を実装する。
 // 生成コード(training.pb.h / training.grpc.pb.h)に触れてよいのはこの層だけ。
+// ITrainingJobManager 経由でジョブを操作し、proto との変換は TrainingProtoMapper に任せる。
 class TrainingServiceImpl final : public training::v1::TrainingService::Service
 {
 public:
-    TrainingServiceImpl(std::unique_ptr<ITrainingInfoProvider> trainingInfoProvider);
+    explicit TrainingServiceImpl(ITrainingJobManager &jobManager);
+
     // 単項
     grpc::Status StartTraining(grpc::ServerContext *context,
                                const training::v1::StartTrainingRequest *request,
@@ -28,5 +28,5 @@ public:
                               training::v1::StopTrainingResponse *response) override;
 
 private:
-    std::unique_ptr<ITrainingInfoProvider> _trainingInfoProvider;
+    ITrainingJobManager &_jobManager; // 所有しない。呼び出し側(GrpcApp)が生存を保証
 };

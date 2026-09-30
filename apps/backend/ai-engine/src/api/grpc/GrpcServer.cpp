@@ -1,6 +1,10 @@
 #include "api/grpc/GrpcServer.hpp"
 
-GrpcServer::GrpcServer(std::string address, grpc::Service &service) : _address(address), _service(service)
+#include <stdexcept>
+#include <utility>
+
+GrpcServer::GrpcServer(std::string address, std::vector<grpc::Service *> services)
+    : _address(std::move(address)), _services(std::move(services))
 {
 }
 
@@ -8,7 +12,10 @@ void GrpcServer::run()
 {
     grpc::ServerBuilder builder;
     builder.AddListeningPort(_address, grpc::InsecureServerCredentials()); // _adressのアドレス&ポートで暗号方式は平文
-    builder.RegisterService(&_service);
+    for (grpc::Service *service : _services)
+    {
+        builder.RegisterService(service);
+    }
 
     _server = builder.BuildAndStart();
 
