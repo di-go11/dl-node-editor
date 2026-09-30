@@ -578,6 +578,14 @@ TrainingConfigFile ConfigReader::readAll(const std::string &filePath)
                 {
                     result.architecture = ModelArchitectureType::SegNet;
                 }
+                else if (value == "SegNetDilated")
+                {
+                    result.architecture = ModelArchitectureType::SegNetDilated;
+                }
+                else if (value == "SegNetFullDilated")
+                {
+                    result.architecture = ModelArchitectureType::SegNetFullDilated;
+                }
                 else
                 {
                     throw std::runtime_error("Unknown model architecture: " + value);
