@@ -6,6 +6,8 @@
 #include "training/entities/domain-objects/ComputeDevice.hpp"
 #include "training/entities/domain-objects/DataSpecs/DataSpec.hpp"
 
+#include <cstdint>
+#include <optional>
 #include <string>
 
 struct StartTrainingCommand
@@ -25,4 +27,6 @@ struct StartTrainingCommand
     // 学習パラメータではなく、データ形式ごとで異なる仕様の定義
     // ImageSpec: 画像サイズ、画像タスクごとの仕様、アノテーションのconfigを持つ。
     DataSpec dataSpec;
+    // seed: 乱数シード。0 も有効な値なので optional で「未指定」と区別する(未指定 = 固定しない)。
+    std::optional<std::uint64_t> seed;
 };

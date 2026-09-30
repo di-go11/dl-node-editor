@@ -28,6 +28,7 @@
 #include "training/infrastructure/dataset/TimedDatasetRepository.hpp"
 #include "training/infrastructure/timer/CoutTimeReportWriter.hpp"
 #include "training/infrastructure/torchModel/TorchModelEvaluator.hpp"
+#include "training/infrastructure/torchFunc/SeedApplier.hpp"
 
 #include <filesystem>
 #include <iostream>
@@ -38,6 +39,7 @@
 // adapters(インタフェース)
 #include "training/adapters/interfaces/IModel.hpp"
 #include "training/adapters/interfaces/IOptimizer.hpp"
+#include "training/adapters/interfaces/ISeed.hpp"
 
 // adapters/application(具象クラス)
 #include "training/adapters/impl/TorchModelTrainer.hpp"
@@ -88,6 +90,7 @@ namespace
 TrainingStatus runTrainingJob(const ServerConfig &server,
                               const StartTrainingCommand &command,
                               const std::shared_ptr<ITrainingProgressObserver> &progressObserver,
+                              const ISeed &seedApplier,
                               const TrainingStopToken *stopToken)
 {
     // この学習パイプラインは画像セグメンテーション専用(評価器・データセットが対応していない)。
@@ -143,6 +146,11 @@ TrainingStatus runTrainingJob(const ServerConfig &server,
     else if (std::filesystem::exists(autoResumePath))
     {
         resumePath = autoResumePath;
+    }
+
+    if (command.seed.has_value())
+    {
+        seedApplier.apply(command.seed.value());
     }
 
     ModelGraph graph;

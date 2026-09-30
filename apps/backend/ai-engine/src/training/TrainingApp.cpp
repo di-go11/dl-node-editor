@@ -15,6 +15,7 @@
 // infrastructure(具象クラス)
 #include "training/infrastructure/readConfig/ConfigReader.hpp"
 #include "training/infrastructure/dataset/LabelMapFileReader.hpp"
+#include "training/infrastructure/torchFunc/SeedApplier.hpp"
 
 // adapters(具象クラス)
 #include "training/adapters/impl/ConsoleProgressObserver.hpp"
@@ -162,12 +163,13 @@ void runTraining()
         (std::filesystem::path(config.command.datasetPath) / "labelmap.txt").string();
     const int numClasses = static_cast<int>(LabelMapFileReader{}.read(labelMapPath).entryCount());
     config.command.modelGraph = buildGraph(config.architecture, numClasses);
+    const auto seedApplier = std::make_unique<SeedApplier>();
 
     // CLI では進捗を標準出力に書く。停止要求は受け付けない(Ctrl+C で止める)。
     auto progressObserver = std::make_shared<ConsoleProgressObserver>();
     try
     {
-        const TrainingStatus status = runTrainingJob(config.server, config.command, progressObserver);
+        const TrainingStatus status = runTrainingJob(config.server, config.command, progressObserver, *seedApplier);
         progressObserver->onFinished(status, "");
     }
     catch (const std::exception &e)

@@ -388,6 +388,10 @@ StartTrainingCommand toStartTrainingCommand(const training::v1::StartTrainingReq
     }
     command.datasetPath = request.dataset_path();
     command.resumeFrom = request.resume_from();
+    if (request.has_seed())
+    {
+        command.seed = request.seed().value();
+    }
 
     try
     {

@@ -120,6 +120,10 @@ message ImageSpec {
 
 message DataSpec { oneof spec { ImageSpec image = 1; } } //データのvariant
 
+// 再現性のための乱数シード。0 も有効な値なので、uint64 を直接持たずメッセージで包んで「未指定」と区別する
+// (proto3 の optional はシステムの protoc 3.12 では実験フラグが必要なため使わない)。
+message Seed { uint64 value = 1; }
+
 // ---merge---
 
 message StartTrainingRequest {
@@ -134,6 +138,7 @@ message StartTrainingRequest {
     DataSpec data_spec = 9;
     uint32 save_last_every = 10; // 0=毎エポック
     string resume_from = 11; // 空なら再開しない
+    Seed seed = 12; // 未設定(has_seed = false)なら乱数を固定しない
 }
 
 message StartTrainingResponse {
