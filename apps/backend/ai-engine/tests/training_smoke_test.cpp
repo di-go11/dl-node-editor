@@ -33,6 +33,7 @@
 #include "training/entities/image/ColorLabelMap.hpp"
 
 #include "training/adapters/impl/TorchModelTrainer.hpp"
+#include "training/adapters/impl/ConsoleProgressObserver.hpp"
 #include "training/adapters/interfaces/IModel.hpp"
 #include "training/adapters/interfaces/IOptimizer.hpp"
 
@@ -329,7 +330,7 @@ int main()
     {
         auto p2 = std::make_shared<TrainParam>(/*epoch=*/2u, /*batch=*/1u);
         auto store = std::make_shared<TorchCheckpointStore>(model, optimizer, ckptDir.string(), "smoke", graph);
-        TrainModelUsecase usecase(p2, /*saveLastEvery=*/0u, trainer, evaluator, store);
+        TrainModelUsecase usecase(p2, /*saveLastEvery=*/0u, trainer, evaluator, store, std::make_shared<ConsoleProgressObserver>());
 
         TrainingDatasets datasets;
         datasets.trainDataset = trainDs;

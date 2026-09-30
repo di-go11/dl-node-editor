@@ -16,6 +16,9 @@
 #include "training/application/impl/TrainingDatasets.hpp"
 #include "training/application/impl/BestMetricTracker.hpp"
 #include "training/application/impl/TrainingResumeState.hpp"
+#include "training/application/impl/TrainingStopToken.hpp"
+#include "training/application/interfaces/ITrainingProgressObserver.hpp"
+#include "training/entities/domain-objects/EpochReport.hpp"
 #include "training/entities/domain-objects/Metrics/EpochMetrics.hpp"
 #include "training/entities/domain-objects/TrainParam.hpp"
 
@@ -82,24 +85,52 @@ public:
 };
 
 // evaluate は与えられた mIoU 列を順に返す。
+// stopToken を渡すと、stopAfter 回目の評価の後に停止を要求する(学習中の StopTraining を模す)。
 class FakeEvaluator : public IModelEvaluator
 {
 public:
-    explicit FakeEvaluator(std::vector<double> mious) : _mious(std::move(mious)) {}
+    explicit FakeEvaluator(std::vector<double> mious, TrainingStopToken *stopToken = nullptr, size_t stopAfter = 0)
+        : _mious(std::move(mious)), _stopToken(stopToken), _stopAfter(stopAfter) {}
 
     EpochMetrics evaluate(IDatasetRepository &) override
     {
         SegmentationMetricsConfig seg{};
         seg.meanIoU = _mious.at(_index++);
         EpochMetrics m{};
+        m.loss = 0.5;
         m.taskMetrics = seg;
+        if (_stopToken != nullptr && _index == _stopAfter)
+        {
+            _stopToken->requestStop();
+        }
         return m;
     }
 
 private:
     std::vector<double> _mious;
     size_t _index = 0;
+    TrainingStopToken *_stopToken;
+    size_t _stopAfter;
 };
+
+// 届いた通知を記録するだけの Observer。
+class FakeProgressObserver : public ITrainingProgressObserver
+{
+public:
+    std::vector<EpochReport> reports;
+    int finishedCount = 0;
+
+    void onEpochCompleted(const EpochReport &report) override { reports.push_back(report); }
+    void onFinished(TrainingStatus, const std::string &) override { ++finishedCount; }
+};
+
+TrainingDatasets makeFakeDatasets()
+{
+    TrainingDatasets datasets;
+    datasets.trainDataset = std::make_shared<FakeDataset>();
+    datasets.validationDataset = std::make_shared<FakeDataset>();
+    return datasets;
+}
 
 // Usecase を1回走らせ、保存の記録を持つ FakeCheckpointStore を返す。
 // totalEpochs は「設定された総エポック数」。resume 時は valMious の要素数と
@@ -115,13 +146,9 @@ std::shared_ptr<FakeCheckpointStore> runUsecaseStore(const std::vector<double> &
     auto evaluator = std::make_shared<FakeEvaluator>(valMious);
     auto store = std::make_shared<FakeCheckpointStore>();
 
-    TrainModelUsecase usecase(param, saveLastEvery, trainer, evaluator, store);
+    TrainModelUsecase usecase(param, saveLastEvery, trainer, evaluator, store, std::make_shared<FakeProgressObserver>());
 
-    TrainingDatasets datasets;
-    datasets.trainDataset = std::make_shared<FakeDataset>();
-    datasets.validationDataset = std::make_shared<FakeDataset>();
-
-    usecase.execute(datasets, resume);
+    usecase.execute(makeFakeDatasets(), resume);
     return store;
 }
 
@@ -215,6 +242,85 @@ int main()
         auto store = runUsecaseStore({0.4, 0.3}, 4u, resume);
         check(store->saveCount == 1,
               "resume: 引き継がないと初回扱いで best が上書きされる(引き継ぎが必要な理由)");
+    }
+
+    // ---------- 進捗の通知(ITrainingProgressObserver) ----------
+    {
+        auto observer = std::make_shared<FakeProgressObserver>();
+        TrainModelUsecase usecase(std::make_shared<TrainParam>(3u, 1u), 0u,
+                                  std::make_shared<FakeTrainer>(), std::make_shared<FakeEvaluator>(std::vector<double>{0.1, 0.2, 0.3}),
+                                  std::make_shared<FakeCheckpointStore>(), observer);
+        const TrainingStatus status = usecase.execute(makeFakeDatasets());
+
+        check(status == TrainingStatus::Completed, "通知: 最後まで回れば Completed を返す");
+        check(observer->reports.size() == 3, "通知: onEpochCompleted がエポックごとに呼ばれる (3回)");
+        check(observer->reports.size() == 3 &&
+                  observer->reports[0].epoch == 0 && observer->reports[2].epoch == 2,
+              "通知: epoch は 0,1,2");
+        check(observer->reports.size() == 3 &&
+                  observer->reports[1].trainLoss == 1.0 && observer->reports[1].validation.loss == 0.5,
+              "通知: 学習側の loss と検証側の loss が入る");
+        check(observer->reports.size() == 3 &&
+                  std::get<SegmentationMetricsConfig>(observer->reports[2].validation.taskMetrics).meanIoU == 0.3,
+              "通知: 検証側の TaskMetrics が入る");
+        check(observer->reports.size() == 3 &&
+                  observer->reports[2].totalElapsedMs >= observer->reports[2].epochElapsedMs,
+              "通知: 累計時間 >= そのエポックの時間");
+        check(observer->finishedCount == 0, "通知: onFinished は usecase からは呼ばれない(呼び出し側の責務)");
+    }
+    {
+        // resume で 1 エポックも走らない場合も Completed(学習はすでに終わっている)
+        TrainingResumeState resume;
+        resume.startEpoch = 3;
+        auto observer = std::make_shared<FakeProgressObserver>();
+        TrainModelUsecase usecase(std::make_shared<TrainParam>(3u, 1u), 0u,
+                                  std::make_shared<FakeTrainer>(), std::make_shared<FakeEvaluator>(std::vector<double>{}),
+                                  std::make_shared<FakeCheckpointStore>(), observer);
+        check(usecase.execute(makeFakeDatasets(), resume) == TrainingStatus::Completed && observer->reports.empty(),
+              "通知: 実行するエポックがなければ通知なしで Completed");
+    }
+
+    // ---------- 停止(TrainingStopToken) ----------
+    {
+        // 開始前に停止が要求されていれば 1 エポックも回さない
+        TrainingStopToken token;
+        token.requestStop();
+        auto observer = std::make_shared<FakeProgressObserver>();
+        auto store = std::make_shared<FakeCheckpointStore>();
+        TrainModelUsecase usecase(std::make_shared<TrainParam>(3u, 1u), 0u,
+                                  std::make_shared<FakeTrainer>(), std::make_shared<FakeEvaluator>(std::vector<double>{0.1, 0.2, 0.3}),
+                                  store, observer);
+        const TrainingStatus status = usecase.execute(makeFakeDatasets(), {}, &token);
+
+        check(status == TrainingStatus::Stopped, "停止(開始前): Stopped を返す");
+        check(observer->reports.empty() && store->saveLastCount == 0, "停止(開始前): 1 エポックも回さない");
+    }
+    {
+        // 2 エポック目の評価の後に停止要求 → そのエポックを終えて抜ける。
+        // saveLastEvery=10 でも、抜けるエポックの last は必ず保存する(そこから再開できるように)。
+        TrainingStopToken token;
+        auto observer = std::make_shared<FakeProgressObserver>();
+        auto store = std::make_shared<FakeCheckpointStore>();
+        TrainModelUsecase usecase(std::make_shared<TrainParam>(5u, 1u), /*saveLastEvery=*/10u,
+                                  std::make_shared<FakeTrainer>(),
+                                  std::make_shared<FakeEvaluator>(std::vector<double>{0.1, 0.2, 0.3, 0.4, 0.5}, &token, /*stopAfter=*/2),
+                                  store, observer);
+        const TrainingStatus status = usecase.execute(makeFakeDatasets(), {}, &token);
+
+        check(status == TrainingStatus::Stopped, "停止(学習中): Stopped を返す");
+        check(observer->reports.size() == 2, "停止(学習中): 停止要求のあったエポックまで通知される (2回)");
+        check(store->savedLastEpochs == std::vector<unsigned int>({1}),
+              "停止(学習中): 抜けるエポック 1 の last を保存する(saveLastEvery に関わらず)");
+    }
+    {
+        // 最終エポックで停止要求が来ても、学習は最後まで終わっているので Completed
+        TrainingStopToken token;
+        TrainModelUsecase usecase(std::make_shared<TrainParam>(2u, 1u), 0u,
+                                  std::make_shared<FakeTrainer>(),
+                                  std::make_shared<FakeEvaluator>(std::vector<double>{0.1, 0.2}, &token, /*stopAfter=*/2),
+                                  std::make_shared<FakeCheckpointStore>(), std::make_shared<FakeProgressObserver>());
+        check(usecase.execute(makeFakeDatasets(), {}, &token) == TrainingStatus::Completed,
+              "停止(最終エポック): Completed を返す");
     }
 
     if (failureCount == 0)

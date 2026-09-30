@@ -16,7 +16,12 @@
 #include "training/infrastructure/readConfig/ConfigReader.hpp"
 #include "training/infrastructure/dataset/LabelMapFileReader.hpp"
 
+// adapters(具象クラス)
+#include "training/adapters/impl/ConsoleProgressObserver.hpp"
+
+#include <exception>
 #include <filesystem>
+#include <memory>
 #include <stdexcept>
 #include <string>
 
@@ -158,5 +163,16 @@ void runTraining()
     const int numClasses = static_cast<int>(LabelMapFileReader{}.read(labelMapPath).entryCount());
     config.command.modelGraph = buildGraph(config.architecture, numClasses);
 
-    runTrainingJob(config.server, config.command);
+    // CLI では進捗を標準出力に書く。停止要求は受け付けない(Ctrl+C で止める)。
+    auto progressObserver = std::make_shared<ConsoleProgressObserver>();
+    try
+    {
+        const TrainingStatus status = runTrainingJob(config.server, config.command, progressObserver);
+        progressObserver->onFinished(status, "");
+    }
+    catch (const std::exception &e)
+    {
+        progressObserver->onFinished(TrainingStatus::Failed, e.what());
+        throw;
+    }
 }

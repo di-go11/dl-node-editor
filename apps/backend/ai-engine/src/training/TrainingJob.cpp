@@ -46,6 +46,8 @@
 #include "training/application/impl/TrainModelUsecase.hpp"
 #include "training/application/impl/TrainingDatasets.hpp"
 #include "training/application/impl/TrainingResumeState.hpp"
+#include "training/application/impl/TrainingStopToken.hpp"
+#include "training/application/interfaces/ITrainingProgressObserver.hpp"
 #include "training/adapters/impl/timer/TimedImageDecoder.hpp"
 #include "training/adapters/impl/parallelProcessFn/SequentialExecutor.hpp"
 #include "training/adapters/impl/parallelProcessFn/ThreadExecutor.hpp"
@@ -83,7 +85,10 @@ namespace
 
 } // namespace
 
-void runTrainingJob(const ServerConfig &server, const StartTrainingCommand &command)
+TrainingStatus runTrainingJob(const ServerConfig &server,
+                              const StartTrainingCommand &command,
+                              const std::shared_ptr<ITrainingProgressObserver> &progressObserver,
+                              const TrainingStopToken *stopToken)
 {
     // この学習パイプラインは画像セグメンテーション専用(評価器・データセットが対応していない)。
     const ImageSpec *imageSpec = std::get_if<ImageSpec>(&command.dataSpec);
@@ -193,7 +198,7 @@ void runTrainingJob(const ServerConfig &server, const StartTrainingCommand &comm
     auto evaluator = std::make_shared<TorchModelEvaluator>(*model, *loss, numClasses, imageSpec->taskSpecs);
     auto checkpointStore = std::make_shared<TorchCheckpointStore>(model, optimizer, server.checkpointOutputDirPath, command.modelName, graph);
 
-    TrainModelUsecase usecase(param, command.saveLastEvery, trainer, evaluator, checkpointStore);
+    TrainModelUsecase usecase(param, command.saveLastEvery, trainer, evaluator, checkpointStore, progressObserver);
 
     auto decoder = std::make_shared<OpenCvImageDecoder>();
     auto timedDecoder = std::make_shared<TimedImageDecoder>(decoder, timeRecorder, "image.decode");
@@ -222,7 +227,5 @@ void runTrainingJob(const ServerConfig &server, const StartTrainingCommand &comm
     datasets.trainDataset = trainDataset;
     datasets.validationDataset = validationDataset;
 
-    usecase.execute(datasets, resumeState);
-
-    std::cout << "training loop finished" << std::endl;
+    return usecase.execute(datasets, resumeState, stopToken);
 }
