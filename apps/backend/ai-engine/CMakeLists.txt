@@ -361,6 +361,16 @@ target_link_libraries(torch_loss_factory_test PRIVATE ai_engine_lib "${TORCH_LIB
 target_link_options(torch_loss_factory_test PRIVATE "-Wl,--allow-shlib-undefined")
 set_property(TARGET torch_loss_factory_test PROPERTY CXX_STANDARD 17)
 
+## 2. TorchSeedApplierのシード再現性テスト
+add_executable(torch_seed_recall_test tests/torch_seed_recall_test.cpp)
+target_include_directories(torch_seed_recall_test PRIVATE
+	${CMAKE_CURRENT_SOURCE_DIR}/src
+	${CMAKE_CURRENT_SOURCE_DIR}
+	${TORCH_INCLUDE_DIRS}
+)
+target_link_libraries(torch_seed_recall_test PRIVATE ai_engine_lib "${TORCH_LIBRARIES}")
+target_link_options(torch_seed_recall_test PRIVATE "-Wl,--allow-shlib-undefined")
+set_property(TARGET torch_seed_recall_test PROPERTY CXX_STANDARD 17)
 # =====CIテスト用の設定=====
 enable_testing()
 
@@ -369,9 +379,11 @@ add_test(NAME image_pipeline_test COMMAND image_pipeline_test)
 add_test(NAME training_progress_store_test COMMAND training_progress_store_test)
 add_test(NAME training_job_manager_test COMMAND training_job_manager_test)
 add_test(NAME training_proto_mapper_test COMMAND training_proto_mapper_test)
+add_test(NAME torch_seed_recall_test COMMAND torch_seed_recall_test)
 
 set_tests_properties(torch_loss_factory_test PROPERTIES LABELS "cpu")
 set_tests_properties(image_pipeline_test PROPERTIES LABELS "cpu")
 set_tests_properties(training_progress_store_test PROPERTIES LABELS "cpu")
 set_tests_properties(training_job_manager_test PROPERTIES LABELS "cpu")
 set_tests_properties(training_proto_mapper_test PROPERTIES LABELS "cpu")
+set_tests_properties(torch_seed_recall_test PROPERTIES LABELS "cpu")

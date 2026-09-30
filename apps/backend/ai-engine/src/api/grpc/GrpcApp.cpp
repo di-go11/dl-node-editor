@@ -7,6 +7,7 @@
 #include "training/adapters/impl/TrainingJobManager.hpp"
 #include "training/infrastructure/readConfig/ConfigReader.hpp"
 #include "training/infrastructure/torchFunc/CudaCapabilityProvider.hpp"
+#include "training/infrastructure/torchFunc/SeedApplier.hpp"
 
 #include <filesystem>
 #include <iostream>
@@ -39,7 +40,8 @@ void runGrpcServer()
                        const std::shared_ptr<ITrainingProgressObserver> &progressObserver,
                        const TrainingStopToken *stopToken)
         {
-            return runTrainingJob(serverConfig, command, progressObserver, stopToken);
+            SeedApplier seedApplier;
+            return runTrainingJob(serverConfig, command, progressObserver, seedApplier, stopToken);
         });
     TrainingServiceImpl trainingService(jobManager);
 
