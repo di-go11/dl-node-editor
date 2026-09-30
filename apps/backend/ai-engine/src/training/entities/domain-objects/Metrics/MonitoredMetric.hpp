@@ -1,20 +1,10 @@
 #pragma once
 #include "TaskMetrics.hpp"
 #include "MetricMode.hpp"
+#include "training/entities/utils/Overloaded.hpp"
 
 #include <string>
-#include <memory>
-
-namespace
-{
-    template <class... Ts>
-    struct Overloaded : Ts...
-    {
-        using Ts::operator()...;
-    };
-    template <class... Ts>
-    Overloaded(Ts...) -> Overloaded<Ts...>;
-}
+#include <variant>
 
 struct MonitoredMetric
 {

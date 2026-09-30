@@ -6,18 +6,12 @@
 
 #include <stdexcept>
 #include <utility>
+#include "training/entities/utils/Overloaded.hpp"
+
 #include <variant>
 
 namespace
 {
-    template <class... Ts>
-    struct Overloaded : Ts...
-    {
-        using Ts::operator()...;
-    };
-    template <class... Ts>
-    Overloaded(Ts...) -> Overloaded<Ts...>;
-
     // データセットの分割名を取得する
     const char *splitName(DatasetSplit aplit)
     {
