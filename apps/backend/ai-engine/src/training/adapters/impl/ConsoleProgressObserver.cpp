@@ -10,6 +10,8 @@ namespace
     {
         switch (status)
         {
+        case TrainingStatus::Idle:
+            return "Idle";
         case TrainingStatus::Running:
             return "Running";
         case TrainingStatus::Completed:

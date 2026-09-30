@@ -9,7 +9,7 @@
 // 学習ジョブの、ある時点の状態。gRPC(StreamProgress)が読み出して送る。
 struct TrainingProcessSnapshot
 {
-    TrainingStatus status = TrainingStatus::Running;
+    TrainingStatus status = TrainingStatus::Idle; // ジョブを開始する(TrainingProgressStore::start)までは Idle
     bool hasEpochReport = false; // 1エポックも終わっていない間は false(latest は既定値のまま)
     EpochReport latest;          // 最後に完了したエポックの結果
     std::string errorMessage;    // status が Failed のときの原因

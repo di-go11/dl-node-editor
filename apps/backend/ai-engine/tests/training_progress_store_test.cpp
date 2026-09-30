@@ -41,6 +41,7 @@ int main()
     // ---------- 初期状態 ----------
     {
         const TrainingProcessSnapshot s = store.getTrainingProcessSnapshot();
+        check(s.status == TrainingStatus::Idle, "初期状態: status == Idle(ジョブ開始前)");
         check(s.version == 0, "初期状態: version == 0");
         check(!s.hasEpochReport, "初期状態: エポックの結果はまだない");
     }
