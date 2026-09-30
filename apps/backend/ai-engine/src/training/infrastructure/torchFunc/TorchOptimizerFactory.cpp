@@ -7,19 +7,9 @@
 // 各 Optimizer はデストラクタを .cpp 側に閉じ込めているため、
 // ここで <torch/torch.h> を include する必要はない(libtorch を知らずに生成できる)。
 
-#include <variant>
+#include "training/entities/utils/Overloaded.hpp"
 
-namespace
-{
-    // TorchLayerBuilder と同じ、variant を型ごとに分岐させるための補助。
-    template <class... Ts>
-    struct Overloaded : Ts...
-    {
-        using Ts::operator()...;
-    };
-    template <class... Ts>
-    Overloaded(Ts...) -> Overloaded<Ts...>;
-}
+#include <variant>
 
 std::shared_ptr<IOptimizer> TorchOptimizerFactory::create(std::vector<at::Tensor> &parameters,
                                                           const OptimizerConfig &config)

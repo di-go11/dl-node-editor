@@ -1,0 +1,11 @@
+[package]
+name = "server"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+adapters = { version = "0.1.0", path = "../adapters" }
+entities = { version = "0.1.0", path = "../entities" }
+tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread"] }
+tonic = "0.14.6"
+usecases = { version = "0.1.0", path = "../usecases" }

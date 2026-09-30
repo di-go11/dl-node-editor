@@ -8,7 +8,7 @@
 //   - validation 指標が有限で [0,1] に収まる
 //   - checkpoint が保存でき、CheckpointModelLoader で再構築 → 再開できる
 //
-// 実データ(<repo>/dataset/train)が無い環境では skip する(CI 可搬性のため)。
+// 実データ(<repo>/TrainingDataset/train)が無い環境では skip する(CI 可搬性のため)。
 // 本物から数サンプルだけコピーした一時 VOC ディレクトリを作って回す。
 
 #include <cmath>
@@ -23,8 +23,9 @@
 
 #include "training/entities/domain-objects/ComputeDevice.hpp"
 #include "training/entities/domain-objects/Conv2DParams.hpp"
+#include "training/entities/domain-objects/DataSpecs/DataSpec.hpp"
 #include "training/entities/domain-objects/DatasetSplit.hpp"
-#include "training/entities/domain-objects/EpochMetrics.hpp"
+#include "training/entities/domain-objects/Metrics/EpochMetrics.hpp"
 #include "training/entities/domain-objects/LayersConfig.hpp"
 #include "training/entities/domain-objects/ModelGraph.hpp"
 #include "training/entities/domain-objects/OptimizerConfig.hpp"
@@ -32,6 +33,7 @@
 #include "training/entities/image/ColorLabelMap.hpp"
 
 #include "training/adapters/impl/TorchModelTrainer.hpp"
+#include "training/adapters/impl/ConsoleProgressObserver.hpp"
 #include "training/adapters/interfaces/IModel.hpp"
 #include "training/adapters/interfaces/IOptimizer.hpp"
 
@@ -42,7 +44,7 @@
 #include "training/infrastructure/dataset/LabelMapFileReader.hpp"
 #include "training/infrastructure/dataset/DatasetRepositoryFactory.hpp"
 #include "training/infrastructure/image/OpenCvImageDecoder.hpp"
-#include "training/infrastructure/image/ResizePreprocessorFactory.hpp"
+#include "training/entities/image/LetterboxPolicy.hpp"
 #include "training/infrastructure/torchFunc/CrossEntropy.hpp"
 #include "training/infrastructure/torchFunc/TorchOptimizerFactory.hpp"
 #include "training/infrastructure/torchModel/CheckpointModelLoader.hpp"
@@ -53,7 +55,7 @@
 #include "training/adapters/impl/parallelProcessFn/SequentialExecutor.hpp"
 
 #ifndef SMOKE_SRC_DATASET
-#define SMOKE_SRC_DATASET "dataset/train"
+#define SMOKE_SRC_DATASET "TrainingDataset/train"
 #endif
 #ifndef SMOKE_TMP_DIR
 #define SMOKE_TMP_DIR "training_smoke_tmp"
@@ -255,18 +257,20 @@ int main()
     auto param = std::make_shared<TrainParam>(/*epoch=*/1u, /*batch=*/1u);
 
     auto decoder = std::make_shared<OpenCvImageDecoder>();
-    ResizePreprocessorFactory::Geometry geom;
-    geom.width = 128;
-    geom.height = 128;
-    geom.aspectRatioPolicy = LetterboxPolicy{}; // 余白 = ignore_index。評価がここを無視できるか見る
-    ResizePreprocessorFactory ppf(geom);
-    auto imgPp = ppf.forImage();
-    auto maskPp = ppf.forMask(static_cast<uint8_t>(kIgnoreIndex));
+    ImageSpec imageSpec;
+    imageSpec.annotation = PascalVocConfig{};
+    imageSpec.inputWidth = 128;
+    imageSpec.inputHeight = 128;
+    SegmentationSpec segmentationSpec;
+    segmentationSpec.ignoreIndex = static_cast<uint8_t>(kIgnoreIndex); // 損失・評価器と同じ値
+    imageSpec.taskSpecs = segmentationSpec;
+    const DataSpec dataSpec = imageSpec;
 
-    auto datasetRepository = std::make_shared<DatasetRepositoryFactory>(decoder, std::make_shared<LabelMapFileReader>(), ppf, static_cast<uint8_t>(kIgnoreIndex), param, std::make_shared<NullTimeRecorder>(), std::make_shared<SequentialExecutor>());
+    // 余白 = ignore_index。評価がここを無視できるか見る
+    auto datasetRepository = std::make_shared<DatasetRepositoryFactory>(decoder, std::make_shared<LabelMapFileReader>(), LetterboxPolicy{}, param, std::make_shared<NullTimeRecorder>(), std::make_shared<SequentialExecutor>());
 
-    auto trainDs = datasetRepository->create(ImageTaskType::SEMANTIC_SEGMENTATION, DatasetConfig{dst.string(), ImageAnnotationConfig{PascalVocConfig{}}}, DatasetSplit::Train);
-    auto valDs = datasetRepository->create(ImageTaskType::SEMANTIC_SEGMENTATION, DatasetConfig{dst.string(), ImageAnnotationConfig{PascalVocConfig{}}}, DatasetSplit::Validation);
+    auto trainDs = datasetRepository->create(dataSpec, dst.string(), DatasetSplit::Train);
+    auto valDs = datasetRepository->create(dataSpec, dst.string(), DatasetSplit::Validation);
 
     auto modelFactory = std::make_shared<TorchModelFactory>();
     auto optimizerFactory = std::make_shared<TorchOptimizerFactory>();
@@ -282,7 +286,7 @@ int main()
 
     auto loss = std::make_shared<CrossEntropy>();
     auto trainer = std::make_shared<TorchModelTrainer>(model, loss, optimizer);
-    auto evaluator = std::make_shared<TorchModelEvaluator>(*model, *loss, numClasses, kIgnoreIndex);
+    auto evaluator = std::make_shared<TorchModelEvaluator>(*model, *loss, numClasses, imageSpec.taskSpecs);
 
     const std::vector<at::Tensor> initialWeights = snapshot(params);
 
@@ -290,17 +294,18 @@ int main()
     const int epochs = 25;
     std::vector<double> trainLoss;
     trainLoss.reserve(epochs);
-    EpochMetrics lastVal;
+    SegmentationMetricsConfig lastVal{};
     bool anyNonFinite = false;
 
     for (int e = 0; e < epochs; ++e)
     {
         const EpochMetrics tm = trainer->trainOneEpoch(*trainDs);
         const EpochMetrics vm = evaluator->evaluate(*valDs); // ← ignore_index を含むマスクで落ちないこと
+        const auto &seg = std::get<SegmentationMetricsConfig>(vm.taskMetrics);
         trainLoss.push_back(tm.loss);
-        lastVal = vm;
+        lastVal = seg;
         if (!std::isfinite(tm.loss) || !std::isfinite(vm.loss) ||
-            !std::isfinite(vm.pixelAccuracy) || !std::isfinite(vm.meanIoU))
+            !std::isfinite(seg.pixelAccuracy) || !std::isfinite(seg.meanIoU))
         {
             anyNonFinite = true;
         }
@@ -323,14 +328,9 @@ int main()
     // ---- TrainModelUsecase + 実 CheckpointStore で 2 エポック回して checkpoint 保存 ----
     const fs::path ckptDir = dst / "ckpt";
     {
-        AppConfig appConfig;
-        appConfig.modelName = "smoke";
-        appConfig.outputDir = ckptDir.string();
-        appConfig.saveLastEvery = 0;
-
         auto p2 = std::make_shared<TrainParam>(/*epoch=*/2u, /*batch=*/1u);
         auto store = std::make_shared<TorchCheckpointStore>(model, optimizer, ckptDir.string(), "smoke", graph);
-        TrainModelUsecase usecase(p2, appConfig, trainer, evaluator, store);
+        TrainModelUsecase usecase(p2, /*saveLastEvery=*/0u, trainer, evaluator, store, std::make_shared<ConsoleProgressObserver>());
 
         TrainingDatasets datasets;
         datasets.trainDataset = trainDs;

@@ -8,19 +8,9 @@
 #include "training/infrastructure/torchFunc/ComboLoss.hpp"
 #include "training/infrastructure/torchFunc/BoundaryLoss.hpp"
 
-#include <variant>
+#include "training/entities/utils/Overloaded.hpp"
 
-namespace
-{
-    // TorchLayerBuilder と同じ、variant を型ごとに分岐させるための補助。
-    template <class... Ts>
-    struct Overloaded : Ts...
-    {
-        using Ts::operator()...;
-    };
-    template <class... Ts>
-    Overloaded(Ts...) -> Overloaded<Ts...>;
-}
+#include <variant>
 
 std::shared_ptr<ILoss> TorchLossFactory::create(const LossConfig &config, const int numClasses, const int64_t ignoreIndex)
 {

@@ -10,18 +10,9 @@
 #include "training/infrastructure/torchFunc/TorchIndexPoolingLayer.hpp"
 #include "training/infrastructure/torchFunc/TorchUnpoolingLayer.hpp"
 
-#include <variant>
+#include "training/entities/utils/Overloaded.hpp"
 
-namespace
-{
-    template <class... Ts>
-    struct Overloaded : Ts...
-    {
-        using Ts::operator()...;
-    };
-    template <class... Ts>
-    Overloaded(Ts...) -> Overloaded<Ts...>;
-}
+#include <variant>
 
 TorchLayerBuilder::TorchLayerBuilder() {}
 

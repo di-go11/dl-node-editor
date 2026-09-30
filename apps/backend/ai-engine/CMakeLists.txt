@@ -91,7 +91,9 @@ set_property(TARGET ai_engine_lib PROPERTY CXX_STANDARD 17)
 set(PROTO_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/protoGenerated)
 file(MAKE_DIRECTORY ${PROTO_GEN_DIR})
 
-add_library(ai_engine_proto STATIC ${PROTO_DIR}/capabilities.proto)
+add_library(ai_engine_proto STATIC 
+		${PROTO_DIR}/capabilities.proto
+		${PROTO_DIR}/training.proto)
 target_link_libraries(ai_engine_proto PUBLIC gRPC::grpc++ SystemProtobuf::libprotobuf)
 target_include_directories(ai_engine_proto PUBLIC ${PROTO_GEN_DIR})
 set_property(TARGET ai_engine_proto PROPERTY CXX_STANDARD 17)
@@ -143,6 +145,8 @@ protobuf_generate(
 add_library(ai_engine_grpc STATIC
 	src/api/grpc/GrpcServer.cpp
 	src/api/grpc/CapabilitiesServiceImpl.cpp
+	src/api/grpc/TrainingServiceImpl.cpp
+	src/api/grpc/TrainingProtoMapper.cpp
 	src/api/grpc/GrpcApp.cpp)
 target_include_directories(ai_engine_grpc PRIVATE
 	${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -275,7 +279,7 @@ target_link_libraries(training_smoke_test PRIVATE ai_engine_lib "${TORCH_LIBRARI
 target_link_options(training_smoke_test PRIVATE "-Wl,--allow-shlib-undefined")
 set_property(TARGET training_smoke_test PROPERTY CXX_STANDARD 17)
 target_compile_definitions(training_smoke_test PRIVATE
-	SMOKE_SRC_DATASET="${CMAKE_CURRENT_SOURCE_DIR}/dataset/train"
+	SMOKE_SRC_DATASET="${CMAKE_CURRENT_SOURCE_DIR}/TrainingDataset/train"
 	SMOKE_TMP_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/training_smoke_tmp"
 	SMOKE_DEVICE="${SMOKE_DEVICE}")
 
@@ -312,6 +316,38 @@ target_link_libraries(loss_function_test PRIVATE ai_engine_lib "${TORCH_LIBRARIE
 target_link_options(loss_function_test PRIVATE "-Wl,--allow-shlib-undefined")
 set_property(TARGET loss_function_test PROPERTY CXX_STANDARD 17)
 
+# 17. TrainingProgressStore(学習進捗の保管・待ち合わせ)の単体テスト。
+add_executable(training_progress_store_test tests/training_progress_store_test.cpp)
+target_include_directories(training_progress_store_test PRIVATE
+	${CMAKE_CURRENT_SOURCE_DIR}/src
+	${CMAKE_CURRENT_SOURCE_DIR}
+	${TORCH_INCLUDE_DIRS}
+	${OpenCV_INCLUDE_DIRS}
+)
+target_link_libraries(training_progress_store_test PRIVATE ai_engine_lib "${TORCH_LIBRARIES}" ${OpenCV_LIBS})
+target_link_options(training_progress_store_test PRIVATE "-Wl,--allow-shlib-undefined")
+set_property(TARGET training_progress_store_test PROPERTY CXX_STANDARD 17)
+
+# 18. TrainingJobManager(ジョブの開始・停止・同時実行の制限)の単体テスト。runner は偽物に差し替える。
+add_executable(training_job_manager_test tests/training_job_manager_test.cpp)
+target_include_directories(training_job_manager_test PRIVATE
+	${CMAKE_CURRENT_SOURCE_DIR}/src
+	${CMAKE_CURRENT_SOURCE_DIR}
+	${TORCH_INCLUDE_DIRS}
+	${OpenCV_INCLUDE_DIRS}
+)
+target_link_libraries(training_job_manager_test PRIVATE ai_engine_lib "${TORCH_LIBRARIES}" ${OpenCV_LIBS})
+target_link_options(training_job_manager_test PRIVATE "-Wl,--allow-shlib-undefined")
+set_property(TARGET training_job_manager_test PROPERTY CXX_STANDARD 17)
+
+# 19. TrainingProtoMapper(proto <-> ドメインの変換と値の確認)の単体テスト。
+# ai_engine_grpc と同じ理由で、torch のヘッダを見せない(libtorch 同梱の protobuf ヘッダと衝突するため)。
+add_executable(training_proto_mapper_test tests/training_proto_mapper_test.cpp)
+target_include_directories(training_proto_mapper_test PRIVATE
+	${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(training_proto_mapper_test PRIVATE ai_engine_grpc ai_engine_proto)
+set_property(TARGET training_proto_mapper_test PROPERTY CXX_STANDARD 17)
+
 # libtorchを使用するテスト
 
 ## 1. TorchLossFactoryとTorchLossConfigの整合性テスト
@@ -330,6 +366,12 @@ enable_testing()
 
 add_test(NAME torch_loss_factory_test COMMAND torch_loss_factory_test)
 add_test(NAME image_pipeline_test COMMAND image_pipeline_test)
+add_test(NAME training_progress_store_test COMMAND training_progress_store_test)
+add_test(NAME training_job_manager_test COMMAND training_job_manager_test)
+add_test(NAME training_proto_mapper_test COMMAND training_proto_mapper_test)
 
 set_tests_properties(torch_loss_factory_test PROPERTIES LABELS "cpu")
 set_tests_properties(image_pipeline_test PROPERTIES LABELS "cpu")
+set_tests_properties(training_progress_store_test PROPERTIES LABELS "cpu")
+set_tests_properties(training_job_manager_test PROPERTIES LABELS "cpu")
+set_tests_properties(training_proto_mapper_test PROPERTIES LABELS "cpu")

@@ -1,62 +1,29 @@
 #include "training/TrainingApp.hpp"
 
-#include <memory>
-#include <torch/torch.h>
+#include "training/TrainingJob.hpp"
 
 // entities
-#include "training/entities/domain-objects/TrainParam.hpp"
 #include "training/entities/domain-objects/ModelGraph.hpp"
-#include "training/entities/domain-objects/ModelGraphFingerprint.hpp"
 #include "training/entities/domain-objects/Conv2DParams.hpp"
 #include "training/entities/domain-objects/ActivationParams.hpp"
 #include "training/entities/domain-objects/BatchNormParams.hpp"
 #include "training/entities/domain-objects/IndexedPoolingParams.hpp"
 #include "training/entities/domain-objects/UnpoolingParams.hpp"
 #include "training/entities/domain-objects/ModelArchitectureType.hpp"
-#include "training/entities/domain-objects/DatasetSplit.hpp"
-#include "training/entities/domain-objects/ProcessTimeSpan.hpp"
-
-#include <stdexcept>
+#include "training/entities/image/ColorLabelMap.hpp"
 
 // infrastructure(具象クラス)
-#include "training/infrastructure/torchFunc/TorchLayerBuilder.hpp"
-#include "training/infrastructure/torchFunc/TorchOptimizerFactory.hpp"
-#include "training/infrastructure/torchFunc/TorchLossFactory.hpp"
-#include "training/infrastructure/torchModel/TorchModel.hpp"
-#include "training/infrastructure/torchModel/TorchModelFactory.hpp"
-#include "training/infrastructure/torchModel/TorchCheckpointStore.hpp"
-#include "training/infrastructure/torchModel/CheckpointModelLoader.hpp"
 #include "training/infrastructure/readConfig/ConfigReader.hpp"
-#include "training/infrastructure/dataset/DatasetRepositoryFactory.hpp"
-#include "training/infrastructure/dataset/PreFetchDatasetRepository.hpp"
-#include "training/infrastructure/image/OpenCvImageDecoder.hpp"
-#include "training/infrastructure/image/ResizePreprocessorFactory.hpp"
 #include "training/infrastructure/dataset/LabelMapFileReader.hpp"
-#include "training/infrastructure/torchFunc/DeviceToTorch.hpp"
-#include "training/infrastructure/dataset/TimedDatasetRepository.hpp"
-#include "training/infrastructure/timer/CoutTimeReportWriter.hpp"
-#include "training/infrastructure/torchModel/TorchModelEvaluator.hpp"
 
+// adapters(具象クラス)
+#include "training/adapters/impl/ConsoleProgressObserver.hpp"
+
+#include <exception>
 #include <filesystem>
-#include <iostream>
-
-// application(インターフェース)
-#include "training/application/interfaces/parallelProcessFn/IParallelExecutor.hpp"
-
-// adapters(インタフェース)
-#include "training/adapters/interfaces/IModel.hpp"
-#include "training/adapters/interfaces/IOptimizer.hpp"
-
-// adapters/application(具象クラス)
-#include "training/adapters/impl/TorchModelTrainer.hpp"
-#include "training/adapters/impl/timer/BufferTimeRecorder.hpp"
-#include "training/adapters/impl/timer/NullTimeRecorder.hpp"
-#include "training/application/impl/TrainModelUsecase.hpp"
-#include "training/application/impl/TrainingDatasets.hpp"
-#include "training/application/impl/TrainingResumeState.hpp"
-#include "training/adapters/impl/timer/TimedImageDecoder.hpp"
-#include "training/adapters/impl/parallelProcessFn/SequentialExecutor.hpp"
-#include "training/adapters/impl/parallelProcessFn/ThreadExecutor.hpp"
+#include <memory>
+#include <stdexcept>
+#include <string>
 
 namespace
 {
@@ -78,17 +45,19 @@ namespace
         return graph;
     }
 
-    // Conv(3x3,pad=1) -> ReLU -> BatchNorm を2回繰り返す共通ブロック。
+    // Conv(3x3) -> ReLU -> BatchNorm を2回繰り返す共通ブロック。
     // SegNet の encoder/decoder ブロックは中身が同一構造(python版 segnetProgram.py
     // の encoder_block / decoder_block に相当)。
-    void appendConvReluBnPair(ModelGraph &graph, int inChannels, int outChannels, double bnMomentum)
+    // dilation を広げても出力サイズが変わらないよう、padding = dilation にする(3x3 の場合)。
+    void appendConvReluBnPair(ModelGraph &graph, int inChannels, int outChannels, double bnMomentum, int dilation = 1)
     {
         Conv2DParams conv1;
         conv1.inChannels = inChannels;
         conv1.outChannels = outChannels;
         conv1.kernelSize = 3;
         conv1.stride = 1;
-        conv1.padding = 1;
+        conv1.padding = dilation;
+        conv1.dilation = dilation;
         graph.layers.push_back(LayersConfig{conv1});
 
         ActivationConfig relu1;
@@ -105,7 +74,8 @@ namespace
         conv2.outChannels = outChannels;
         conv2.kernelSize = 3;
         conv2.stride = 1;
-        conv2.padding = 1;
+        conv2.padding = dilation;
+        conv2.dilation = dilation;
         graph.layers.push_back(LayersConfig{conv2});
 
         ActivationConfig relu2;
@@ -168,6 +138,60 @@ namespace
         return graph;
     }
 
+    // SegNet の encoder 4・5 段目の pooling をやめ、代わりに Conv を dilation = 2, 4 にした構成。
+    // 対応する decoder 5・4 段目の unpooling も外す(pooling / unpooling は enc1-3 と dec3-1 の 3 組だけになる)。
+    // 特徴マップの解像度を 1/8 までに保ったまま、深い段の受容野を広げる(DeepLab 系の考え方)。
+    // pooling が 3 段なので、入力サイズは 8 の倍数である必要がある。
+    ModelGraph buildSegNetDilatedGraph(int numClasses)
+    {
+        ModelGraph graph;
+        constexpr double bnMomentum = 0.5; // SegNet と同じ
+
+        // Encoder
+        appendEncoderBlock(graph, 3, 64, bnMomentum);
+        appendEncoderBlock(graph, 64, 128, bnMomentum);
+        appendEncoderBlock(graph, 128, 256, bnMomentum);
+        appendConvReluBnPair(graph, 256, 512, bnMomentum, /*dilation=*/2); // enc4: pooling なし
+        appendConvReluBnPair(graph, 512, 512, bnMomentum, /*dilation=*/4); // enc5: pooling なし
+
+        // Decoder(対称)
+        appendConvReluBnPair(graph, 512, 512, bnMomentum, /*dilation=*/4); // dec5: unpooling なし
+        appendConvReluBnPair(graph, 512, 256, bnMomentum, /*dilation=*/2); // dec4: unpooling なし
+        appendDecoderBlock(graph, 256, 128, bnMomentum);
+        appendDecoderBlock(graph, 128, 64, bnMomentum);
+        appendDecoderBlock(graph, 64, numClasses, bnMomentum);
+
+        return graph;
+    }
+
+    // SegNet の pooling / unpooling をすべてやめ、dilated conv だけで受容野を広げた構成。
+    // 特徴マップは最後まで入力と同じ解像度のまま(小さい対象の情報を失わないため)。
+    // pooling 1 段ごとに解像度が半分になっていた代わりに、段ごとに dilation を 2 倍にする
+    // (encoder: 1, 2, 4, 8, 16 / decoder: 16, 8, 4, 2, 1)。チャンネル構成は SegNet と同じ。
+    // 解像度が下がらないので、計算量・メモリは SegNet よりずっと大きい
+    // (256x256 で 1 枚あたり順伝播約 2.2 TFLOPs、学習時の活性化は約 3.7 GB。docs/重みと計算量の見積もり.md)。
+    ModelGraph buildSegNetFullDilatedGraph(int numClasses)
+    {
+        ModelGraph graph;
+        constexpr double bnMomentum = 0.5; // SegNet と同じ
+
+        // Encoder
+        appendConvReluBnPair(graph, 3, 64, bnMomentum, /*dilation=*/1);
+        appendConvReluBnPair(graph, 64, 128, bnMomentum, /*dilation=*/2);
+        appendConvReluBnPair(graph, 128, 256, bnMomentum, /*dilation=*/4);
+        appendConvReluBnPair(graph, 256, 512, bnMomentum, /*dilation=*/8);
+        appendConvReluBnPair(graph, 512, 512, bnMomentum, /*dilation=*/16);
+
+        // Decoder(対称)
+        appendConvReluBnPair(graph, 512, 512, bnMomentum, /*dilation=*/16);
+        appendConvReluBnPair(graph, 512, 256, bnMomentum, /*dilation=*/8);
+        appendConvReluBnPair(graph, 256, 128, bnMomentum, /*dilation=*/4);
+        appendConvReluBnPair(graph, 128, 64, bnMomentum, /*dilation=*/2);
+        appendConvReluBnPair(graph, 64, numClasses, bnMomentum, /*dilation=*/1);
+
+        return graph;
+    }
+
     // .config の model_architecture に応じてグラフ組み立て関数を選ぶ。
     ModelGraph buildGraph(ModelArchitectureType architecture, int numClasses)
     {
@@ -177,37 +201,12 @@ namespace
             return buildSampleModelGraph(numClasses);
         case ModelArchitectureType::SegNet:
             return buildSegNetGraph(numClasses);
+        case ModelArchitectureType::SegNetDilated:
+            return buildSegNetDilatedGraph(numClasses);
+        case ModelArchitectureType::SegNetFullDilated:
+            return buildSegNetFullDilatedGraph(numClasses);
         }
         throw std::runtime_error("runTraining: unknown ModelArchitectureType");
-    }
-
-    std::shared_ptr<ITimeRecorder> createTimeRecorder(bool enableTimeMeasurement)
-    {
-        if (enableTimeMeasurement)
-        {
-            auto timeReportWriter = std::make_shared<CoutTimeReportWriter>();
-            return std::make_shared<BufferTimeRecorder>(timeReportWriter);
-        }
-        else
-        {
-            return std::make_shared<NullTimeRecorder>();
-        }
-    }
-
-    std::shared_ptr<IParallelExecutor> createParallelExecutor(size_t threadCount)
-    {
-        if (threadCount == 1)
-        {
-            return std::make_shared<SequentialExecutor>();
-        }
-        else if (threadCount > 1)
-        {
-            return std::make_shared<ThreadExecutor>(threadCount);
-        }
-        else
-        {
-            throw std::runtime_error("Invalid threadCount value: " + std::to_string(threadCount));
-        }
     }
 
 } // namespace
@@ -216,142 +215,25 @@ void runTraining()
 {
     // configの読み込み
     ConfigReader configReader;
+    TrainingConfigFile config = configReader.readAll(".config");
 
-    AppConfig appConfig = configReader.readAll(".config");
-
-    training::infrastructure::torchFunc::ensureComputeDeviceAvailable(appConfig.device);
-
-    // TrainParamの設定(.configから取得。将来的にGUI入力にも置き換わる想定)
-    auto param = std::make_shared<TrainParam>(appConfig.epochSize, appConfig.batchSize);
-
-    // ParallelExecutorの生成。(現在は逐次処理のみだが、将来的に並列化する場合は追加する。)
-    auto parallelExecutor = createParallelExecutor(appConfig.threadCount);
-
-    // ITimeRecorderの生成。(enableTimeMeasurement が false ならダミー実装)
-    auto timeRecorder = createTimeRecorder(appConfig.enableTimeMeasurement);
-
-    // labelmap.txt からクラス数を決める(モデル出力チャンネル数の単一の参照元)。
+    // CLI ではモデル構造を .config の model_architecture とクラス数から組み立てる。
+    // クラス数は labelmap.txt のエントリ数(モデル出力チャンネル数の単一の参照元)。
     const std::string labelMapPath =
-        (std::filesystem::path(appConfig.dataset.datasetPath) / "labelmap.txt").string();
-    const ColorLabelMap labelMap = LabelMapFileReader{}.read(labelMapPath);
-    const int numClasses = static_cast<int>(labelMap.entryCount());
-    std::cout << "numClasses = " << numClasses << std::endl;
+        (std::filesystem::path(config.command.datasetPath) / "labelmap.txt").string();
+    const int numClasses = static_cast<int>(LabelMapFileReader{}.read(labelMapPath).entryCount());
+    config.command.modelGraph = buildGraph(config.architecture, numClasses);
 
-    // モデル / Optimizer の生成口。checkpoint からの再構築(CheckpointModelLoader)も
-    // 同じ factory を使うため、cold start 側もここを通しておく。
-    auto modelFactory = std::make_shared<TorchModelFactory>();
-    auto optimizerFactory = std::make_shared<TorchOptimizerFactory>();
-    auto lossFactory = std::make_shared<TorchLossFactory>();
-
-    // ---- 再開元の決定 ----
-    // 1. resume_from が指定されていればそれを使う(GUI のファイル選択結果もここに入る)
-    // 2. 指定がなくても <modelName>_last.pt があれば自動で再開する
-    // 3. どちらもなければ cold start
-    const std::string modelFileName = appConfig.modelName.empty() ? "model" : appConfig.modelName;
-    const std::string autoResumePath =
-        (std::filesystem::path(appConfig.outputDir) / (modelFileName + "_last.pt")).string();
-
-    std::string resumePath;
-    if (!appConfig.resumeFrom.empty())
+    // CLI では進捗を標準出力に書く。停止要求は受け付けない(Ctrl+C で止める)。
+    auto progressObserver = std::make_shared<ConsoleProgressObserver>();
+    try
     {
-        resumePath = appConfig.resumeFrom;
+        const TrainingStatus status = runTrainingJob(config.server, config.command, progressObserver);
+        progressObserver->onFinished(status, "");
     }
-    else if (std::filesystem::exists(autoResumePath))
+    catch (const std::exception &e)
     {
-        resumePath = autoResumePath;
+        progressObserver->onFinished(TrainingStatus::Failed, e.what());
+        throw;
     }
-
-    ModelGraph graph;
-    std::shared_ptr<IModel> model;
-    std::shared_ptr<IOptimizer> optimizer;
-    std::vector<at::Tensor> params;
-    TrainingResumeState resumeState; // 既定値 = cold start
-
-    if (!resumePath.empty())
-    {
-        // 再開: checkpoint から構造ごと組み直す。保存時と同じ ModelGraph を
-        // ここで手組みする必要はない(CheckpointModelLoader が構造を復元する)。
-        std::cout << "resume from: " << resumePath << std::endl;
-
-        CheckpointModelLoader loader(modelFactory, optimizerFactory);
-        RestoredCheckpoint restored = loader.load(resumePath, appConfig.optimizer, appConfig.device);
-
-        graph = restored.graph;
-        model = restored.model;
-        optimizer = restored.optimizer;
-        params = restored.parameters;
-
-        // meta.epoch は「最後に完了したエポック」なので次はその翌エポックから。
-        resumeState.startEpoch = restored.meta.epoch + 1u;
-        resumeState.initialBest = restored.meta.bestMetric;
-        resumeState.hasInitialBest = true;
-
-        // 復元した構造が現在のデータセット(クラス数)と食い違っていないか確認する。
-        // 不一致でも学習自体は走ってしまうが、評価指標が意味を成さなくなるため警告する。
-        if (modelGraphFingerprint(graph) != modelGraphFingerprint(buildGraph(appConfig.architecture, numClasses)))
-        {
-            std::cerr << "[warn] checkpoint のモデル構造が現在の設定"
-                         "(numClasses="
-                      << numClasses << ")から組む構造と異なります。"
-                                       "意図した checkpoint か確認してください。"
-                      << std::endl;
-        }
-    }
-    else
-    {
-        // cold start: 構造を組み、そこからモデル・Optimizer を作る。
-        graph = buildGraph(appConfig.architecture, numClasses);
-        model = modelFactory->create(graph, appConfig.device);
-        params = model->parameters();
-        optimizer = optimizerFactory->create(params, appConfig.optimizer);
-    }
-
-    auto loss = lossFactory->create(appConfig.loss, numClasses, appConfig.ignoreIndex);
-
-    // マスクの Letterbox 余白を埋める値。損失(MseLoss を除く)と評価(mIoU/accuracy)の
-    // 双方でこの値のピクセルを無視する。maskPreProcessor の ignoreIndex と一致させること。
-    const int64_t maskIgnoreIndex = appConfig.ignoreIndex;
-
-    auto trainer = std::make_shared<TorchModelTrainer>(model, loss, optimizer);
-    auto evaluator = std::make_shared<TorchModelEvaluator>(*model, *loss, numClasses, maskIgnoreIndex);
-    auto checkpointStore = std::make_shared<TorchCheckpointStore>(model, optimizer, appConfig.outputDir, appConfig.modelName, graph);
-
-    TrainModelUsecase usecase(param, appConfig, trainer, evaluator, checkpointStore);
-
-    auto decoder = std::make_shared<OpenCvImageDecoder>();
-    auto timedDecoder = std::make_shared<TimedImageDecoder>(decoder, timeRecorder, "image.decode");
-
-    // 画像・マスク共通のジオメトリ。補間/パディングだけ用途別に切り替える。
-    ResizePreprocessorFactory::Geometry geometry;
-    geometry.width = appConfig.input_width;
-    geometry.height = appConfig.input_height;
-    geometry.aspectRatioPolicy = LetterboxPolicy{};
-    ResizePreprocessorFactory preprocessorFactory(geometry);
-
-    // Datasetの作成
-    DatasetSplit trainsplit = DatasetSplit::Train;
-    DatasetSplit valsplit = DatasetSplit::Validation;
-    auto datasetRepository = std::make_shared<DatasetRepositoryFactory>(timedDecoder, std::make_shared<LabelMapFileReader>(), preprocessorFactory, static_cast<uint8_t>(maskIgnoreIndex), param, timeRecorder, parallelExecutor);
-
-    // Decorator で包み、次バッチの読み込みを学習と並行して行う。
-    // さらに PreFetch の内側と外側を TimedDatasetRepository で包み、処理時間を計測する。
-    //   *.produce: ワーカースレッドが 1 バッチを作るのにかかった時間(PreFetch の内側)
-    //   *.wait   : 学習ループがバッチの到着を待った時間(PreFetch の外側。待ちは主に hasNext で発生する)
-    auto trainInner = datasetRepository->create(appConfig.task, appConfig.dataset, trainsplit);
-    auto trainProduce = std::make_shared<TimedDatasetRepository>(trainInner, timeRecorder, "train.produce");
-    auto trainPrefetch = std::make_shared<PreFetchDatasetRepository>(trainProduce);
-    auto trainDataset = std::make_shared<TimedDatasetRepository>(trainPrefetch, timeRecorder, "train.wait");
-
-    auto validationInner = datasetRepository->create(appConfig.task, appConfig.dataset, valsplit);
-    auto validationProduce = std::make_shared<TimedDatasetRepository>(validationInner, timeRecorder, "val.produce");
-    auto validationPrefetch = std::make_shared<PreFetchDatasetRepository>(validationProduce);
-    auto validationDataset = std::make_shared<TimedDatasetRepository>(validationPrefetch, timeRecorder, "val.wait");
-
-    TrainingDatasets datasets;
-    datasets.trainDataset = trainDataset;
-    datasets.validationDataset = validationDataset;
-
-    usecase.execute(datasets, resumeState);
-
-    std::cout << "training loop finished" << std::endl;
 }

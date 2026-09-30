@@ -1,0 +1,46 @@
+version: "3.8"
+services:
+  ai-engine-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: dev
+    volumes:
+      - ../:/workspaces:cached # リポジトリルートをマウント(.gitを含めるため。backend単体マウントだとコンテナ内でgit操作ができなくなる)
+      - ~/.claude:/root/.claude:cached # ホスト側のClaude設定(CLAUDE.md等)を共有
+      - ccache-data:/ccache # ccache のキャッシュをコンテナ再作成後も永続化
+    # VS Code が DevContainer として認識し続けるための設定
+    command: /bin/bash -c "while sleep 1000; do :; done"
+
+    deploy:
+      resources:
+        limits:
+          cpus: "8"
+          memory: 8g
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    cap_add:
+      - SYS_PTRACE
+
+    security_opt:
+      - seccomp:unconfined
+
+    working_dir: /workspaces/apps/backend/ai-engine
+  api-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.rust
+    volumes:
+      - ../:/workspaces:cached
+      - ~/.claude:/root/.claude:cached # ホスト側のClaude設定(CLAUDE.md等)を共有
+      - cargo-registry:/usr/local/cargo/registry # cargo のキャッシュをコンテナ再作成後も永続化
+    # VS Code が DevContainer として認識し続けるための設定(base imageのデフォルトCMDはbashで、TTYがないと即終了するため)
+    command: /bin/bash -c "while sleep 1000; do :; done"
+    working_dir: /workspaces/apps/backend/api
+
+volumes:
+  ccache-data:
+  cargo-registry:

@@ -1,5 +1,12 @@
 #include "training/infrastructure/readConfig/ConfigReader.hpp"
 
+#include "training/entities/domain-objects/ComputeDevice.hpp"
+#include "training/entities/domain-objects/ImageAnnotationConfig.hpp"
+#include "training/entities/domain-objects/ImageAnnotationType.hpp"
+#include "training/entities/domain-objects/LossConfig.hpp"
+#include "training/entities/domain-objects/OptimizerConfig.hpp"
+#include "training/entities/domain-objects/DataSpecs/DataSpec.hpp"
+
 #include <cstdint>
 #include <fstream>
 #include <optional>
@@ -233,19 +240,33 @@ namespace
         std::string task = "Segmentation";
     };
 
-    ImageTaskType parseImageTaskType(const std::string &task)
+    // 画像にしかないキー。ImageSpec / ImageTaskSpecs を組み立てるときに使う。
+    // 未指定(nullopt)のフィールドは各 Spec 構造体の既定値のままにする。
+    struct ImageFields
+    {
+        std::optional<size_t> inputWidth;
+        std::optional<size_t> inputHeight;
+        std::optional<uint8_t> ignoreIndex; // Segmentation のときだけ使う
+    };
+
+    ImageTaskSpecs buildImageTaskSpecs(const std::string &task, const ImageFields &fields)
     {
         if (task == "Classification")
         {
-            return ImageTaskType::IMAGE_CLASSIFICATION;
+            return ClassificationSpec{};
         }
         else if (task == "Detection")
         {
-            return ImageTaskType::OBJECT_DETECTION;
+            return ObjectDetectionSpec{};
         }
         else if (task == "Segmentation")
         {
-            return ImageTaskType::SEMANTIC_SEGMENTATION;
+            SegmentationSpec spec;
+            if (fields.ignoreIndex.has_value())
+            {
+                spec.ignoreIndex = *fields.ignoreIndex;
+            }
+            return spec;
         }
         else
         {
@@ -281,24 +302,33 @@ namespace
         }
     }
 
-    // modality を1回だけ解釈し、その結果で task と dataset の両方を組み立てる。
+    // modality を1回だけ解釈し、その結果で DataSpec(task・annotation・入力形状)をまとめて組み立てる。
     // 「画像のデータなのに波形の task」といった不一致は、ここでは構造上起きない。
-    static_assert(std::variant_size_v<TrainingTaskType> == 1 && std::variant_size_v<DatasetAnnotationConfig> == 1,
+    static_assert(std::variant_size_v<DataSpec> == 1,
                   "モダリティを追加したら applyModality に分岐を追加すること");
 
-    void applyModality(const TaskFields &task, const DatasetFields &dataset, AppConfig &out)
+    void applyModality(const TaskFields &task, const DatasetFields &dataset, const ImageFields &image, StartTrainingCommand &out)
     {
         if (dataset.datasetPath.empty())
         {
             throw std::runtime_error("dataset_path is not specified");
         }
+        out.datasetPath = dataset.datasetPath;
 
         if (task.modality == "Image")
         {
-            out.task = parseImageTaskType(task.task);
-            out.dataset.datasetPath = dataset.datasetPath;
-            out.dataset.annotationConfig =
-                DatasetAnnotationConfig{buildAnnotationConfig(parseImageAnnotationType(dataset.typeName), dataset)};
+            ImageSpec spec;
+            spec.annotation = buildAnnotationConfig(parseImageAnnotationType(dataset.typeName), dataset);
+            spec.taskSpecs = buildImageTaskSpecs(task.task, image);
+            if (image.inputWidth.has_value())
+            {
+                spec.inputWidth = *image.inputWidth;
+            }
+            if (image.inputHeight.has_value())
+            {
+                spec.inputHeight = *image.inputHeight;
+            }
+            out.dataSpec = spec;
             return;
         }
         throw std::runtime_error("Unknown training_task: " + task.modality);
@@ -307,13 +337,16 @@ namespace
 
 ConfigReader::ConfigReader() {}
 
-AppConfig ConfigReader::readAll(const std::string &filePath)
+TrainingConfigFile ConfigReader::readAll(const std::string &filePath)
 {
-    AppConfig appConfig;
+    TrainingConfigFile result;
+    ServerConfig &server = result.server;
+    StartTrainingCommand &command = result.command;
     OptimizerFields optimizerFields;
     LossConfigFields lossFields;
     DatasetFields datasetFields;
     TaskFields taskFields;
+    ImageFields imageFields;
     std::ifstream file(filePath);
 
     if (!file.is_open())
@@ -364,29 +397,6 @@ AppConfig ConfigReader::readAll(const std::string &filePath)
                 else
                 {
                     throw std::runtime_error("Unknown optimizer type: " + value);
-                }
-            }
-            else if (key == "Activefunction_type")
-            {
-                if (value == "ReLU")
-                {
-                    appConfig.activation.activationType = ActivationType::ReLU;
-                }
-                else if (value == "Sigmoid")
-                {
-                    appConfig.activation.activationType = ActivationType::Sigmoid;
-                }
-                else if (value == "Tanh")
-                {
-                    appConfig.activation.activationType = ActivationType::Tanh;
-                }
-                else if (value == "Softmax")
-                {
-                    appConfig.activation.activationType = ActivationType::Softmax;
-                }
-                else
-                {
-                    throw std::runtime_error("Unknown activation type: " + value);
                 }
             }
             else if (key == "learning_rate")
@@ -449,7 +459,7 @@ AppConfig ConfigReader::readAll(const std::string &filePath)
                 {
                     throw std::runtime_error("output_dir value is empty");
                 }
-                appConfig.outputDir = value;
+                server.checkpointOutputDirPath = value;
             }
             // ---- Optimizer 種別ごとのハイパーパラメータ ----
             // 指定しなければ各 Config 構造体の既定値が使われる。
@@ -519,7 +529,7 @@ AppConfig ConfigReader::readAll(const std::string &filePath)
                 {
                     throw std::runtime_error("ignore_index value is out of range [0, 255]: " + value);
                 }
-                appConfig.ignoreIndex = parsedValue;
+                imageFields.ignoreIndex = static_cast<uint8_t>(parsedValue);
             }
             else if (key == "model_name")
             {
@@ -528,7 +538,7 @@ AppConfig ConfigReader::readAll(const std::string &filePath)
                     throw std::runtime_error("model_name value is empty");
                 }
                 // チェックポイントのファイル名(<modelName>_best.pt / _last.pt)に使われる。
-                appConfig.modelName = value;
+                command.modelName = value;
             }
             else if (key == "training_task")
             {
@@ -562,11 +572,19 @@ AppConfig ConfigReader::readAll(const std::string &filePath)
             {
                 if (value == "Sample")
                 {
-                    appConfig.architecture = ModelArchitectureType::Sample;
+                    result.architecture = ModelArchitectureType::Sample;
                 }
                 else if (value == "SegNet")
                 {
-                    appConfig.architecture = ModelArchitectureType::SegNet;
+                    result.architecture = ModelArchitectureType::SegNet;
+                }
+                else if (value == "SegNetDilated")
+                {
+                    result.architecture = ModelArchitectureType::SegNetDilated;
+                }
+                else if (value == "SegNetFullDilated")
+                {
+                    result.architecture = ModelArchitectureType::SegNetFullDilated;
                 }
                 else
                 {
@@ -576,7 +594,7 @@ AppConfig ConfigReader::readAll(const std::string &filePath)
             else if (key == "resume_from")
             {
                 // 空を許す(= 自動判定)。値があればその .pt から再開する。
-                appConfig.resumeFrom = value;
+                command.resumeFrom = value;
             }
             else if (key == "save_last_every")
             {
@@ -599,7 +617,7 @@ AppConfig ConfigReader::readAll(const std::string &filePath)
                 {
                     throw std::runtime_error("save_last_every value must not be negative: " + value);
                 }
-                appConfig.saveLastEvery = static_cast<unsigned int>(parsedValue);
+                command.saveLastEvery = static_cast<unsigned int>(parsedValue);
             }
             else if (key == "epoch_size")
             {
@@ -622,7 +640,7 @@ AppConfig ConfigReader::readAll(const std::string &filePath)
                 {
                     throw std::runtime_error("Epoch size value must be greater than 0: " + value);
                 }
-                appConfig.epochSize = static_cast<unsigned int>(parsedValue);
+                command.epochSize = static_cast<unsigned int>(parsedValue);
             }
             else if (key == "batch_size")
             {
@@ -645,7 +663,7 @@ AppConfig ConfigReader::readAll(const std::string &filePath)
                 {
                     throw std::runtime_error("Batch size value must be greater than 0: " + value);
                 }
-                appConfig.batchSize = static_cast<unsigned int>(parsedValue);
+                command.batchSize = static_cast<unsigned int>(parsedValue);
             }
             else if (key == "input_width")
             {
@@ -667,7 +685,7 @@ AppConfig ConfigReader::readAll(const std::string &filePath)
                 {
                     throw std::runtime_error("input_width value must be greater than 0:" + value);
                 }
-                appConfig.input_width = static_cast<size_t>(parsedValue);
+                imageFields.inputWidth = static_cast<size_t>(parsedValue);
             }
             else if (key == "input_height")
             {
@@ -689,21 +707,21 @@ AppConfig ConfigReader::readAll(const std::string &filePath)
                 {
                     throw std::runtime_error("input_height value must be greater than 0:" + value);
                 }
-                appConfig.input_height = static_cast<size_t>(parsedValue);
+                imageFields.inputHeight = static_cast<size_t>(parsedValue);
             }
             else if (key == "device")
             {
                 // "cpu" / "cuda" / "cuda:N" のパースは ComputeDevice entity の
                 // parseComputeDevice に一任する(不正値は例外を投げる)。
-                appConfig.device = parseComputeDevice(value);
+                command.device = parseComputeDevice(value);
             }
             else if (key == "enable_time_measurement")
             {
-                appConfig.enableTimeMeasurement = parseBool(value, key);
+                server.enableProcessTimeMeasurement = parseBool(value, key);
             }
             else if (key == "thread_count")
             {
-                appConfig.threadCount = parseSizeT(value, key);
+                server.threadCount = parseSizeT(value, key);
             }
             else
             {
@@ -717,11 +735,11 @@ AppConfig ConfigReader::readAll(const std::string &filePath)
     }
 
     // 全行を読み終えてから種別に応じた Config を組み立てる。
-    appConfig.optimizer = buildOptimizerConfig(optimizerFields);
-    appConfig.loss = buildLossConfig(lossFields);
-    applyModality(taskFields, datasetFields, appConfig);
+    command.optimizer = buildOptimizerConfig(optimizerFields);
+    command.loss = buildLossConfig(lossFields);
+    applyModality(taskFields, datasetFields, imageFields, command);
 
-    return appConfig;
+    return result;
 }
 
 std::string ConfigReader::trim(const std::string &str)

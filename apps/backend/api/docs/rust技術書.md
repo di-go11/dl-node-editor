@@ -343,25 +343,594 @@ fn main() {
         }
     };
     println!("The result is: {result}");
-}```
+}
+```
 
-b
+### 所有権規則
 
+- Rustの各値には、**所有権**が存在する。
+- いかなる時も所有者は一つ。
+- 所有者がスコープから外れたら値は破棄される。
 
-## クレート
+#### 変数スコープ
 
-Rustソースコードを集めたもの。
+`string`型を例にして、変数のスコープを説明する。
+
+```rust
+let s = String::from("hello"); // sがスコープに入る
+```
+
+stringはヒープにメモリを確保するため、コンパイル時にはサイズが不明なテキストも保持することが可能。`from`関数を使用して、文字列リテラルから`String`型を生成することが可能。
+
+#### メモリと確保
+
+文字列リテラルの場合、中身はコンパイル時に判明しているため、テキストは最終的なバイナリファイルに直接ハードコードされる。このため、文字列リテラルは、高速で効率的になる。けどこれだと、コンパイル時にサイズが不明だったり、プログラム実行時に合わせてサイズが可変なテキストでは使用できない。
+だからこそ、ヒープに確保して、プログラム実行時にサイズが可変なテキストを保持することができる`String`型が必要になる。さらに、Rustの場合GCがあるため、`allocate`と`free`を行わなくとも、所有権のスコープを抜けると自動的にメモリが解放される。
+
+#### ムーブとデータの相互作用
+
+Rustでは、複数の変数が同じデータに対して様々な手法で相互作用することができる。
+
+xをyにコピーする様子
+```rust
+let x:i32 =5;
+let y:i32 =x;
+```
+
+このコードでは、xとyは整数値なため、スタックに積まれる。これにより、コピーが可能となっている。
+
+次に、コピーができない型の例を示す。
+
+```rust
+let s1 = String::from("hello");
+let s2 = s1; // s1の所有権がs2にム
+```
+
+このコードでは、コピーは行われない。その理由について、Stringの構造を見ながら説明する。
+
+`String`型は以下のような部品でできている。
+
+![](https://doc.rust-jp.rs/book-ja/img/trpl04-01.svg)
+
+`ptr`,`len`,`capacity`の3つはスタックに保持されているが、`ptr`が指すアドレスの先にあるデータはヒープ領域に保持されている。
+
+`s1`を`s2`に代入すると、`String`型のデータがコピーされる。つまり、スタックにある`ptr`,`len`,`capacity`の3つの部品がコピーされるということ。しかし、**ポインタが指すヒープ上のデータはコピーされない**。つまり、`s1`と`s2`は同じヒープ上のデータを指すだけということになる。
+
+![](https://doc.rust-jp.rs/book-ja/img/trpl04-02.svg)
+
+さて、スコープから`s1`、`s2`が同時に抜けた場合どうなるか...
+A: 両方ともそれぞれのスタックの領域+**ヒープの領域**を解放しようとする。これは、**二重解放**を引き起こし、memory corruptionにつながる。
+
+そこで、Rustでは、`let s2 = s1;`した行の後、コンパイラは`s1`が有効ではないと判断する。よって、`s1`がスコープを抜けた際に何も解放する必要がなくなる。つまり、ムーブが発生したということになる。ちなみに、この後に`s1`を使おうとすると、コンパイルエラーになる。
+
+#### クローンによる変数とデータの相互作用
+
+仮に、`String`型のヒープデータのdeep copyを行いたい場合は、`clone`メソッドを使用する。
+
+```rust
+let s1 = String::from("hello");
+let s2 = s1.clone();
+```
+
+これだと、ヒープデータが実際にコピーされる。
+
+#### copyトレイト
+
+Rustには`Copy`トレイトと呼ばれる特別な注釈があり、整数のようなスタックに保持される型に対して配置することができる。型が`copy`トレイトを実装していれば、その型を持つヘンスはムーブされず、代わりにコピーが行われる。
+
+`copy`トレイトを実装している型については、一般的にスカラー値の集合は何でも`copy`を実装することができる。逆にメモリー確保が必要だったり、何らかの形態のリソースだったりするものは`copy`トレイトを実装することができない。具体的な、`copy`トレイトを実装している型の例は以下の通り。
+
+- 整数型
+- 論理型
+- 浮動小数点
+- 文字型
+- タプル
+
+#### 所有権と関数
+
+関数の引数への代入についても、先と同じように型によって、コピーやムーブが発生する。
+
+```rust
+fn main() {
+    let s = String::from("hello");  // sがスコープに入る
+
+    takes_ownership(s);             // sの値が関数にムーブされ...
+                                    // ... ここではもう有効ではない
+
+    let x = 5;                      // xがスコープに入る
+
+    makes_copy(x);                  // xも関数にムーブされるが、
+                                    // i32はCopyなので、この後にxを使っても
+                                    // 大丈夫
+
+} // ここでxがスコープを抜け、sもスコープを抜ける。ただし、sの値はムーブされているので、
+  // 何も特別なことは起こらない。
+
+fn takes_ownership(some_string: String) { // some_stringがスコープに入る。
+    println!("{}", some_string);
+} // ここでsome_stringがスコープを抜け、`drop`が呼ばれる。後ろ盾してたメモリが解放される。
+  // 後ろ盾してたメモリが解放される。
+
+fn makes_copy(some_integer: i32) { // some_integerがスコープに入る
+    println!("{}", some_integer);
+} // ここでsome_integerがスコープを抜ける。何も特別なことはない。
+```
+
+`take_ownership`関数呼び出し後に`s`を呼び出すと、コンパイルエラーが発生する。なぜかはもう分かるよね?
+
+#### 戻り値とスコープ
+
+戻り値の所有権は、呼び出し元が見ている変数にムーブされる。一連の流れについてまとめると、
+$\text{関数の引数にムーブ} \to \text{関数のスコープを抜ける} \to \text{変数の所有権が解放される}$
+これだと、何度も所有権をムーブすることになり、大変。そこで、**参照**を使う。
+
+#### 参照と借用
+
+Rustも他の言語と同じように、参照を用いることでスタックをそのまま使うのではなく、アドレスを渡す事が可能となる。参照先では、そのアドレスを辿ってアドレスに置かれているデータにアクセスできる。ポインタと異なる点として、参照は沿いの生存期間中(スコープ)を通して、特定の型の有効な値を指していることが保証されるという点である。
+
+```rust
+fn main() {
+    let s1 = String::from("hello");
+
+    let len = calculate_length(&s1);
+
+    // '{}'の長さは、{}です
+    println!("The length of '{}' is {}.", s1, len);
+}
+
+fn calculate_length(s: &String) -> usize {
+    s.len()
+}
+```
+
+C++と異なる点として、仮引数だけでなく、実際に引数として代入する際にも`&`をつける必要があるという点に注意する。
+参照の動きを図示するとこうなる。
+
+![](https://doc.rust-jp.rs/book-ja/img/trpl04-05.svg)
+
+参照を作成することを**借用(borrowing)**と呼ぶ。Rustでは,C++と異なり、借用した変数に変更を加えることができない。
+
+```rust
+fn main() {
+    let s = String::from("hello");
+
+    change(&s);
+}
+
+fn change(some_string: &String) {
+    some_string.push_str(", world");
+}
+```
+
+このコードではエラーが起こる。
+**参照も不変である必要がある。**
+
+#### 可変参照
+
+参照を可変にするにはどうすればいいか? 
+A:参照先の変数を可変にすればいい。
+
+```rust
+fn main() {
+    let mut s = String::from("hello");
+    change(&mut s);
+}
+
+fn change(some_string: &mut String){
+    some_string.push_str(", world");
+}
+```
+
+関数のシグネチャや関数呼び出しの際にも`mut`をつけうことで、関数は借用する値を変更することが可能となる。(C++とは逆で、C++では不変参照にしたいものに`const`をつける。)
+
+しかし、可変参照にも大きな制約がある。1つの変数に可変参照を2個作成することが禁止されている。
+
+```rust
+    let mut s = String::from("hello");
+
+    let r1 = &mut s;
+    let r2 = &mut s;
+
+    println!("{}, {}", r1, r2); // これは失敗する。
+```
+
+このような制約の利点としては、コンパイラがコンパイル時にデータ競合を防ぐことができるという点にある。データ競合は、競合状態と類似していて、以下の3つの振る舞いが起きるときに発生する。
+
+1. 2つ以上のポインタが同じデータに同時にアクセスする。
+2. 少なくとも一つのポインタがデータに書き込みを行っている。
+3. データへのアクセスを同期する機構が使用されていない。
+
+これは難しい問題であるからこそ、Rustはデータ競合が起きるコードのコンパイルを拒否することで、データ競合を防いでいる。
+
+逆に、この規則に反さないならOK
+```rust
+    let mut s = String::from("hello");
+
+    let r1 = &s; // 問題なし
+    let r2 = &s; // 問題なし
+    let r3 = &mut s; // 大問題！
+
+    println!("{}, {}, and {}", r1, r2, r3);
+```
+
+こんな感じに、**不変参照だけなら同時並行で呼び出しが可能。しかし、不変参照と可変参照を同時並行することはだめ。**
+
+**また、参照のスコープはその参照変数が最後に使用される時点まで続く。**よって、以下のような、コードはコンパイルが可能。
+
+```rust
+    let mut s = String::from("hello");
+
+    let r1 = &s; // 問題なし
+    let r2 = &s; // 問題なし
+    println!("{} and {}", r1, r2);
+    // r1とr2はもうこれ以降使用されません
+
+    let r3 = &mut s; // 問題なし
+    println!("{}", r3);
+```
+
+コンパイラはスコープの終了より前の時点で参照が使用されていないことが判別できる。
+
+#### 宙に浮いた参照
+
+ポインタのある言語では、**ダングリングポインタ**を誤って生成してしまう事が多々ある。
+
+- **ダングリングポインタ**: 他人に渡されてしまった可能性のあるポインタのことであり、その箇所へのポインタを保持している間に、メモリを解放してしまうことで発生する。
+
+Rustでは、ダングリングポインタが発生しないことを保証してくれる。何らかのデータ参照があった場合、こんなぴらは参照がスコープを抜けるまで、データがスコープを抜けることが内容確認してくれる。
+
+```rust
+fn main() {
+    let reference_to_nothing = dangle();
+}
+
+fn dangle() -> &String {
+    let s = String::from("hello");
+
+    &s
+}
+```
+
+このコードのように、関数スコープを抜けることで無効となる変数の参照を渡してしまうと、値もアドレスも無効となった参照を返すこととなる。Rustでは、コンパイル時にこのようなコードを検知し、コンパイルエラーとしてくれる。
+
+### モジュールとクレート
+
+#### クレート
+
+Rustソースコードを集めたもの。`cargo`を実行するのではなく、単一のソースコードファイルを渡して`rustc`を実行した場合でも、コンパイラはそのファイルをクレートとしてみなす。クレートは、モジュールを含むことができモジュールは、クレーとともにコンパイルされる他のファイル内で定義することができる。
 
 - **バイナリクレート**: 実行可能ファイルから生成されるクレート
-- **ライブラリクレート**: 他のクレートから参照されるクレート。単独で実行することができない。
+- **ライブラリクレート**: 他のクレートから参照されるクレート。単独で実行することができない。一般的に「クレート」と呼ばれる場合は、ライブラリクレートを指す。
+- **クレートルート**: Rustコンパイラの開始地点となり、クレートのルートモジュールを作るソースファイル。
+- **パッケージ**: ある機能群を提供する1つ以上のクレートのまとまり。Cargo.tomlを含むディレクトリがパッケージのルートディレクトリとなる。
 
-### クレート内の自由関数
+#### モジュール
 
-### クレート内のトレイト
+モジュールの宣言
+```rust
+mod front_of_house; // front_of_house.rsをモジュールとして宣言する
+```
 
+#### モジュールの階層と公開
+
+```rust
+mod front_of_house {
+    pub mod hosting {
+        fn add_to_waitlist() {}
+    }
+}
+
+pub fn eat_at_restaurant() {
+    // Absolute path
+    // 絶対パス
+    crate::front_of_house::hosting::add_to_waitlist();
+
+    // Relative path
+    // 相対パス
+    front_of_house::hosting::add_to_waitlist();
+}
+```
+
+このコードだと、エラーになる。なぜなら、`hosting`モジュールは`pub`で公開されているが、`add_to_waitlist`関数は公開されていないため、外部からアクセスできないため。
+
+モジュールツリーについては、**lib.rs**にまとめるのがベストプラクティスとされている。
+
+#### パスによるモジュールや関数へのアクセス(super, create)
+
+モジュールや関数へのアクセスは、**パス**を使って行う。パス指定にはRust独自の**絶対パス**と**相対パス**の2種類がある。
+
+
+|キーワード|意味|ファイルシステムでの類比|
+|---|---|---|
+|`crate`|クレートのルートから絶対的に指定する|/ (ルートディレクトリ)|
+|`super`|現在のモジュールの親へ、相対的に1段上がる|../ (1つ上の階層)|
+|`self`|現在のモジュール自身|./ (カレントディレクトリ)|
+
+```rust
+// lib.rs (クレートルート)
+pub fn root_fn() {}
+
+mod device_type {
+    // ここは entities::device_type モジュール
+
+    pub fn parent_fn() {}
+
+    mod capabilities {
+        // ここは entities::device_type::capabilities モジュール
+
+        fn f() {
+            super::parent_fn();   // 1段上の device_type モジュールの関数を呼ぶ(相対パス)
+            crate::root_fn();     // クレートルートの関数を呼ぶ(絶対パス)
+        }
+    }
+}
+```
+
+- `super::super`とすることで、2段上のモジュールにアクセスすることができる。
+
+
+このコードの上位クレート中に、`deliver_order`関数と`back_of_house`モジュールがあるとする。`back_of_house`モジュールの中から、親モジュールであるcargoクレートの中にある`deliver_order`関数を呼び出すためには、`super::deliver_order()`と書く必要がある。
+
+`super`は「現在のモジュールから見て一つ上の階層のモジュール」を指すキーワード。
+
+#### self
+
+`self`には「現在のモジュール自身」としてパスキーの機能と、メソッド引数としての機能がある。
+
+1. 現在のモジュール自身としてパスキーの機能
+
+`device_type`モジュール自身と、その中の型を同時にインポートしたい場合
+
+```rust
+// self を使わない場合(モジュール名を2回書く必要がある)
+use device_type::DeviceType;
+use device_type;
+
+// self を使う場合(1行にまとめられる)
+use device_type::{self, DeviceType};
+//                ^^^^ これは device_type モジュール自身を指す
+```
+
+現在のモジュール内の要素を明示する
+
+```rust
+mod device_type {
+    pub struct DeviceType;
+
+    pub fn describe () {
+        // 以下の2つの行は同じ意味
+        let _d = DeviceType;
+        let _d = self::DeviceType; 
+    }
+}
+```
+
+つまり、「今いる場所を明示したい時にだけ使う、省略可能な相対パス」と考えればOK。
+
+2. メソッドの引数としての`self`(こっちのほうがよく使う)
+
+Rustでは、`self`という単語を**メソッドの第一引数**として使われる。パス指定とは無関係である。
+
+```rust
+// crates/entities/src/device_type.rs (想定される定義に近い形)
+pub struct DeviceType {
+    name: String,
+}
+
+impl DeviceType {
+    // self を「値として」受け取る → 呼び出し元の所有権を奪う(ムーブ)
+    fn into_name(self) -> String {
+        self.name
+    }
+
+    // &self → 読み取り専用の借用。最も多用されるパターン
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    // &mut self → 書き換え可能な借用
+    fn set_name(&mut self, name: String) {
+        self.name = name;
+    }
+}
+```
+
+|書き方|意味|所有権|
+|---|---|---|
+|`self`|所有権を奪う(そのインスタンスは以後使えなくなる)|ムーブ|
+|`&self`|読み取り専用で借りる|不変借用|
+|`&mut self`|書き換え可能で借りる|可変借用|
+
+この`self`は「インスタンス自身」を指す。
+逆に、メソッドを実装している構造体以外のインスタンスを渡す場合は、`self`ではなく、構造体名を使う。
+
+```rust
+struct DeviceType { name: String }
+struct Capabilities { max_memory: u64 }
+
+impl DeviceType {
+    fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+fn main() {
+    let cap = Capabilities { max_memory: 1024 };
+    
+    DeviceType::name(&cap); 
+    // エラー: expected `&DeviceType`, found `&Capabilities`
+    // (mismatched types)
+}
+```
+`self`に対して、異なる型を渡すとエラーが生じる。
+
+##### 現在のモジュール自身としてパスキーの機能
+
+`device_type`モジュール自身と、その中の型
+```rust
+// self を使わない場合(モジュール名を2回書く必要がある)
+use device_type::DeviceType;
+use device_type;
+
+// self を使う場合(1行にまとめられる)
+use device_type::{self, DeviceType};
+//                 ^^^^ これは device_type モジュール自身を指す
+```
 ## Cargo
 
 Rustのプロジェクト管理ツール。クレートの作成、依存関係の管理、ビルド、テストなどを担当する。
+
+### Cargo.toml
+
+Cargo.tomlはTOML(Tom's Obvious, Minimal Language)形式で書かれた設定ファイルで、Rustのビルドツール兼パッケージマネージャとなる。`[package]`はTOMLの「テーブル」と呼ばれる構文単位で、其のクレート(Rustにおけるコンパイル単位・配布単位)自体メタデータを記述する場所。これに対し、`[dependencies]`は依存関係、`[workspace]`は複数クレートの束ね方といった、別の関心事を表すテーブルである。
+
+#### `[package]`
+
+##### 必須フィールド
+
+```toml
+[package]
+name = "hello_cargo" # クレート名
+version = "0.1.0" # クレートのバージョン
+edition = "2021" # Rustのエディション
+```
+
+|フィールド|意味|原理・理由|
+|---|---|---|
+|`name`|クレート名|crates.ioなどのレジストリで一意な識別子としてつかわれる。ハイフンはアンダースコアと同一視される。|
+|`version`|クレートのバージョン番号|SemVer `MAJOR.MINOR.PATCH`に従う。依存関係の互換性判定にCargoがこの規約を利用するため、自由な文字列ではなく規約への準拠が要求される。|
+|`edition`|言語エディション|`2015`, `2018`, `2021`,`2024`のいずれか。Rustは後方互換性を保ったまま言語仕様を進化させるため、エディションという単位でコンパイラの解釈モードを切り替える仕組みを採用している|
+
+##### バージョン番号の付け方
+
+※
+MAJOR,MINOR,PATCH
+|桁|上げる条件|具体例|
+|---|---|---|
+|MAJOR|後方互換性を破壊する変更|公開関数の引数を変更・削除、構造体フィールドの型変更|
+|MINOR|後方互換性を保った機能追加|新しい公開関数やモジュールの追加|
+|PATCH|後方互換性を保ったバグ修正|ロジックの内部修正、ドキュメント修正|
+
+1. 開発初期・API未確定 → 0.1.0 のまま固定し、内部的な変更は気にせず進める(社内利用クレートで publish = false ならこの状態を長く維持しても実害はない)。
+2. 最初の安定版を公開する時 → 1.0.0 に上げる。「これ以降は互換性を守る」という利用者への約束がここから始まる。
+3. 以降は上表の基準に従って機械的に判断する。
+
+##### 任意フィールド
+
+```toml
+[package]
+name = "entities" 
+version = "0.1.0"
+edition = "2021"
+description = "ドメインエンティティを定義するクレート"
+license = "MIT"
+authors = ["dago <d_goo-tech@outlook.jp>"]
+repository = "https://github.com/..."
+readme = "README.md"
+publish = false          # crates.io への公開を禁止する
+default-run = "api"       # 複数バイナリがある場合のデフォルト実行対象
+```
+
+##### 「プロジェクト」と「クレート」の階層関係
+
+```
+/workspaces/apps/backend/api/          ← ワークスペース(=プロジェクト全体)
+├─ Cargo.toml                          ← [workspace] 定義
+│
+└─ crates/
+   ├─ entities/                        ← 1つのクレート(ライブラリ)
+   │   ├─ Cargo.toml                   ← [package] name = "entities"
+   │   └─ src/
+   │       ├─ lib.rs                   ← クレートのエントリーポイント
+   │       └─ device_type.rs           ← lib.rs 配下のモジュール
+   │
+   └─ adapters/                        ← 1つのクレート(ライブラリ)
+       ├─ Cargo.toml                   ← [package] name = "adapters"
+       ├─ build.rs                     ← ビルド時に実行される特殊スクリプト
+       └─ src/
+           ├─ lib.rs                   ← クレートのエントリーポイント
+           ├─ error.rs                 ← lib.rs 配下のモジュール
+           └─ try_from.rs              ← lib.rs 配下のモジュール
+```
+
+- ワークスペースは複数のクレートを束ねる、Cargoレベルの概念で、プロジェクトのルートのtomlで`[workspace]`を宣言することで定義される。
+- クレートはワークスペースの中の1つの構成要素であり、それぞれが独立した`[package]`セクション(=独立したコンパイル単位)を持つ。
+- `lib.rs`で「クレートに属する全モジュールを`rustc`
+
+### Cargo.tomlの生成方法
+
+Cargo.tomlは種類によって、コマンドで自動生成するものと手動で作成するものに分かれる。
+
+|ファイル|作り方|
+|---|---|
+|ワークスペースのルートの`Cargo.toml`|**手動**で作成する(生成するコマンドはない)|
+|各クレートの`Cargo.toml`|`cargo new` / `cargo init`で**自動生成**する|
+|依存関係(`[dependencies]`など)の追記|`cargo add`で自動追記する(手で書いても同じ)|
+|`Cargo.lock`|ビルド時に完全自動生成される(手で触らない)|
+
+#### 1. ワークスペースのルートを手動で作成
+
+`/workspaces/apps/backend/api/Cargo.toml`を作成し、以下を記述する。
+
+```toml
+[workspace]
+resolver = "2"
+members = ["crates/*"] # crates/ 以下のディレクトリをすべてメンバーにする
+```
+
+先にルートを作っておくと、この後の`cargo new` / `cargo init`がワークスペースのメンバーとして認識してくれる。`members = ["crates/*"]`としておけば、クレートを増やすたびにルートを書き換える必要はない。
+
+#### 2. クレートを生成
+
+```bash
+cd /workspaces/apps/backend/api
+
+# ディレクトリがまだ無い場合: ディレクトリごと新規作成
+cargo new --lib crates/usecases   # ライブラリクレート(src/lib.rs)
+cargo new --bin crates/server     # バイナリクレート(src/main.rs)
+
+# ディレクトリ(src/*.rs)が既にある場合: 既存ファイルを残したまま Cargo.toml と lib.rs を追加
+cargo init --lib crates/entities
+```
+
+- `--lib`: ライブラリクレートとして`src/lib.rs`を生成する。他のクレートから参照される部品(`entities`, `adapters`など)に使う。
+- `--bin`: バイナリクレートとして`src/main.rs`を生成する(省略時のデフォルト)。`main`関数を持つ実行ファイルに使う。
+- 生成された`lib.rs`には`add`関数のサンプルが入っているので、`mod ○○;`や`pub use`に書き換える。
+- `lib.rs`で`mod`宣言していないファイルはコンパイル対象にならず、rust-analyzerも解析しない。
+- ファイル名はsnake_case(`get_capabilities.rs`)にする。PascalCaseにすると`mod`宣言で警告が出る。
+
+#### 3. 依存関係を追加
+
+```bash
+# 外部クレート(crates.io)を追加 → [dependencies]
+cargo add thiserror -p entities
+cargo add tonic tonic-prost prost -p adapters
+
+# ワークスペース内の別クレートを追加 → [dependencies] に path 指定で入る
+cargo add entities --path crates/entities -p adapters
+
+# ビルド時(build.rs)だけ使うクレート → [build-dependencies]
+cargo add tonic-prost-build --build -p adapters
+
+# テストだけで使うクレート → [dev-dependencies]
+cargo add tokio --dev -p usecases
+
+# feature を指定して追加
+cargo add tokio --features macros,rt-multi-thread -p server
+
+# 依存を削除
+cargo remove proto -p adapters
+```
+
+|オプション|意味|
+|---|---|
+|`-p <クレート名>`|どのクレートの`Cargo.toml`に追記するか。ワークスペースのルートで実行するときに必要|
+|`--path <パス>`|crates.ioではなく、ローカルのクレートを依存に追加する|
+|`--build`|`[build-dependencies]`に追加する。`build.rs`からだけ使える|
+|`--dev`|`[dev-dependencies]`に追加する。テストからだけ使える|
+|`--features <名前>`|クレートのオプション機能を有効にする|
+
+`cargo add`は、実行時点でRustのバージョンに合う最新版を`Cargo.toml`に書き込み、`Cargo.lock`も更新する。
 
 ### Cargoを使用したクレートの追加
 
@@ -386,6 +955,75 @@ Cargoは自分や他の人がコードをビルドするたびに、同じ生成
 クレートを本当に更新したくなった時、Cargoは`cargo update`コマンドを提供している。このコマンドは`cargo.lock`ファイルを無視して、`cargo.toml`ファイル内の全ての指定に適合する最新バージョンを算出する。成功したらCargoはそれらのバージョンを`cargo.lock`ファイルに記録する。ただ、Cargoはデフォルトで**0.8.5以上、0.9.0未満**の最新バージョンを取得する。もし、0.9.0がリリースされていた場合、Cargoはそれを取得しない。これは、SemVerの仕様に従っているためである。
 
 0.9.0を取得したい場合は、Cargo.tomlの`rand`のバージョン指定を0.9.0に変更する必要がある。
+
+### ビルド・チェック・テストのコマンド
+
+コマンドはワークスペースのルート(`/workspaces/apps/backend/api`)で実行する。`-p`を付けないとワークスペース全体が対象になる。
+
+|コマンド|何をするか|実行ファイルを作るか|
+|---|---|---|
+|`cargo check`|型エラー・借用エラーなどのコンパイルチェックだけを行う|作らない(速い)|
+|`cargo clippy`|`check`に加えて、Rustらしくない書き方や非効率な書き方を警告する(lint)|作らない|
+|`cargo build`|コンパイルして実行ファイル・ライブラリを作る|作る|
+|`cargo run`|`build`してからバイナリクレートを実行する|作る|
+|`cargo test`|テスト用にビルドして`#[test]` / `#[tokio::test]`を実行する|テスト用を作る|
+|`cargo fmt`|rustfmtでコードを整形する|―|
+|`cargo clean`|`target/`を丸ごと削除する|―|
+
+#### check / clippy
+
+```bash
+cargo check                              # 最速のコンパイルチェック
+cargo clippy --workspace --all-targets   # 全クレートの本体 + テストコードまで lint する
+cargo clippy --fix --lib -p entities --tests   # clippy の提案を自動で適用する
+```
+
+- `--all-targets`: 本体(lib/bin)だけでなく、テストコード(`#[cfg(test)]`)もチェック対象にする。付けないとテストの中の警告は出ない。
+- devcontainerの設定(`"rust-analyzer.check.command": "clippy"`)により、VS Codeはファイル保存のたびに裏でclippyを実行している。エディタ上の赤線・黄線はこの結果。
+
+#### build / run
+
+```bash
+cargo build                   # 開発用ビルド(最適化なし・デバッグ情報あり)→ target/debug/
+cargo build --release         # 本番用ビルド(最適化あり・ビルドは遅いが実行は速い)→ target/release/
+cargo build -p adapters       # 指定したクレート(と、その依存)だけビルドする
+
+cargo run -p server           # バイナリクレート server をビルドして実行する
+cargo run -p server -- --port 8080   # -- の後ろはプログラム自身への引数になる
+```
+
+- ビルドの成果物はワークスペースのルートの`target/`にまとめて出力される(`.gitignore`で除外済み)。
+- `build.rs`があるクレート(`adapters`)は、本体より先に`build.rs`が実行される。`.proto`を変更すると次のビルドで`pb`のコードが自動で再生成される。生成物は`target/debug/build/adapters-xxxx/out/`に置かれる。
+
+#### test
+
+```bash
+cargo test --workspace                     # 全クレートのテストを実行
+cargo test -p adapters                     # adapters のテストだけ実行
+cargo test -p adapters deviceinfo          # テスト名に "deviceinfo" を含むものだけ実行
+cargo test -p entities -- --nocapture      # 成功したテストの println! も表示する
+```
+
+- `cargo test <文字列>`: テスト名(`モジュール名::関数名`)の部分一致で絞り込む。
+- `--`の後ろはテストランナーへのオプション。`--nocapture`を付けないと、成功したテストの標準出力は表示されない。
+- VS Codeでは`#[test]`の上に出る **▶ Run Test** からも実行できる(rust-analyzerの機能)。
+
+#### fmt
+
+```bash
+cargo fmt            # ワークスペース全体を整形する
+cargo fmt --check    # 整形はせず、差分があるかだけを確認する(CI向け)
+```
+
+- 保存時の自動整形(`formatOnSave`)は開いて保存したファイルにしか効かないため、まとめて整形したいときは`cargo fmt`を使う。
+
+#### コミット前の確認
+
+```bash
+cargo fmt --check && cargo clippy --workspace --all-targets && cargo test --workspace
+```
+
+`&&`でつなぐと、前のコマンドが失敗した時点で止まる。3つとも通ればコミットしてよい状態。
 
 ## トレイト(Trait)
 
@@ -452,3 +1090,13 @@ fn print_speak_Dog(animal: &Dog) {
 | 柔軟性 | 型はコンパイル時に確定が必要 | 実行時に異なる型を混在させたコレクションなどが可能 |
 
 これが「Rustのゼロコスト抽象化」という思想の具体的な中身である。抽象化(トレイトによる契約)を導入しても、静的ディスパッチを選ぶ限り、手書きで型ごとに書いたコードと同等の実行効率が得られる、という設計原理である。クリーンアーキテクチャの文脈で言えば、「DIPによる抽象化」と「パフォーマンス」を両立させたい場合に、`dyn Trait`ではなくジェネリクス+トレイト境界を選ぶ理由がここにある。
+
+## 標準ライブラリ
+
+### assert
+
+`assert!`(および`assert_eq!`, `assert_ne!`)は、テストやデバッグのために条件を検証するマクロである。条件が偽の場合、プログラムはパニックを起こし、スタックトレースとともに終了する。
+
+- `assert!(条件)`: 条件が`false`なら`assertion failed: 条件式`というメッセージでパニック。
+- `assert_eq!(左辺, 右辺)`: 左辺と右辺が等しくない場合、`assertion failed: 左辺 == 右辺`というメッージでパニック。
+- `assert_ne!(左辺, 右辺)`: 左辺と右辺が等しい場合、`assertion failed: 左辺 != 右辺`というメッセージでパニック。

@@ -3,7 +3,7 @@
 #include "./TorchModelTrainer.hpp"
 #include "./BatchTensorConverter.hpp"
 
-#include "../../entities/domain-objects/EpochMetrics.hpp"
+#include "../../entities/domain-objects/Metrics/EpochMetrics.hpp"
 #include "../../entities/domain-objects/TrainingBatch.hpp"
 #include "../../entities/domain-objects/BatchData.hpp"
 #include "../../entities/image/ImageData.hpp"
@@ -51,6 +51,7 @@ EpochMetrics TorchModelTrainer::trainOneEpoch(IDatasetRepository &trainData)
 
     EpochMetrics metrics;
     metrics.loss = pixelCount > 0 ? lossSum / static_cast<double>(pixelCount) : 0.0;
-    // pixelAccuracy / mIoU は学習中の集計コストを避け、validation 側で測る方針。
+    // タスク別の指標(pixelAccuracy / mIoU など)は学習中の集計コストを避け、validation 側で測る方針。
+    // taskMetrics は既定値(先頭の型をゼロ初期化したもの)のままなので、学習側では参照しないこと。
     return metrics;
 }

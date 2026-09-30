@@ -6,7 +6,7 @@
 
 // 画像アノテーション形式ごとの固有設定。LossConfig / OptimizerConfig と同じ
 // std::variant 方式。学習タスク(検出/セグメンテーション)は形式ではなく学習の
-// 目的なので AppConfig 側(TrainingTaskType)が持ち、ここには置かない。
+// 目的なので ImageSpec 側(ImageTaskSpecs)が持ち、ここには置かない。
 
 struct PascalVocConfig
 {
