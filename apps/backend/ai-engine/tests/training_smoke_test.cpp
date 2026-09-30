@@ -285,7 +285,7 @@ int main()
 
     auto loss = std::make_shared<CrossEntropy>();
     auto trainer = std::make_shared<TorchModelTrainer>(model, loss, optimizer);
-    auto evaluator = std::make_shared<TorchModelEvaluator>(*model, *loss, numClasses, kIgnoreIndex);
+    auto evaluator = std::make_shared<TorchModelEvaluator>(*model, *loss, numClasses, imageSpec.taskSpecs);
 
     const std::vector<at::Tensor> initialWeights = snapshot(params);
 

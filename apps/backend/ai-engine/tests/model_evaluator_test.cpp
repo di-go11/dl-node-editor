@@ -105,9 +105,9 @@ TrainingBatch makeBatch(const std::vector<uint8_t> &targetMask)
 }
 
 // [1,2,2,2] の prediction を作る。channel 次元の argmax が predictedMask になる。
-torch::Tensor makePrediction(const std::vector<int64_t> &predictedMask)
+torch::Tensor makePrediction(const std::vector<int64_t> &predictedMask, int64_t numClasses = 2)
 {
-    torch::Tensor logits = torch::zeros({1, 2, 2, 2});
+    torch::Tensor logits = torch::zeros({1, numClasses, 2, 2});
     for (int64_t p = 0; p < 4; ++p)
     {
         const int64_t y = p / 2;
@@ -127,25 +127,27 @@ int main()
         FakeModel model(makePrediction({0, 1, 1, 0}));
         FakeLoss loss;
         SingleBatchDataset dataset(makeBatch(target));
-        TorchModelEvaluator evaluator(model, loss, /*numClasses=*/2);
+        TorchModelEvaluator evaluator(model, loss, /*numClasses=*/2, SegmentationSpec{});
 
         EpochMetrics metrics = evaluator.evaluate(dataset);
         const auto &seg = std::get<SegmentationMetricsConfig>(metrics.taskMetrics);
 
         checkNear(seg.pixelAccuracy, 1.0, "perfect: pixelAccuracy == 1.0");
         checkNear(seg.meanIoU, 1.0, "perfect: meanIoU == 1.0");
+        checkNear(seg.fwIoU, 1.0, "perfect: fwIoU == 1.0");
+        checkNear(seg.meanClassAccuracy, 1.0, "perfect: meanClassAccuracy == 1.0");
         checkNear(metrics.loss, 0.5, "perfect: loss == 0.5");
         check(seg.perClassIoU.size() == 2, "perfect: perClassIoU に 2 クラス分");
         check(model.setEvalCalls == 1, "perfect: setEval が1回呼ばれる");
         check(model.setTrainCalls == 1, "perfect: 評価後に setTrain へ戻す");
     }
 
-    // ---------- 全画素をクラス0と予測: accuracy=0.5, mIoU=0.25 ----------
+    // ---------- 全画素をクラス0(背景)と予測: accuracy=0.5, mIoU=0(背景を除くため) ----------
     {
         FakeModel model(makePrediction({0, 0, 0, 0}));
         FakeLoss loss;
         SingleBatchDataset dataset(makeBatch(target));
-        TorchModelEvaluator evaluator(model, loss, /*numClasses=*/2);
+        TorchModelEvaluator evaluator(model, loss, /*numClasses=*/2, SegmentationSpec{});
 
         EpochMetrics metrics = evaluator.evaluate(dataset);
         const auto &seg = std::get<SegmentationMetricsConfig>(metrics.taskMetrics);
@@ -154,7 +156,36 @@ int main()
         checkNear(seg.pixelAccuracy, 0.5, "all-zero: pixelAccuracy == 0.5");
         checkNear(seg.perClassIoU[0], 0.5, "all-zero: class0 IoU == 0.5");
         checkNear(seg.perClassIoU[1], 0.0, "all-zero: class1 IoU == 0.0");
-        checkNear(seg.meanIoU, 0.25, "all-zero: meanIoU == 0.25");
+        // meanIoU は背景(class0)を除くので class1 の IoU だけの平均
+        checkNear(seg.meanIoU, 0.0, "all-zero: meanIoU == 0.0(背景を除く)");
+        // 出現頻度は class0 / class1 とも 0.5 -> 0.5*0.5 + 0.5*0 = 0.25
+        checkNear(seg.fwIoU, 0.25, "all-zero: fwIoU == 0.25");
+        // class0 の accuracy=2/2, class1 の accuracy=0/2 -> 平均 0.5
+        checkNear(seg.meanClassAccuracy, 0.5, "all-zero: meanClassAccuracy == 0.5");
+    }
+
+    // ---------- 3クラス: 背景を除いた meanIoU・fwIoU・meanClassAccuracy ----------
+    {
+        // target {0,1,2,2} に対して {0,1,1,2} と予測(class2 の1画素を class1 と誤る)
+        FakeModel model(makePrediction({0, 1, 1, 2}, /*numClasses=*/3));
+        FakeLoss loss;
+        SingleBatchDataset dataset(makeBatch({0, 1, 2, 2}));
+        TorchModelEvaluator evaluator(model, loss, /*numClasses=*/3, SegmentationSpec{});
+
+        EpochMetrics metrics = evaluator.evaluate(dataset);
+        const auto &seg = std::get<SegmentationMetricsConfig>(metrics.taskMetrics);
+
+        // class0: TP=1, FP=0, FN=0 -> IoU=1 / class1: TP=1, FP=1 -> IoU=0.5 / class2: TP=1, FN=1 -> IoU=0.5
+        checkNear(seg.pixelAccuracy, 0.75, "3class: pixelAccuracy == 0.75");
+        checkNear(seg.perClassIoU[0], 1.0, "3class: class0 IoU == 1.0");
+        checkNear(seg.perClassIoU[1], 0.5, "3class: class1 IoU == 0.5");
+        checkNear(seg.perClassIoU[2], 0.5, "3class: class2 IoU == 0.5");
+        // 背景を含めると (1+0.5+0.5)/3 になるが、除くので (0.5+0.5)/2
+        checkNear(seg.meanIoU, 0.5, "3class: meanIoU == 0.5(背景を除く)");
+        // 出現頻度 0.25 / 0.25 / 0.5 -> 0.25*1 + 0.25*0.5 + 0.5*0.5 = 0.625
+        checkNear(seg.fwIoU, 0.625, "3class: fwIoU == 0.625");
+        // accuracy 1 / 1 / 0.5 -> 平均 2.5/3
+        checkNear(seg.meanClassAccuracy, 2.5 / 3.0, "3class: meanClassAccuracy == 0.8333");
     }
 
     // ---------- ignore_index(255): Letterbox 余白の扱い ----------
@@ -167,7 +198,7 @@ int main()
         FakeModel model(makePrediction({0, 1, 1, 0})); // 有効3画素は全て正解、無視画素の予測は 0
         FakeLoss loss;
         SingleBatchDataset dataset(makeBatch(maskedTarget));
-        TorchModelEvaluator evaluator(model, loss, /*numClasses=*/2, /*ignoreIndex=*/255);
+        TorchModelEvaluator evaluator(model, loss, /*numClasses=*/2, SegmentationSpec{/*ignoreIndex=*/255});
 
         EpochMetrics metrics = evaluator.evaluate(dataset);
         const auto &seg = std::get<SegmentationMetricsConfig>(metrics.taskMetrics);
@@ -182,7 +213,7 @@ int main()
         FakeModel model(makePrediction({0, 0, 0, 0}));
         FakeLoss loss;
         SingleBatchDataset dataset(makeBatch({255, 255, 255, 255}));
-        TorchModelEvaluator evaluator(model, loss, /*numClasses=*/2, /*ignoreIndex=*/255);
+        TorchModelEvaluator evaluator(model, loss, /*numClasses=*/2, SegmentationSpec{/*ignoreIndex=*/255});
 
         EpochMetrics metrics = evaluator.evaluate(dataset);
         const auto &seg = std::get<SegmentationMetricsConfig>(metrics.taskMetrics);
@@ -190,6 +221,8 @@ int main()
         checkNear(seg.pixelAccuracy, 0.0, "all-ignore: pixelAccuracy == 0.0");
         checkNear(metrics.loss, 0.0, "all-ignore: loss == 0.0");
         checkNear(seg.meanIoU, 0.0, "all-ignore: meanIoU == 0.0");
+        checkNear(seg.fwIoU, 0.0, "all-ignore: fwIoU == 0.0");
+        checkNear(seg.meanClassAccuracy, 0.0, "all-ignore: meanClassAccuracy == 0.0");
     }
 
     if (failureCount == 0)

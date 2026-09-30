@@ -316,14 +316,12 @@ void runTraining()
         optimizer = optimizerFactory->create(params, command.optimizer);
     }
 
+    // ignoreIndex はマスクの Letterbox 余白を埋める値。損失(MseLoss を除く)と評価(mIoU/accuracy)の
+    // 双方でこの値のピクセルを無視する。評価器と DatasetRepositoryFactory も同じ SegmentationSpec から読む。
     auto loss = lossFactory->create(command.loss, numClasses, segmentationSpec->ignoreIndex);
 
-    // マスクの Letterbox 余白を埋める値。損失(MseLoss を除く)と評価(mIoU/accuracy)の
-    // 双方でこの値のピクセルを無視する。DatasetRepositoryFactory も同じ SegmentationSpec から読む。
-    const uint8_t maskIgnoreIndex = segmentationSpec->ignoreIndex;
-
     auto trainer = std::make_shared<TorchModelTrainer>(model, loss, optimizer);
-    auto evaluator = std::make_shared<TorchModelEvaluator>(*model, *loss, numClasses, maskIgnoreIndex);
+    auto evaluator = std::make_shared<TorchModelEvaluator>(*model, *loss, numClasses, imageSpec->taskSpecs);
     auto checkpointStore = std::make_shared<TorchCheckpointStore>(model, optimizer, server.checkpointOutputDirPath, command.modelName, graph);
 
     TrainModelUsecase usecase(param, command.saveLastEvery, trainer, evaluator, checkpointStore);

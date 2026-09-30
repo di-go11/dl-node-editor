@@ -38,7 +38,7 @@ inline std::string describe(const TaskMetrics &m)
                               return "SegmentationMetricsConfig{pixelAccuracy: " + std::to_string(s.pixelAccuracy) +
                                      ", meanIoU: " + std::to_string(s.meanIoU) +
                                      ", fwIoU: " + std::to_string(s.fwIoU) +
-                                     ", meanClassIoU: " + std::to_string(s.meanClassIoU) +
+                                     ", meanClassAccuracy: " + std::to_string(s.meanClassAccuracy) +
                                      ", perClassIoU: [" + (s.perClassIoU.empty() ? "" : std::to_string(s.perClassIoU[0])) +
                                      (s.perClassIoU.size() > 1 ? ", ..." : "") + "]}";
                           },

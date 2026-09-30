@@ -9,23 +9,50 @@
 #include "training/adapters/interfaces/ILoss.hpp"
 #include "training/adapters/impl/BatchTensorConverter.hpp"
 
+#include "training/entities/utils/Overloaded.hpp"
+
 #include <torch/torch.h>
 
 #include <limits>
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <variant>
 
-TorchModelEvaluator::TorchModelEvaluator(IModel &model, ILoss &loss, int numClasses, int64_t ignoreIndex)
-    : _model(model), _loss(loss), _numClasses(numClasses), _ignoreIndex(ignoreIndex)
+namespace
+{
+    // 背景クラスのインデックス。labelmap の先頭(background)がクラス0になる。
+    // meanIoU の平均からは除外する(背景が画素の大半を占め、mIoU を押し上げてしまうため)。
+    constexpr int kBackgroundClass = 0;
+}
+
+TorchModelEvaluator::TorchModelEvaluator(IModel &model, ILoss &loss, int numClasses, ImageTaskSpecs taskSpecs)
+    : _model(model), _loss(loss), _numClasses(numClasses), _taskSpecs(std::move(taskSpecs))
 {
 }
 
 EpochMetrics TorchModelEvaluator::evaluate(IDatasetRepository &valData)
 {
-    // 評価ロジックを実装する
-    // ここでは、_model を使用して valData 上で評価を行い、EpochMetrics を返す
-    // 例: 損失や精度の計算など
+    return std::visit(
+        Overloaded{
+            [&](const SegmentationSpec &spec) -> EpochMetrics
+            {
+                return evaluateSegmentation(valData, spec.ignoreIndex);
+            },
+            [](const ObjectDetectionSpec &) -> EpochMetrics
+            {
+                throw std::runtime_error("TorchModelEvaluator: ObjectDetection の評価はまだ対応していません");
+            },
+            [](const ClassificationSpec &) -> EpochMetrics
+            {
+                throw std::runtime_error("TorchModelEvaluator: Classification の評価はまだ対応していません");
+            },
+        },
+        _taskSpecs);
+}
+
+EpochMetrics TorchModelEvaluator::evaluateSegmentation(IDatasetRepository &valData, const int64_t ignoreIndex)
+{
     _model.setEval();          // モデルを評価モードに設定
     torch::NoGradGuard noGrad; // このスコープ内は勾配計算を無効化
 
@@ -58,7 +85,7 @@ EpochMetrics TorchModelEvaluator::evaluate(IDatasetRepository &valData)
         // ignore_index(Letterbox 余白など)のピクセルは損失・指標から除外する。
         // 除外しないと target=255 が混同行列のインデックス(target*C+pred)を
         // はみ出させ、[C,C] への reshape が破綻する。
-        const torch::Tensor validMask = (target != _ignoreIndex); // [N,H,W] bool
+        const torch::Tensor validMask = (target != ignoreIndex); // [N,H,W] bool
         const int64_t validCount = validMask.sum().item<int64_t>();
         if (validCount == 0)
         {
@@ -84,7 +111,7 @@ EpochMetrics TorchModelEvaluator::evaluate(IDatasetRepository &valData)
         {
             throw std::runtime_error(
                 "TorchModelEvaluator: ターゲットに [0, " + std::to_string(_numClasses) +
-                ") かつ ignoreIndex(" + std::to_string(_ignoreIndex) +
+                ") かつ ignoreIndex(" + std::to_string(ignoreIndex) +
                 ") 以外の値が含まれています。ラベルマップ / ignoreIndex 設定を確認してください。");
         }
 
@@ -99,35 +126,53 @@ EpochMetrics TorchModelEvaluator::evaluate(IDatasetRepository &valData)
     SegmentationMetricsConfig segMetrics;
     segMetrics.pixelAccuracy =
         validPixelCount > 0 ? static_cast<double>(correctCount) / static_cast<double>(validPixelCount) : 0.0;
-    // TODO: fwIoU / meanClassIoU はまだ計算していない。値がないことがログでわかるよう NaN にしておく。
-    segMetrics.fwIoU = std::numeric_limits<double>::quiet_NaN();
-    segMetrics.meanClassIoU = std::numeric_limits<double>::quiet_NaN();
 
-    // クラスごとの IoU = TP / (TP + FP + FN)
+    // 混同行列の行 = 正解クラス、列 = 予測クラス
     torch::Tensor tp = confusionMatrix.diag().to(torch::kFloat64);
     torch::Tensor fp = confusionMatrix.sum(0).to(torch::kFloat64) - tp;
     torch::Tensor fn = confusionMatrix.sum(1).to(torch::kFloat64) - tp;
-    torch::Tensor denom = tp + fp + fn;
+    torch::Tensor denom = tp + fp + fn; // IoU の分母
 
-    double iouSum = 0.0;
-    int validClasses = 0;
+    double iouSum = 0.0;          // meanIoU 用(背景を除く)
+    int iouClasses = 0;
+    double fwIoU = 0.0;           // Σ 出現頻度 × IoU
+    double classAccuracySum = 0.0; // meanClassAccuracy 用
+    int accuracyClasses = 0;
     segMetrics.perClassIoU.reserve(_numClasses);
     for (int c = 0; c < _numClasses; ++c)
     {
         const double d = denom[c].item<double>();
+        const double tpC = tp[c].item<double>();
+        const double gtC = tpC + fn[c].item<double>(); // 正解がクラス c のピクセル数
+
+        // IoU = TP / (TP + FP + FN)。正解にも予測にも現れないクラスは NaN にして平均から外す。
         if (d > 0.0)
         {
-            const double iou = tp[c].item<double>() / d;
+            const double iou = tpC / d;
             segMetrics.perClassIoU.push_back(iou);
-            iouSum += iou;
-            ++validClasses;
+            if (c != kBackgroundClass)
+            {
+                iouSum += iou;
+                ++iouClasses;
+            }
+            // 出現頻度 = 正解がクラス c のピクセル数 / 有効ピクセル数
+            fwIoU += (gtC / static_cast<double>(validPixelCount)) * iou;
         }
         else
         {
             segMetrics.perClassIoU.push_back(std::numeric_limits<double>::quiet_NaN());
         }
+
+        // クラスごとの accuracy = TP / (TP + FN)。正解に現れないクラスは平均から外す。
+        if (gtC > 0.0)
+        {
+            classAccuracySum += tpC / gtC;
+            ++accuracyClasses;
+        }
     }
-    segMetrics.meanIoU = validClasses > 0 ? iouSum / validClasses : 0.0;
+    segMetrics.meanIoU = iouClasses > 0 ? iouSum / iouClasses : 0.0;
+    segMetrics.fwIoU = fwIoU; // 有効ピクセルが 0 のときは全クラス d == 0 なので 0 のまま
+    segMetrics.meanClassAccuracy = accuracyClasses > 0 ? classAccuracySum / accuracyClasses : 0.0;
 
     EpochMetrics metrics;
     metrics.loss = validPixelCount > 0 ? lossSum / static_cast<double>(validPixelCount) : 0.0;
