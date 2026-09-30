@@ -24,7 +24,7 @@
 #include "training/entities/domain-objects/ComputeDevice.hpp"
 #include "training/entities/domain-objects/Conv2DParams.hpp"
 #include "training/entities/domain-objects/DatasetSplit.hpp"
-#include "training/entities/domain-objects/EpochMetrics.hpp"
+#include "training/entities/domain-objects/Metrics/EpochMetrics.hpp"
 #include "training/entities/domain-objects/LayersConfig.hpp"
 #include "training/entities/domain-objects/ModelGraph.hpp"
 #include "training/entities/domain-objects/OptimizerConfig.hpp"
@@ -290,17 +290,18 @@ int main()
     const int epochs = 25;
     std::vector<double> trainLoss;
     trainLoss.reserve(epochs);
-    EpochMetrics lastVal;
+    SegmentationMetricsConfig lastVal{};
     bool anyNonFinite = false;
 
     for (int e = 0; e < epochs; ++e)
     {
         const EpochMetrics tm = trainer->trainOneEpoch(*trainDs);
         const EpochMetrics vm = evaluator->evaluate(*valDs); // ← ignore_index を含むマスクで落ちないこと
+        const auto &seg = std::get<SegmentationMetricsConfig>(vm.taskMetrics);
         trainLoss.push_back(tm.loss);
-        lastVal = vm;
+        lastVal = seg;
         if (!std::isfinite(tm.loss) || !std::isfinite(vm.loss) ||
-            !std::isfinite(vm.pixelAccuracy) || !std::isfinite(vm.meanIoU))
+            !std::isfinite(seg.pixelAccuracy) || !std::isfinite(seg.meanIoU))
         {
             anyNonFinite = true;
         }

@@ -1,7 +1,8 @@
 #include "./TrainModelUsecase.hpp"
 
 #include "../../entities/domain-objects/TrainParam.hpp"
-#include "../../entities/domain-objects/EpochMetrics.hpp"
+#include "../../entities/domain-objects/Metrics/EpochMetrics.hpp"
+#include "../../entities/domain-objects/Metrics/MonitoredMetric.hpp"
 #include "training/application/impl/TrainingDatasets.hpp"
 #include "training/application/impl/BestMetricTracker.hpp"
 #include "../interfaces/IModelTrainer.hpp"
@@ -10,6 +11,7 @@
 
 #include <exception>
 #include <iostream>
+#include <optional>
 
 TrainModelUsecase::TrainModelUsecase(const std::shared_ptr<TrainParam> &param,
                                      const AppConfig &appConfig,
@@ -36,19 +38,19 @@ void TrainModelUsecase::execute(const TrainingDatasets &datasets, const Training
         return;
     }
 
-    // validation mIoU(大きいほど良い)を監視し、更新されたエポックだけ重みを保存する。
+    // validation の監視指標(タスクごとに monitoredMetric() が決める。例: Segmentation は mIoU)を監視し、
+    // 更新されたエポックだけ重みを保存する。
     // 再開時は過去のベストを引き継ぐ。引き継がないと最初のエポックが必ず
     // 「初回 = 改善」と判定され、より悪いモデルで best を上書きしてしまう。
-    BestMetricTracker bestMiou = resume.hasInitialBest
-                                     ? BestMetricTracker(MetricMode::Max, resume.initialBest)
-                                     : BestMetricTracker(MetricMode::Max);
+    // 指標の向き(Max / Min)は評価結果のタスク種別で決まるため、最初の評価後に構築する。
+    std::optional<BestMetricTracker> bestTracker;
 
     if (resume.startEpoch > 0)
     {
         std::cout << "resume: epoch " << resume.startEpoch << " から再開";
         if (resume.hasInitialBest)
         {
-            std::cout << " (best mIoU=" << resume.initialBest << " を引き継ぎ)";
+            std::cout << " (best=" << resume.initialBest << " を引き継ぎ)";
         }
         std::cout << std::endl;
     }
@@ -57,20 +59,27 @@ void TrainModelUsecase::execute(const TrainingDatasets &datasets, const Training
     {
         const EpochMetrics trainMetrics = _trainer->trainOneEpoch(*datasets.trainDataset);
         const EpochMetrics valMetrics = _evaluator->evaluate(*datasets.validationDataset);
+        const MonitoredMetric monitored = monitoredMetric(valMetrics.taskMetrics);
+
+        if (!bestTracker.has_value())
+        {
+            bestTracker = resume.hasInitialBest
+                              ? BestMetricTracker(monitored.mode, resume.initialBest)
+                              : BestMetricTracker(monitored.mode);
+        }
 
         std::cout << "epoch " << epoch
                   << " | train_loss=" << trainMetrics.loss
                   << " | val_loss=" << valMetrics.loss
-                  << " | val_pixel_acc=" << valMetrics.pixelAccuracy
-                  << " | val_mIoU=" << valMetrics.meanIoU
+                  << " | val " << describe(valMetrics.taskMetrics)
                   << std::endl;
 
-        if (bestMiou.update(valMetrics.meanIoU))
+        if (bestTracker->update(monitored.value))
         {
             try
             {
-                _checkpointStore->saveBest({epoch, bestMiou.best()});
-                std::cout << "  -> best updated (val_mIoU=" << bestMiou.best() << ")" << std::endl;
+                _checkpointStore->saveBest({epoch, bestTracker->best()});
+                std::cout << "  -> best updated (val_" << monitored.name << "=" << bestTracker->best() << ")" << std::endl;
             }
             catch (const std::exception &e)
             {
@@ -88,7 +97,7 @@ void TrainModelUsecase::execute(const TrainingDatasets &datasets, const Training
         {
             try
             {
-                _checkpointStore->saveLast({epoch, bestMiou.best()});
+                _checkpointStore->saveLast({epoch, bestTracker->best()});
             }
             catch (const std::exception &e)
             {

@@ -2,7 +2,7 @@
 
 #include "training/application/interfaces/IDatasetRepository.hpp"
 
-#include "training/entities/domain-objects/EpochMetrics.hpp"
+#include "training/entities/domain-objects/Metrics/EpochMetrics.hpp"
 #include "training/entities/domain-objects/TrainingBatch.hpp"
 
 #include "training/adapters/interfaces/IModel.hpp"
@@ -14,6 +14,7 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 TorchModelEvaluator::TorchModelEvaluator(IModel &model, ILoss &loss, int numClasses, int64_t ignoreIndex)
     : _model(model), _loss(loss), _numClasses(numClasses), _ignoreIndex(ignoreIndex)
@@ -95,10 +96,12 @@ EpochMetrics TorchModelEvaluator::evaluate(IDatasetRepository &valData)
     _model.setTrain(); // 呼び出し後は学習モードへ戻す
 
     // --- 集計を確定 ---
-    EpochMetrics metrics;
-    metrics.loss = validPixelCount > 0 ? lossSum / static_cast<double>(validPixelCount) : 0.0;
-    metrics.pixelAccuracy =
+    SegmentationMetricsConfig segMetrics;
+    segMetrics.pixelAccuracy =
         validPixelCount > 0 ? static_cast<double>(correctCount) / static_cast<double>(validPixelCount) : 0.0;
+    // TODO: fwIoU / meanClassIoU はまだ計算していない。値がないことがログでわかるよう NaN にしておく。
+    segMetrics.fwIoU = std::numeric_limits<double>::quiet_NaN();
+    segMetrics.meanClassIoU = std::numeric_limits<double>::quiet_NaN();
 
     // クラスごとの IoU = TP / (TP + FP + FN)
     torch::Tensor tp = confusionMatrix.diag().to(torch::kFloat64);
@@ -108,23 +111,26 @@ EpochMetrics TorchModelEvaluator::evaluate(IDatasetRepository &valData)
 
     double iouSum = 0.0;
     int validClasses = 0;
-    metrics.perClassIoU.reserve(_numClasses);
+    segMetrics.perClassIoU.reserve(_numClasses);
     for (int c = 0; c < _numClasses; ++c)
     {
         const double d = denom[c].item<double>();
         if (d > 0.0)
         {
             const double iou = tp[c].item<double>() / d;
-            metrics.perClassIoU.push_back(iou);
+            segMetrics.perClassIoU.push_back(iou);
             iouSum += iou;
             ++validClasses;
         }
         else
         {
-            metrics.perClassIoU.push_back(std::numeric_limits<double>::quiet_NaN());
+            segMetrics.perClassIoU.push_back(std::numeric_limits<double>::quiet_NaN());
         }
     }
-    metrics.meanIoU = validClasses > 0 ? iouSum / validClasses : 0.0;
+    segMetrics.meanIoU = validClasses > 0 ? iouSum / validClasses : 0.0;
 
+    EpochMetrics metrics;
+    metrics.loss = validPixelCount > 0 ? lossSum / static_cast<double>(validPixelCount) : 0.0;
+    metrics.taskMetrics = std::move(segMetrics);
     return metrics;
 }

@@ -1,13 +1,7 @@
 #pragma once
 
-// 監視するメトリクスの「良い方向」。
-//   Max: 大きいほど良い(mIoU, accuracy など)
-//   Min: 小さいほど良い(loss など)
-enum class MetricMode
-{
-    Max,
-    Min
-};
+// 監視するメトリクスの「良い方向」(Max / Min)。定義は Metrics 側に置く。
+#include "training/entities/domain-objects/Metrics/MetricMode.hpp"
 
 // これまでに観測した最良値を保持し、更新されたかどうかを判定する。
 // TrainModelUsecase がベストモデルのチェックポイント保存を判断するために使う。

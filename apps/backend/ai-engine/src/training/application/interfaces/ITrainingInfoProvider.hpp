@@ -1,6 +1,6 @@
 #pragma once
 
-#include "training/entities/domain-objects/Metrics/MetricsConfig.hpp"
+#include "training/entities/domain-objects/Metrics/TaskMetrics.hpp"
 
 #include <string>
 
@@ -10,7 +10,7 @@ struct TrainingProcessSnapshot
     double train_loss;
     double val_loss;
     std::string status;
-    MetricsConfig metrics;
+    TaskMetrics metrics;
 };
 
 class ITrainingInfoProvider

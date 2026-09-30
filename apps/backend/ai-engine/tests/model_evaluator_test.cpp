@@ -9,7 +9,7 @@
 #include "training/adapters/interfaces/IModel.hpp"
 #include "training/adapters/interfaces/ILoss.hpp"
 #include "training/application/interfaces/IDatasetRepository.hpp"
-#include "training/entities/domain-objects/EpochMetrics.hpp"
+#include "training/entities/domain-objects/Metrics/EpochMetrics.hpp"
 #include "training/entities/domain-objects/TrainingBatch.hpp"
 #include "training/entities/image/ImageData.hpp"
 #include "training/entities/image/NormalizedImageData.hpp"
@@ -130,11 +130,12 @@ int main()
         TorchModelEvaluator evaluator(model, loss, /*numClasses=*/2);
 
         EpochMetrics metrics = evaluator.evaluate(dataset);
+        const auto &seg = std::get<SegmentationMetricsConfig>(metrics.taskMetrics);
 
-        checkNear(metrics.pixelAccuracy, 1.0, "perfect: pixelAccuracy == 1.0");
-        checkNear(metrics.meanIoU, 1.0, "perfect: meanIoU == 1.0");
+        checkNear(seg.pixelAccuracy, 1.0, "perfect: pixelAccuracy == 1.0");
+        checkNear(seg.meanIoU, 1.0, "perfect: meanIoU == 1.0");
         checkNear(metrics.loss, 0.5, "perfect: loss == 0.5");
-        check(metrics.perClassIoU.size() == 2, "perfect: perClassIoU に 2 クラス分");
+        check(seg.perClassIoU.size() == 2, "perfect: perClassIoU に 2 クラス分");
         check(model.setEvalCalls == 1, "perfect: setEval が1回呼ばれる");
         check(model.setTrainCalls == 1, "perfect: 評価後に setTrain へ戻す");
     }
@@ -147,12 +148,13 @@ int main()
         TorchModelEvaluator evaluator(model, loss, /*numClasses=*/2);
 
         EpochMetrics metrics = evaluator.evaluate(dataset);
+        const auto &seg = std::get<SegmentationMetricsConfig>(metrics.taskMetrics);
 
         // class0: TP=2, FP=2, FN=0 -> IoU=0.5 / class1: TP=0, FN=2 -> IoU=0
-        checkNear(metrics.pixelAccuracy, 0.5, "all-zero: pixelAccuracy == 0.5");
-        checkNear(metrics.perClassIoU[0], 0.5, "all-zero: class0 IoU == 0.5");
-        checkNear(metrics.perClassIoU[1], 0.0, "all-zero: class1 IoU == 0.0");
-        checkNear(metrics.meanIoU, 0.25, "all-zero: meanIoU == 0.25");
+        checkNear(seg.pixelAccuracy, 0.5, "all-zero: pixelAccuracy == 0.5");
+        checkNear(seg.perClassIoU[0], 0.5, "all-zero: class0 IoU == 0.5");
+        checkNear(seg.perClassIoU[1], 0.0, "all-zero: class1 IoU == 0.0");
+        checkNear(seg.meanIoU, 0.25, "all-zero: meanIoU == 0.25");
     }
 
     // ---------- ignore_index(255): Letterbox 余白の扱い ----------
@@ -168,9 +170,10 @@ int main()
         TorchModelEvaluator evaluator(model, loss, /*numClasses=*/2, /*ignoreIndex=*/255);
 
         EpochMetrics metrics = evaluator.evaluate(dataset);
+        const auto &seg = std::get<SegmentationMetricsConfig>(metrics.taskMetrics);
 
-        checkNear(metrics.pixelAccuracy, 1.0, "ignore: 無視画素を除けば accuracy == 1.0(落ちない)");
-        checkNear(metrics.meanIoU, 1.0, "ignore: 無視画素を除けば mIoU == 1.0");
+        checkNear(seg.pixelAccuracy, 1.0, "ignore: 無視画素を除けば accuracy == 1.0(落ちない)");
+        checkNear(seg.meanIoU, 1.0, "ignore: 無視画素を除けば mIoU == 1.0");
         checkNear(metrics.loss, 0.5, "ignore: loss は FakeLoss の 0.5");
     }
 
@@ -182,10 +185,11 @@ int main()
         TorchModelEvaluator evaluator(model, loss, /*numClasses=*/2, /*ignoreIndex=*/255);
 
         EpochMetrics metrics = evaluator.evaluate(dataset);
+        const auto &seg = std::get<SegmentationMetricsConfig>(metrics.taskMetrics);
 
-        checkNear(metrics.pixelAccuracy, 0.0, "all-ignore: pixelAccuracy == 0.0");
+        checkNear(seg.pixelAccuracy, 0.0, "all-ignore: pixelAccuracy == 0.0");
         checkNear(metrics.loss, 0.0, "all-ignore: loss == 0.0");
-        checkNear(metrics.meanIoU, 0.0, "all-ignore: meanIoU == 0.0");
+        checkNear(seg.meanIoU, 0.0, "all-ignore: meanIoU == 0.0");
     }
 
     if (failureCount == 0)

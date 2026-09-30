@@ -17,7 +17,7 @@
 #include "training/application/impl/BestMetricTracker.hpp"
 #include "training/application/impl/TrainingResumeState.hpp"
 #include "training/entities/domain-objects/AppConfig.hpp"
-#include "training/entities/domain-objects/EpochMetrics.hpp"
+#include "training/entities/domain-objects/Metrics/EpochMetrics.hpp"
 #include "training/entities/domain-objects/TrainParam.hpp"
 
 namespace
@@ -90,8 +90,10 @@ public:
 
     EpochMetrics evaluate(IDatasetRepository &) override
     {
-        EpochMetrics m;
-        m.meanIoU = _mious.at(_index++);
+        SegmentationMetricsConfig seg{};
+        seg.meanIoU = _mious.at(_index++);
+        EpochMetrics m{};
+        m.taskMetrics = seg;
         return m;
     }
 
