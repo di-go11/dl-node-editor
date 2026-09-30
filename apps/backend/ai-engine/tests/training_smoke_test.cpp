@@ -8,7 +8,7 @@
 //   - validation 指標が有限で [0,1] に収まる
 //   - checkpoint が保存でき、CheckpointModelLoader で再構築 → 再開できる
 //
-// 実データ(<repo>/dataset/train)が無い環境では skip する(CI 可搬性のため)。
+// 実データ(<repo>/TrainingDataset/train)が無い環境では skip する(CI 可搬性のため)。
 // 本物から数サンプルだけコピーした一時 VOC ディレクトリを作って回す。
 
 #include <cmath>
@@ -54,7 +54,7 @@
 #include "training/adapters/impl/parallelProcessFn/SequentialExecutor.hpp"
 
 #ifndef SMOKE_SRC_DATASET
-#define SMOKE_SRC_DATASET "dataset/train"
+#define SMOKE_SRC_DATASET "TrainingDataset/train"
 #endif
 #ifndef SMOKE_TMP_DIR
 #define SMOKE_TMP_DIR "training_smoke_tmp"
