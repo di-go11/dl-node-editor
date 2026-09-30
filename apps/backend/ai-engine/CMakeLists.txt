@@ -315,6 +315,18 @@ target_link_libraries(loss_function_test PRIVATE ai_engine_lib "${TORCH_LIBRARIE
 target_link_options(loss_function_test PRIVATE "-Wl,--allow-shlib-undefined")
 set_property(TARGET loss_function_test PROPERTY CXX_STANDARD 17)
 
+# 17. TrainingProgressStore(学習進捗の保管・待ち合わせ)の単体テスト。
+add_executable(training_progress_store_test tests/training_progress_store_test.cpp)
+target_include_directories(training_progress_store_test PRIVATE
+	${CMAKE_CURRENT_SOURCE_DIR}/src
+	${CMAKE_CURRENT_SOURCE_DIR}
+	${TORCH_INCLUDE_DIRS}
+	${OpenCV_INCLUDE_DIRS}
+)
+target_link_libraries(training_progress_store_test PRIVATE ai_engine_lib "${TORCH_LIBRARIES}" ${OpenCV_LIBS})
+target_link_options(training_progress_store_test PRIVATE "-Wl,--allow-shlib-undefined")
+set_property(TARGET training_progress_store_test PROPERTY CXX_STANDARD 17)
+
 # libtorchを使用するテスト
 
 ## 1. TorchLossFactoryとTorchLossConfigの整合性テスト
@@ -333,6 +345,8 @@ enable_testing()
 
 add_test(NAME torch_loss_factory_test COMMAND torch_loss_factory_test)
 add_test(NAME image_pipeline_test COMMAND image_pipeline_test)
+add_test(NAME training_progress_store_test COMMAND training_progress_store_test)
 
 set_tests_properties(torch_loss_factory_test PROPERTIES LABELS "cpu")
 set_tests_properties(image_pipeline_test PROPERTIES LABELS "cpu")
+set_tests_properties(training_progress_store_test PROPERTIES LABELS "cpu")
