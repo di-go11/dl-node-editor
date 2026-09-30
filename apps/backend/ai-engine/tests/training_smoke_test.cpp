@@ -324,14 +324,9 @@ int main()
     // ---- TrainModelUsecase + 実 CheckpointStore で 2 エポック回して checkpoint 保存 ----
     const fs::path ckptDir = dst / "ckpt";
     {
-        AppConfig appConfig;
-        appConfig.modelName = "smoke";
-        appConfig.outputDir = ckptDir.string();
-        appConfig.saveLastEvery = 0;
-
         auto p2 = std::make_shared<TrainParam>(/*epoch=*/2u, /*batch=*/1u);
         auto store = std::make_shared<TorchCheckpointStore>(model, optimizer, ckptDir.string(), "smoke", graph);
-        TrainModelUsecase usecase(p2, appConfig, trainer, evaluator, store);
+        TrainModelUsecase usecase(p2, /*saveLastEvery=*/0u, trainer, evaluator, store);
 
         TrainingDatasets datasets;
         datasets.trainDataset = trainDs;

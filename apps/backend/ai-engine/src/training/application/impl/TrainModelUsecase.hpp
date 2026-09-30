@@ -3,7 +3,6 @@
 #include <memory>
 #include <string>
 
-#include "training/entities/domain-objects/AppConfig.hpp"
 #include "training/application/impl/TrainingResumeState.hpp"
 
 // インターフェース、クラスの前方宣言
@@ -17,14 +16,14 @@ class TrainModelUsecase
 {
 private:
     std::shared_ptr<TrainParam> _param;
-    AppConfig _appConfig;
+    unsigned int _saveLastEvery; // 「直近」チェックポイントを何エポックごとに書くか(0 = 毎エポック)
     std::shared_ptr<IModelTrainer> _trainer;
     std::shared_ptr<IModelEvaluator> _evaluator;
     std::shared_ptr<ICheckpointStore> _checkpointStore;
 
 public:
     TrainModelUsecase(const std::shared_ptr<TrainParam> &param,
-                      const AppConfig &appConfig,
+                      unsigned int saveLastEvery,
                       const std::shared_ptr<IModelTrainer> &trainer,
                       const std::shared_ptr<IModelEvaluator> &evaluator,
                       const std::shared_ptr<ICheckpointStore> &checkpointStore);

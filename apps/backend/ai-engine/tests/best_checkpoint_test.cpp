@@ -16,7 +16,6 @@
 #include "training/application/impl/TrainingDatasets.hpp"
 #include "training/application/impl/BestMetricTracker.hpp"
 #include "training/application/impl/TrainingResumeState.hpp"
-#include "training/entities/domain-objects/AppConfig.hpp"
 #include "training/entities/domain-objects/Metrics/EpochMetrics.hpp"
 #include "training/entities/domain-objects/TrainParam.hpp"
 
@@ -111,16 +110,12 @@ std::shared_ptr<FakeCheckpointStore> runUsecaseStore(const std::vector<double> &
                                                      unsigned int saveLastEvery = 0u)
 {
     auto param = std::make_shared<TrainParam>(totalEpochs, 1u);
-    AppConfig appConfig;
-    appConfig.modelName = "test";
-    appConfig.outputDir = "build/test_checkpoints";
-    appConfig.saveLastEvery = saveLastEvery;
 
     auto trainer = std::make_shared<FakeTrainer>();
     auto evaluator = std::make_shared<FakeEvaluator>(valMious);
     auto store = std::make_shared<FakeCheckpointStore>();
 
-    TrainModelUsecase usecase(param, appConfig, trainer, evaluator, store);
+    TrainModelUsecase usecase(param, saveLastEvery, trainer, evaluator, store);
 
     TrainingDatasets datasets;
     datasets.trainDataset = std::make_shared<FakeDataset>();

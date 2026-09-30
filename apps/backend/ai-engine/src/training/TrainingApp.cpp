@@ -217,22 +217,32 @@ void runTraining()
     // configの読み込み
     ConfigReader configReader;
 
-    AppConfig appConfig = configReader.readAll(".config");
+    const TrainingConfigFile config = configReader.readAll(".config");
+    const ServerConfig &server = config.server;
+    const StartTrainingCommand &command = config.command;
 
-    training::infrastructure::torchFunc::ensureComputeDeviceAvailable(appConfig.device);
+    // この学習パイプラインは画像セグメンテーション専用(評価器・データセットが対応していない)。
+    const ImageSpec *imageSpec = std::get_if<ImageSpec>(&command.dataSpec);
+    const SegmentationSpec *segmentationSpec = imageSpec ? std::get_if<SegmentationSpec>(&imageSpec->taskSpecs) : nullptr;
+    if (segmentationSpec == nullptr)
+    {
+        throw std::runtime_error("runTraining: 現在は画像セグメンテーション(training_task = Image, training_task_type = Segmentation)のみ対応しています");
+    }
+
+    training::infrastructure::torchFunc::ensureComputeDeviceAvailable(command.device);
 
     // TrainParamの設定(.configから取得。将来的にGUI入力にも置き換わる想定)
-    auto param = std::make_shared<TrainParam>(appConfig.epochSize, appConfig.batchSize);
+    auto param = std::make_shared<TrainParam>(command.epochSize, command.batchSize);
 
     // ParallelExecutorの生成。(現在は逐次処理のみだが、将来的に並列化する場合は追加する。)
-    auto parallelExecutor = createParallelExecutor(appConfig.threadCount);
+    auto parallelExecutor = createParallelExecutor(server.threadCount);
 
     // ITimeRecorderの生成。(enableTimeMeasurement が false ならダミー実装)
-    auto timeRecorder = createTimeRecorder(appConfig.enableTimeMeasurement);
+    auto timeRecorder = createTimeRecorder(server.enableProcessTimeMeasurement);
 
     // labelmap.txt からクラス数を決める(モデル出力チャンネル数の単一の参照元)。
     const std::string labelMapPath =
-        (std::filesystem::path(appConfig.dataset.datasetPath) / "labelmap.txt").string();
+        (std::filesystem::path(command.datasetPath) / "labelmap.txt").string();
     const ColorLabelMap labelMap = LabelMapFileReader{}.read(labelMapPath);
     const int numClasses = static_cast<int>(labelMap.entryCount());
     std::cout << "numClasses = " << numClasses << std::endl;
@@ -247,14 +257,14 @@ void runTraining()
     // 1. resume_from が指定されていればそれを使う(GUI のファイル選択結果もここに入る)
     // 2. 指定がなくても <modelName>_last.pt があれば自動で再開する
     // 3. どちらもなければ cold start
-    const std::string modelFileName = appConfig.modelName.empty() ? "model" : appConfig.modelName;
+    const std::string modelFileName = command.modelName.empty() ? "model" : command.modelName;
     const std::string autoResumePath =
-        (std::filesystem::path(appConfig.outputDir) / (modelFileName + "_last.pt")).string();
+        (std::filesystem::path(server.checkpointOutputDirPath) / (modelFileName + "_last.pt")).string();
 
     std::string resumePath;
-    if (!appConfig.resumeFrom.empty())
+    if (!command.resumeFrom.empty())
     {
-        resumePath = appConfig.resumeFrom;
+        resumePath = command.resumeFrom;
     }
     else if (std::filesystem::exists(autoResumePath))
     {
@@ -274,7 +284,7 @@ void runTraining()
         std::cout << "resume from: " << resumePath << std::endl;
 
         CheckpointModelLoader loader(modelFactory, optimizerFactory);
-        RestoredCheckpoint restored = loader.load(resumePath, appConfig.optimizer, appConfig.device);
+        RestoredCheckpoint restored = loader.load(resumePath, command.optimizer, command.device);
 
         graph = restored.graph;
         model = restored.model;
@@ -288,7 +298,7 @@ void runTraining()
 
         // 復元した構造が現在のデータセット(クラス数)と食い違っていないか確認する。
         // 不一致でも学習自体は走ってしまうが、評価指標が意味を成さなくなるため警告する。
-        if (modelGraphFingerprint(graph) != modelGraphFingerprint(buildGraph(appConfig.architecture, numClasses)))
+        if (modelGraphFingerprint(graph) != modelGraphFingerprint(buildGraph(config.architecture, numClasses)))
         {
             std::cerr << "[warn] checkpoint のモデル構造が現在の設定"
                          "(numClasses="
@@ -300,49 +310,54 @@ void runTraining()
     else
     {
         // cold start: 構造を組み、そこからモデル・Optimizer を作る。
-        graph = buildGraph(appConfig.architecture, numClasses);
-        model = modelFactory->create(graph, appConfig.device);
+        graph = buildGraph(config.architecture, numClasses);
+        model = modelFactory->create(graph, command.device);
         params = model->parameters();
-        optimizer = optimizerFactory->create(params, appConfig.optimizer);
+        optimizer = optimizerFactory->create(params, command.optimizer);
     }
 
-    auto loss = lossFactory->create(appConfig.loss, numClasses, appConfig.ignoreIndex);
+    auto loss = lossFactory->create(command.loss, numClasses, segmentationSpec->ignoreIndex);
 
     // マスクの Letterbox 余白を埋める値。損失(MseLoss を除く)と評価(mIoU/accuracy)の
     // 双方でこの値のピクセルを無視する。maskPreProcessor の ignoreIndex と一致させること。
-    const int64_t maskIgnoreIndex = appConfig.ignoreIndex;
+    const uint8_t maskIgnoreIndex = segmentationSpec->ignoreIndex;
 
     auto trainer = std::make_shared<TorchModelTrainer>(model, loss, optimizer);
     auto evaluator = std::make_shared<TorchModelEvaluator>(*model, *loss, numClasses, maskIgnoreIndex);
-    auto checkpointStore = std::make_shared<TorchCheckpointStore>(model, optimizer, appConfig.outputDir, appConfig.modelName, graph);
+    auto checkpointStore = std::make_shared<TorchCheckpointStore>(model, optimizer, server.checkpointOutputDirPath, command.modelName, graph);
 
-    TrainModelUsecase usecase(param, appConfig, trainer, evaluator, checkpointStore);
+    TrainModelUsecase usecase(param, command.saveLastEvery, trainer, evaluator, checkpointStore);
 
     auto decoder = std::make_shared<OpenCvImageDecoder>();
     auto timedDecoder = std::make_shared<TimedImageDecoder>(decoder, timeRecorder, "image.decode");
 
     // 画像・マスク共通のジオメトリ。補間/パディングだけ用途別に切り替える。
     ResizePreprocessorFactory::Geometry geometry;
-    geometry.width = appConfig.input_width;
-    geometry.height = appConfig.input_height;
+    geometry.width = imageSpec->inputWidth;
+    geometry.height = imageSpec->inputHeight;
     geometry.aspectRatioPolicy = LetterboxPolicy{};
     ResizePreprocessorFactory preprocessorFactory(geometry);
 
     // Datasetの作成
     DatasetSplit trainsplit = DatasetSplit::Train;
     DatasetSplit valsplit = DatasetSplit::Validation;
-    auto datasetRepository = std::make_shared<DatasetRepositoryFactory>(timedDecoder, std::make_shared<LabelMapFileReader>(), preprocessorFactory, static_cast<uint8_t>(maskIgnoreIndex), param, timeRecorder, parallelExecutor);
+    auto datasetRepository = std::make_shared<DatasetRepositoryFactory>(timedDecoder, std::make_shared<LabelMapFileReader>(), preprocessorFactory, maskIgnoreIndex, param, timeRecorder, parallelExecutor);
 
     // Decorator で包み、次バッチの読み込みを学習と並行して行う。
     // さらに PreFetch の内側と外側を TimedDatasetRepository で包み、処理時間を計測する。
     //   *.produce: ワーカースレッドが 1 バッチを作るのにかかった時間(PreFetch の内側)
     //   *.wait   : 学習ループがバッチの到着を待った時間(PreFetch の外側。待ちは主に hasNext で発生する)
-    auto trainInner = datasetRepository->create(appConfig.task, appConfig.dataset, trainsplit);
+    // DatasetRepositoryFactory はまだ旧形式(TrainingTaskType + DatasetConfig)を受け取るため詰め替える。
+    // セグメンテーションであることは冒頭で確認済み。
+    const DatasetConfig datasetConfig{command.datasetPath, imageSpec->annotation};
+    const TrainingTaskType taskType = ImageTaskType::SEMANTIC_SEGMENTATION;
+
+    auto trainInner = datasetRepository->create(taskType, datasetConfig, trainsplit);
     auto trainProduce = std::make_shared<TimedDatasetRepository>(trainInner, timeRecorder, "train.produce");
     auto trainPrefetch = std::make_shared<PreFetchDatasetRepository>(trainProduce);
     auto trainDataset = std::make_shared<TimedDatasetRepository>(trainPrefetch, timeRecorder, "train.wait");
 
-    auto validationInner = datasetRepository->create(appConfig.task, appConfig.dataset, valsplit);
+    auto validationInner = datasetRepository->create(taskType, datasetConfig, valsplit);
     auto validationProduce = std::make_shared<TimedDatasetRepository>(validationInner, timeRecorder, "val.produce");
     auto validationPrefetch = std::make_shared<PreFetchDatasetRepository>(validationProduce);
     auto validationDataset = std::make_shared<TimedDatasetRepository>(validationPrefetch, timeRecorder, "val.wait");

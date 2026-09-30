@@ -1,18 +1,28 @@
 #pragma once
 
-#include <string>
 #include "training/entities/domain-objects/ModelGraph.hpp"
 #include "training/entities/domain-objects/OptimizerConfig.hpp"
 #include "training/entities/domain-objects/LossConfig.hpp"
 #include "training/entities/domain-objects/ComputeDevice.hpp"
+#include "training/entities/domain-objects/DataSpecs/DataSpec.hpp"
+
+#include <string>
 
 struct StartTrainingCommand
 {
     std::string modelName;
+    ModelGraph modelGraph;
     OptimizerConfig optimizer;
     LossConfig loss;
-    unsigned int epochSize;
-    unsigned int batchSize;
+    unsigned int epochSize = 1;
+    // saveLastEvery: 「直近」チェックポイントを何エポックごとに書くか(0 = 毎エポック)。
+    unsigned int saveLastEvery = 0;
+    unsigned int batchSize = 1;
     std::string datasetPath;
+    std::string resumeFrom;
+    // device: 演算するデバイスを指定。
     ComputeDevice device;
+    // 学習パラメータではなく、データ形式ごとで異なる仕様の定義
+    // ImageSpec: 画像サイズ、画像タスクごとの仕様、アノテーションのconfigを持つ。
+    DataSpec dataSpec;
 };

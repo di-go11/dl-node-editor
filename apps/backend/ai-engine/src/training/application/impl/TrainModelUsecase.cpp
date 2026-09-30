@@ -14,12 +14,12 @@
 #include <optional>
 
 TrainModelUsecase::TrainModelUsecase(const std::shared_ptr<TrainParam> &param,
-                                     const AppConfig &appConfig,
+                                     unsigned int saveLastEvery,
                                      const std::shared_ptr<IModelTrainer> &trainer,
                                      const std::shared_ptr<IModelEvaluator> &evaluator,
                                      const std::shared_ptr<ICheckpointStore> &checkpointStore)
     : _param(param),
-      _appConfig(appConfig),
+      _saveLastEvery(saveLastEvery),
       _trainer(trainer),
       _evaluator(evaluator),
       _checkpointStore(checkpointStore) {}
@@ -91,7 +91,7 @@ void TrainModelUsecase::execute(const TrainingDatasets &datasets, const Training
         // 中断・再開用の「直近」チェックポイント。best と違い指標に関係なく書く。
         // meta.epoch は「最後に完了したエポック」なので、再開側は epoch + 1 から始める。
         // 最終エポックは頻度設定にかかわらず必ず保存する(末尾の進捗を捨てないため)。
-        const unsigned int interval = _appConfig.saveLastEvery == 0u ? 1u : _appConfig.saveLastEvery;
+        const unsigned int interval = _saveLastEvery == 0u ? 1u : _saveLastEvery;
         const bool isLastEpoch = (epoch + 1u == totalEpochs);
         if (((epoch + 1u) % interval == 0u) || isLastEpoch)
         {
