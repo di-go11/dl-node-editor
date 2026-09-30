@@ -30,7 +30,7 @@
 #include "training/infrastructure/dataset/DatasetRepositoryFactory.hpp"
 #include "training/infrastructure/dataset/PreFetchDatasetRepository.hpp"
 #include "training/infrastructure/image/OpenCvImageDecoder.hpp"
-#include "training/infrastructure/image/ResizePreprocessorFactory.hpp"
+#include "training/entities/image/LetterboxPolicy.hpp"
 #include "training/infrastructure/dataset/LabelMapFileReader.hpp"
 #include "training/infrastructure/torchFunc/DeviceToTorch.hpp"
 #include "training/infrastructure/dataset/TimedDatasetRepository.hpp"
@@ -319,7 +319,7 @@ void runTraining()
     auto loss = lossFactory->create(command.loss, numClasses, segmentationSpec->ignoreIndex);
 
     // マスクの Letterbox 余白を埋める値。損失(MseLoss を除く)と評価(mIoU/accuracy)の
-    // 双方でこの値のピクセルを無視する。maskPreProcessor の ignoreIndex と一致させること。
+    // 双方でこの値のピクセルを無視する。DatasetRepositoryFactory も同じ SegmentationSpec から読む。
     const uint8_t maskIgnoreIndex = segmentationSpec->ignoreIndex;
 
     auto trainer = std::make_shared<TorchModelTrainer>(model, loss, optimizer);
@@ -331,33 +331,22 @@ void runTraining()
     auto decoder = std::make_shared<OpenCvImageDecoder>();
     auto timedDecoder = std::make_shared<TimedImageDecoder>(decoder, timeRecorder, "image.decode");
 
-    // 画像・マスク共通のジオメトリ。補間/パディングだけ用途別に切り替える。
-    ResizePreprocessorFactory::Geometry geometry;
-    geometry.width = imageSpec->inputWidth;
-    geometry.height = imageSpec->inputHeight;
-    geometry.aspectRatioPolicy = LetterboxPolicy{};
-    ResizePreprocessorFactory preprocessorFactory(geometry);
-
     // Datasetの作成
+    // 入力サイズ・ignoreIndex は command.dataSpec から Factory が読む。アスペクト比の扱いだけここで決める。
     DatasetSplit trainsplit = DatasetSplit::Train;
     DatasetSplit valsplit = DatasetSplit::Validation;
-    auto datasetRepository = std::make_shared<DatasetRepositoryFactory>(timedDecoder, std::make_shared<LabelMapFileReader>(), preprocessorFactory, maskIgnoreIndex, param, timeRecorder, parallelExecutor);
+    auto datasetRepository = std::make_shared<DatasetRepositoryFactory>(timedDecoder, std::make_shared<LabelMapFileReader>(), LetterboxPolicy{}, param, timeRecorder, parallelExecutor);
 
     // Decorator で包み、次バッチの読み込みを学習と並行して行う。
     // さらに PreFetch の内側と外側を TimedDatasetRepository で包み、処理時間を計測する。
     //   *.produce: ワーカースレッドが 1 バッチを作るのにかかった時間(PreFetch の内側)
     //   *.wait   : 学習ループがバッチの到着を待った時間(PreFetch の外側。待ちは主に hasNext で発生する)
-    // DatasetRepositoryFactory はまだ旧形式(TrainingTaskType + DatasetConfig)を受け取るため詰め替える。
-    // セグメンテーションであることは冒頭で確認済み。
-    const DatasetConfig datasetConfig{command.datasetPath, imageSpec->annotation};
-    const TrainingTaskType taskType = ImageTaskType::SEMANTIC_SEGMENTATION;
-
-    auto trainInner = datasetRepository->create(taskType, datasetConfig, trainsplit);
+    auto trainInner = datasetRepository->create(command.dataSpec, command.datasetPath, trainsplit);
     auto trainProduce = std::make_shared<TimedDatasetRepository>(trainInner, timeRecorder, "train.produce");
     auto trainPrefetch = std::make_shared<PreFetchDatasetRepository>(trainProduce);
     auto trainDataset = std::make_shared<TimedDatasetRepository>(trainPrefetch, timeRecorder, "train.wait");
 
-    auto validationInner = datasetRepository->create(taskType, datasetConfig, valsplit);
+    auto validationInner = datasetRepository->create(command.dataSpec, command.datasetPath, valsplit);
     auto validationProduce = std::make_shared<TimedDatasetRepository>(validationInner, timeRecorder, "val.produce");
     auto validationPrefetch = std::make_shared<PreFetchDatasetRepository>(validationProduce);
     auto validationDataset = std::make_shared<TimedDatasetRepository>(validationPrefetch, timeRecorder, "val.wait");

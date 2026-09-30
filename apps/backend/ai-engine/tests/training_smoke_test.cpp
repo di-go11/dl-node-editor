@@ -23,6 +23,7 @@
 
 #include "training/entities/domain-objects/ComputeDevice.hpp"
 #include "training/entities/domain-objects/Conv2DParams.hpp"
+#include "training/entities/domain-objects/DataSpecs/DataSpec.hpp"
 #include "training/entities/domain-objects/DatasetSplit.hpp"
 #include "training/entities/domain-objects/Metrics/EpochMetrics.hpp"
 #include "training/entities/domain-objects/LayersConfig.hpp"
@@ -42,7 +43,7 @@
 #include "training/infrastructure/dataset/LabelMapFileReader.hpp"
 #include "training/infrastructure/dataset/DatasetRepositoryFactory.hpp"
 #include "training/infrastructure/image/OpenCvImageDecoder.hpp"
-#include "training/infrastructure/image/ResizePreprocessorFactory.hpp"
+#include "training/entities/image/LetterboxPolicy.hpp"
 #include "training/infrastructure/torchFunc/CrossEntropy.hpp"
 #include "training/infrastructure/torchFunc/TorchOptimizerFactory.hpp"
 #include "training/infrastructure/torchModel/CheckpointModelLoader.hpp"
@@ -255,18 +256,20 @@ int main()
     auto param = std::make_shared<TrainParam>(/*epoch=*/1u, /*batch=*/1u);
 
     auto decoder = std::make_shared<OpenCvImageDecoder>();
-    ResizePreprocessorFactory::Geometry geom;
-    geom.width = 128;
-    geom.height = 128;
-    geom.aspectRatioPolicy = LetterboxPolicy{}; // 余白 = ignore_index。評価がここを無視できるか見る
-    ResizePreprocessorFactory ppf(geom);
-    auto imgPp = ppf.forImage();
-    auto maskPp = ppf.forMask(static_cast<uint8_t>(kIgnoreIndex));
+    ImageSpec imageSpec;
+    imageSpec.annotation = PascalVocConfig{};
+    imageSpec.inputWidth = 128;
+    imageSpec.inputHeight = 128;
+    SegmentationSpec segmentationSpec;
+    segmentationSpec.ignoreIndex = static_cast<uint8_t>(kIgnoreIndex); // 損失・評価器と同じ値
+    imageSpec.taskSpecs = segmentationSpec;
+    const DataSpec dataSpec = imageSpec;
 
-    auto datasetRepository = std::make_shared<DatasetRepositoryFactory>(decoder, std::make_shared<LabelMapFileReader>(), ppf, static_cast<uint8_t>(kIgnoreIndex), param, std::make_shared<NullTimeRecorder>(), std::make_shared<SequentialExecutor>());
+    // 余白 = ignore_index。評価がここを無視できるか見る
+    auto datasetRepository = std::make_shared<DatasetRepositoryFactory>(decoder, std::make_shared<LabelMapFileReader>(), LetterboxPolicy{}, param, std::make_shared<NullTimeRecorder>(), std::make_shared<SequentialExecutor>());
 
-    auto trainDs = datasetRepository->create(ImageTaskType::SEMANTIC_SEGMENTATION, DatasetConfig{dst.string(), ImageAnnotationConfig{PascalVocConfig{}}}, DatasetSplit::Train);
-    auto valDs = datasetRepository->create(ImageTaskType::SEMANTIC_SEGMENTATION, DatasetConfig{dst.string(), ImageAnnotationConfig{PascalVocConfig{}}}, DatasetSplit::Validation);
+    auto trainDs = datasetRepository->create(dataSpec, dst.string(), DatasetSplit::Train);
+    auto valDs = datasetRepository->create(dataSpec, dst.string(), DatasetSplit::Validation);
 
     auto modelFactory = std::make_shared<TorchModelFactory>();
     auto optimizerFactory = std::make_shared<TorchOptimizerFactory>();
