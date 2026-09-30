@@ -27,7 +27,7 @@ message Pooling2DParams {
     int64 padding = 4;
 }
 
-enum PoolingType {POOLING_TYPE_UNSPECIFIED = 0; POOLING_TYPE_MAX = 1;}
+enum PoolingType {POOLING_TYPE_UNSPECIFIED = 0; POOLING_TYPE_MAX = 1; POOLING_TYPE_AVERAGE = 2;}
 
 message BatchNormParams {int64 num_features = 1; double eps = 2; double momentum = 3;}
 message LinearParams {int64 in_features = 1;int64 out_features = 2; bool bias = 3;}
@@ -95,6 +95,30 @@ message LossConfig {
     }
 }
 
+// ---Data---
+
+message PascalVocConfig { bool include_difficult = 1; }
+message ImageAnnotationConfig { oneof config { PascalVocConfig pascal_voc = 1; } }
+
+message SegmentationSpec    { uint32 ignore_index = 1; } //必ず設定する、0〜255、既定値は 255
+message ObjectDetectionSpec {}
+message ClassificationSpec  {}
+message ImageTaskSpecs {
+    oneof spec {
+        SegmentationSpec segmentation = 1;
+        ObjectDetectionSpec object_detection = 2;
+        ClassificationSpec classification = 3;
+    }
+}
+
+message ImageSpec {
+    ImageAnnotationConfig annotation = 1;
+    uint32 input_width = 2; // 1以上.既定値256
+    uint32 input_height = 3; // 1以上.既定値256
+    ImageTaskSpecs task_specs = 4;
+}
+
+message DataSpec { oneof spec { ImageSpec image = 1; } } //データのvariant
 
 // ---merge---
 
@@ -107,6 +131,9 @@ message StartTrainingRequest {
     uint32 batch = 6;
     string dataset_path = 7;
     string device = 8;
+    DataSpec data_spec = 9;
+    uint32 save_last_every = 10; // 0=毎エポック
+    string resume_from = 11; // 空なら再開しない
 }
 
 message StartTrainingResponse {
@@ -127,9 +154,10 @@ message StreamProgressResponse{
     uint32 epoch = 1; // 終了したエポック数
     double train_loss = 2; // 学習時の損失
     double val_loss = 3; // バリデーション時の損失
-    TrainingStatus status = 4; // RUNNING / COMPLITED /FAILED / STOPPED
+    TrainingStatus status = 4; // IDLE / RUNNING / COMPLETED /FAILED / STOPPED
     oneof metrics{
-        SegmentationMetrics segmentation = 5; // セグメンテーション時のメトリクス(mioU,pixel_acc)
+        SegmentationMetrics segmentation = 5; // セグメンテーション時のメトリクス(mioU,pixel_acc, fw_iou, mean_class_accuracy, per_class_iou)
+        ClassificationMetrics classification = 9; // クラス分類時のメトリクス(accuracy, macro_f1, per_class_accuracy)
     }
     uint64 epoch_elapsed_ms = 6; // 処理済みエポックにかかった時間
     uint64 total_elapsed_ms = 7; // 累計処理時間
@@ -137,8 +165,17 @@ message StreamProgressResponse{
 }
 
 message SegmentationMetrics{
-    double val_pixel_acc = 1;
-    double val_miou = 2;
+    double pixel_acc = 1;
+    double miou = 2;
+    double fw_iou = 3;
+    double mean_class_accuracy = 4;
+    repeated double per_class_iou = 5;
+}
+
+message ClassificationMetrics{
+    double accuracy = 1;
+    double macro_f1 = 2;
+    repeated double per_class_accuracy = 3;
 }
 
 enum TrainingStatus {
@@ -147,4 +184,5 @@ enum TrainingStatus {
     TRAINING_STATUS_COMPLETED = 2;
     TRAINING_STATUS_FAILED = 3;
     TRAINING_STATUS_STOPPED = 4;
+    TRAINING_STATUS_IDLE = 5;
 }
