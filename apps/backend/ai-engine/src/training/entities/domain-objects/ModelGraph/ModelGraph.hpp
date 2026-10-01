@@ -1,9 +1,10 @@
 #pragma once
 
-#include "training/entities/domain-objects/ModelGraph/Layers/LayersConfig.hpp"
+#include "training/entities/domain-objects/ModelGraph/DAG/GraphNode.hpp"
 #include <vector>
 
 struct ModelGraph
 {
-    std::vector<LayersConfig> layers;
+    std::vector<GraphNode> nodes;
+    std::vector<PortRef> outputs;
 };

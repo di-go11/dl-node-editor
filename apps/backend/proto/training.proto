@@ -1,6 +1,8 @@
 syntax = "proto3";
 package training.v1;
 
+import "model_graph.proto";
+
 service TrainingService {
     rpc StartTraining(StartTrainingRequest) returns (StartTrainingResponse); // 単項
     rpc StreamProgress(StreamProgressRequest) returns (stream StreamProgressResponse); // サーバーストリーミング
@@ -8,56 +10,6 @@ service TrainingService {
 }
 
 // ---StartTrainingRequest---
-
-// ---layers---
-
-message Conv2DParams {
-    int64 in_channels = 1;
-    int64 out_channels = 2;
-    int64 kernel_size = 3;
-    int64 stride = 4;
-    int64 padding = 5;
-    int64 dilation = 6;
-}
-
-message Pooling2DParams {
-    PoolingType pooling_type = 1;
-    int64 kernel_size = 2;
-    int64 stride = 3;
-    int64 padding = 4;
-}
-
-enum PoolingType {POOLING_TYPE_UNSPECIFIED = 0; POOLING_TYPE_MAX = 1; POOLING_TYPE_AVERAGE = 2;}
-
-message BatchNormParams {int64 num_features = 1; double eps = 2; double momentum = 3;}
-message LinearParams {int64 in_features = 1;int64 out_features = 2; bool bias = 3;}
-message ActivationParams {ActivationType activation_type = 1; int32 dim = 2;}
-
-enum ActivationType {
-    ACTIVATION_TYPE_UNSPECIFIED = 0;
-    ACTIVATION_TYPE_RELU = 1;
-    ACTIVATION_TYPE_SIGMOID = 2;
-    ACTIVATION_TYPE_SOFTMAX = 3;
-    ACTIVATION_TYPE_TANH = 4;
-}
-message IndexedPoolingParams {int64 kernel_size = 1; int64 stride = 2; int64 padding = 3;}
-message UnpoolingParams {int64 kernel_size = 1; int64 stride = 2; int64 padding = 3;}
-
-message LayerConfig {
-    oneof params {
-        Conv2DParams conv2d = 1;
-        Pooling2DParams pooling2d = 2;
-        BatchNormParams batch_norm = 3;
-        LinearParams linear = 4;
-        ActivationParams activation = 5;
-        IndexedPoolingParams indexed_pooling = 6;
-        UnpoolingParams unpooling = 7;
-    }
-}
-
-message ModelGraph {
-    repeated LayerConfig layers = 1;
-}
 
 // ---optimizer---
 
@@ -128,7 +80,7 @@ message Seed { uint64 value = 1; }
 
 message StartTrainingRequest {
     string model_name = 1;
-    ModelGraph model_graph = 2;
+    model.v1.ModelGraph model_graph= 2;
     OptimizerConfig optimizer = 3;
     LossConfig loss = 4;
     uint32 epoch = 5;
