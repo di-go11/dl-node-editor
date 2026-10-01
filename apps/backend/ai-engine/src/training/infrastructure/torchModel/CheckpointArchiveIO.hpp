@@ -3,7 +3,7 @@
 #include <torch/serialize.h>
 
 #include "training/entities/domain-objects/CheckpointMeta.hpp"
-#include "training/entities/domain-objects/ModelGraph.hpp"
+#include "training/entities/domain-objects/ModelGraph/ModelGraph.hpp"
 
 class IModel;
 class IOptimizer;

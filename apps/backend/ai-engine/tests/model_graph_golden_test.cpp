@@ -23,16 +23,16 @@
 
 #include <torch/torch.h>
 
-#include "training/entities/domain-objects/ActivationConfig.hpp"
-#include "training/entities/domain-objects/ActivationType.hpp"
-#include "training/entities/domain-objects/BatchNormParams.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/ActivationConfig.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/ActivationType.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/BatchNormParams.hpp"
 #include "training/entities/domain-objects/ComputeDevice.hpp"
-#include "training/entities/domain-objects/Conv2DParams.hpp"
-#include "training/entities/domain-objects/IndexedPoolingParams.hpp"
-#include "training/entities/domain-objects/LayersConfig.hpp"
-#include "training/entities/domain-objects/ModelGraph.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/Conv2DParams.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/IndexedPoolingParams.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/LayersConfig.hpp"
+#include "training/entities/domain-objects/ModelGraph/ModelGraph.hpp"
 #include "training/entities/domain-objects/OptimizerConfig.hpp"
-#include "training/entities/domain-objects/UnpoolingParams.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/UnpoolingParams.hpp"
 
 #include "training/adapters/interfaces/IModel.hpp"
 #include "training/adapters/interfaces/IOptimizer.hpp"

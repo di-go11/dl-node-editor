@@ -5,8 +5,8 @@
 
 // entities
 #include "training/entities/domain-objects/TrainParam.hpp"
-#include "training/entities/domain-objects/ModelGraph.hpp"
-#include "training/entities/domain-objects/ModelGraphFingerprint.hpp"
+#include "training/entities/domain-objects/ModelGraph/ModelGraph.hpp"
+#include "training/entities/domain-objects/ModelGraph/ModelGraphFingerprint.hpp"
 #include "training/entities/domain-objects/DatasetSplit.hpp"
 #include "training/entities/domain-objects/ProcessTimeSpan.hpp"
 

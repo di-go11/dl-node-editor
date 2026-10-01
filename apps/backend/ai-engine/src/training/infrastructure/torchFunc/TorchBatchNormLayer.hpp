@@ -1,7 +1,7 @@
 #pragma once
 
 #include "training/adapters/interfaces/ILayer.hpp"
-#include "training/entities/domain-objects/BatchNormParams.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/BatchNormParams.hpp"
 
 #include <torch/nn/modules/batchnorm.h>
 

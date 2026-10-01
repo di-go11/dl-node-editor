@@ -2,7 +2,7 @@
 
 #include "training/adapters/interfaces/ILayer.hpp"
 #include "training/adapters/interfaces/IIndicesSource.hpp"
-#include "training/entities/domain-objects/IndexedPoolingParams.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/IndexedPoolingParams.hpp"
 
 #include <torch/nn/modules/pooling.h>
 

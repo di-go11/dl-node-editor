@@ -49,7 +49,7 @@ skip connection 等)が本当に必要になるまでは、**ノード+エッジ
 線形列のままで、SegNet クラスの encoder-decoder モデルは表現できる。
 
 **関連ファイル**（実装の参考。config スキーマ設計時にレイヤ種別の一覧として使える）:
-- `src/training/entities/domain-objects/{IndexedPoolingParams,UnpoolingParams}.hpp`
+- `src/training/entities/domain-objects/ModelGraph/Layers/{IndexedPoolingParams,UnpoolingParams}.hpp`
 - `src/training/adapters/interfaces/{IIndicesSource,IIndicesSink}.hpp`
 - `src/training/infrastructure/torchFunc/{TorchIndexPoolingLayer,TorchUnpoolingLayer}.cpp`
 - `src/training/infrastructure/torchModel/TorchModel.cpp`（LIFO スタックの実装）

@@ -3,12 +3,12 @@
 #include "training/TrainingJob.hpp"
 
 // entities
-#include "training/entities/domain-objects/ModelGraph.hpp"
-#include "training/entities/domain-objects/Conv2DParams.hpp"
-#include "training/entities/domain-objects/ActivationParams.hpp"
-#include "training/entities/domain-objects/BatchNormParams.hpp"
-#include "training/entities/domain-objects/IndexedPoolingParams.hpp"
-#include "training/entities/domain-objects/UnpoolingParams.hpp"
+#include "training/entities/domain-objects/ModelGraph/ModelGraph.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/Conv2DParams.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/ActivationParams.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/BatchNormParams.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/IndexedPoolingParams.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/UnpoolingParams.hpp"
 #include "training/entities/domain-objects/ModelArchitectureType.hpp"
 #include "training/entities/image/ColorLabelMap.hpp"
 

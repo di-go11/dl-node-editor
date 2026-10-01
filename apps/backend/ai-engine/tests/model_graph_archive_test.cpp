@@ -14,12 +14,12 @@
 
 #include <torch/torch.h>
 
-#include "training/entities/domain-objects/ActivationConfig.hpp"
-#include "training/entities/domain-objects/ActivationType.hpp"
-#include "training/entities/domain-objects/LayersConfig.hpp"
-#include "training/entities/domain-objects/ModelGraph.hpp"
-#include "training/entities/domain-objects/ModelGraphFingerprint.hpp"
-#include "training/entities/domain-objects/PoolingType.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/ActivationConfig.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/ActivationType.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/LayersConfig.hpp"
+#include "training/entities/domain-objects/ModelGraph/ModelGraph.hpp"
+#include "training/entities/domain-objects/ModelGraph/ModelGraphFingerprint.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/PoolingType.hpp"
 #include "training/infrastructure/torchModel/ModelGraphArchive.hpp"
 
 #ifndef MODEL_GRAPH_ARCHIVE_TEST_DIR

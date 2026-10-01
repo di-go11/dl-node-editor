@@ -23,9 +23,9 @@
 #include <torch/torch.h>
 
 #include "training/entities/domain-objects/CheckpointMeta.hpp"
-#include "training/entities/domain-objects/Conv2DParams.hpp"
-#include "training/entities/domain-objects/LayersConfig.hpp"
-#include "training/entities/domain-objects/ModelGraph.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/Conv2DParams.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/LayersConfig.hpp"
+#include "training/entities/domain-objects/ModelGraph/ModelGraph.hpp"
 #include "training/infrastructure/torchFunc/AdamOptimizer.hpp"
 #include "training/infrastructure/torchFunc/CrossEntropy.hpp"
 #include "training/infrastructure/torchFunc/TorchLayerBuilder.hpp"

@@ -95,7 +95,7 @@ optimizer はコンストラクタで「更新対象パラメータ」を受け�
 
 | ファイル | 層 | 役割 |
 |---|---|---|
-| `entities/domain-objects/LayersParamsFields.hpp` | entities | 層パラメータのフィールド定義を集約（`LayerKind` / `visitLayerFields`）。ハッシュ・書き出し・読み込みの唯一の源（§5.6） |
+| `entities/domain-objects/ModelGraph/Layers/LayersParamsFields.hpp` | entities | 層パラメータのフィールド定義を集約（`LayerKind` / `visitLayerFields`）。ハッシュ・書き出し・読み込みの唯一の源（§5.6） |
 | `infrastructure/torchModel/ModelGraphArchive.{hpp,cpp}` | infrastructure | `ModelGraph` ⇄ torch archive。`format_version` |
 | `adapters/interfaces/IModelFactory.hpp` | adapters | `ModelGraph` → `IModel` のポート |
 | `adapters/interfaces/IOptimizerFactory.hpp` | adapters | `(parameters, OptimizerConfig)` → `IOptimizer` のポート |
@@ -115,7 +115,7 @@ optimizer はコンストラクタで「更新対象パラメータ」を受け�
 | `entities/domain-objects/OptimizerTypeName.hpp` | 新規。`optimizerTypeName()` | 種別の永続化・表示用の名前 |
 | `entities/domain-objects/OptimizerConfig.hpp` | 継承 → `std::variant` へ | スライシングで `beta1` / `momentum` が factory に届かなかった（§5.5） |
 | `infrastructure/readConfig/ConfigReader.cpp` | optimizer 設定を全行読了後に組み立て。`beta1` / `beta2` / `eps` / `momentum` / `nesterov` キーを追加 | 行順に依存せず variant を作るため |
-| `entities/domain-objects/ModelGraphFingerprint.cpp` | フィールド列挙を `visitLayerFields` に委譲 | 3 か所の重複を解消（§5.6） |
+| `entities/domain-objects/ModelGraph/ModelGraphFingerprint.cpp` | フィールド列挙を `visitLayerFields` に委譲 | 3 か所の重複を解消（§5.6） |
 | `infrastructure/torchModel/CheckpointArchiveIO.{hpp,cpp}` | `rng_state_cpu` の読み書き、`restoreCpuRngStateIfPresent()` | 学習再開の再現性（§5.9） |
 | `infrastructure/torchModel/CheckpointModelLoader.{hpp,cpp}` | `RestoredCheckpoint::rngStateRestored`、load の最後で RNG 復元 | 再開経路でのみ乱数状態を戻す（§5.9） |
 | `infrastructure/torchModel/ModelGraphArchive.cpp` | `format_version` を新旧で分岐 | 移行ポリシーの明示（§5.10） |

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "training/application/interfaces/ICheckpointStore.hpp"
-#include "training/entities/domain-objects/ModelGraph.hpp"
+#include "training/entities/domain-objects/ModelGraph/ModelGraph.hpp"
 
 #include <memory>
 #include <string>

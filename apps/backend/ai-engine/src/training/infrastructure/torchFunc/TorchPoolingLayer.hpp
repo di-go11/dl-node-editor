@@ -1,7 +1,7 @@
 #pragma once
 
 #include "training/adapters/interfaces/ILayer.hpp"
-#include "training/entities/domain-objects/PoolingParams.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/PoolingParams.hpp"
 
 #include <torch/nn/modules/pooling.h>
 #include <variant>

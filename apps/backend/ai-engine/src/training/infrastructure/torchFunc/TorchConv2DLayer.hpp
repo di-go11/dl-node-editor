@@ -1,7 +1,7 @@
 #pragma once
 
 #include "training/adapters/interfaces/ILayer.hpp"
-#include "training/entities/domain-objects/Conv2DParams.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/Conv2DParams.hpp"
 
 #include <torch/nn/modules/conv.h>
 

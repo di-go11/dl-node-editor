@@ -2,7 +2,7 @@
 
 #include "training/adapters/interfaces/ILayer.hpp"
 #include "training/adapters/interfaces/IActivation.hpp"
-#include "training/entities/domain-objects/ActivationParams.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/ActivationParams.hpp"
 
 #include <memory>
 

@@ -1,6 +1,6 @@
-#include "training/entities/domain-objects/ModelGraphFingerprint.hpp"
+#include "training/entities/domain-objects/ModelGraph/ModelGraphFingerprint.hpp"
 
-#include "training/entities/domain-objects/LayersParamsFields.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/LayersParamsFields.hpp"
 
 #include <cstdint>
 #include <sstream>

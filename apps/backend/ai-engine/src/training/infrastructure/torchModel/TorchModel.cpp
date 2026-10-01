@@ -6,7 +6,7 @@
 #include "training/adapters/interfaces/IOptimizer.hpp"
 #include "training/adapters/interfaces/IIndicesSource.hpp"
 #include "training/adapters/interfaces/IIndicesSink.hpp"
-#include "training/entities/domain-objects/ModelGraph.hpp"
+#include "training/entities/domain-objects/ModelGraph/ModelGraph.hpp"
 #include "training/infrastructure/torchModel/TorchCheckpointArchive.hpp"
 #include "training/infrastructure/torchFunc/DeviceToTorch.hpp"
 

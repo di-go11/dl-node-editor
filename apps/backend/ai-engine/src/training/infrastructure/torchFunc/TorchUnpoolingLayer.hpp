@@ -1,6 +1,6 @@
 #pragma once
 
-#include "training/entities/domain-objects/UnpoolingParams.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/UnpoolingParams.hpp"
 #include "training/adapters/interfaces/ILayer.hpp"
 #include "training/adapters/interfaces/IIndicesSink.hpp"
 

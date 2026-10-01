@@ -1,6 +1,6 @@
 #pragma once
 
-#include "training/entities/domain-objects/LayersConfig.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/LayersConfig.hpp"
 #include <memory>
 
 class ILayer;

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "training/adapters/interfaces/ILayer.hpp"
-#include "training/entities/domain-objects/LinearParams.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/LinearParams.hpp"
 
 #include <torch/nn/modules/linear.h>
 

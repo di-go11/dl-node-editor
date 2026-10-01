@@ -22,12 +22,12 @@
 #include <torch/torch.h>
 
 #include "training/entities/domain-objects/ComputeDevice.hpp"
-#include "training/entities/domain-objects/Conv2DParams.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/Conv2DParams.hpp"
 #include "training/entities/domain-objects/DataSpecs/DataSpec.hpp"
 #include "training/entities/domain-objects/DatasetSplit.hpp"
 #include "training/entities/domain-objects/Metrics/EpochMetrics.hpp"
-#include "training/entities/domain-objects/LayersConfig.hpp"
-#include "training/entities/domain-objects/ModelGraph.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/LayersConfig.hpp"
+#include "training/entities/domain-objects/ModelGraph/ModelGraph.hpp"
 #include "training/entities/domain-objects/OptimizerConfig.hpp"
 #include "training/entities/domain-objects/TrainParam.hpp"
 #include "training/entities/image/ColorLabelMap.hpp"
