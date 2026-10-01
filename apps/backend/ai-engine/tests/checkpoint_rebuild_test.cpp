@@ -29,6 +29,8 @@
 #include "training/entities/domain-objects/CheckpointMeta.hpp"
 #include "training/entities/domain-objects/ModelGraph/Layers/Conv2DParams.hpp"
 #include "training/entities/domain-objects/ModelGraph/Layers/LayersConfig.hpp"
+#include "training/entities/domain-objects/ModelGraph/DAG/GraphValidation.hpp"
+#include "training/entities/domain-objects/ModelGraph/DAG/ModelGraphBuilder.hpp"
 #include "training/entities/domain-objects/ModelGraph/ModelGraph.hpp"
 #include "training/entities/domain-objects/ModelGraph/ModelGraphFingerprint.hpp"
 #include "training/entities/domain-objects/OptimizerConfig.hpp"
@@ -65,7 +67,7 @@ void check(bool condition, const std::string &message)
 // Conv → ReLU → Conv の、単層より非自明な構造。
 ModelGraph makeGraph(int numClasses)
 {
-    ModelGraph graph;
+    ModelGraphBuilder graph;
 
     Conv2DParams conv1;
     conv1.inChannels = 3;
@@ -73,11 +75,11 @@ ModelGraph makeGraph(int numClasses)
     conv1.kernelSize = 3;
     conv1.stride = 1;
     conv1.padding = 1;
-    graph.layers.push_back(LayersConfig{conv1});
+    graph.add(LayersConfig{conv1});
 
     ActivationConfig act;
     act.activationType = ActivationType::ReLU;
-    graph.layers.push_back(LayersConfig{act});
+    graph.add(LayersConfig{act});
 
     Conv2DParams conv2;
     conv2.inChannels = 4;
@@ -85,9 +87,9 @@ ModelGraph makeGraph(int numClasses)
     conv2.kernelSize = 3;
     conv2.stride = 1;
     conv2.padding = 1;
-    graph.layers.push_back(LayersConfig{conv2});
+    graph.add(LayersConfig{conv2});
 
-    return graph;
+    return graph.build();
 }
 
 std::vector<at::Tensor> snapshot(const std::vector<at::Tensor> &params)
@@ -153,7 +155,7 @@ int main()
     auto modelFactory = std::make_shared<TorchModelFactory>();
     auto optimizerFactory = std::make_shared<TorchOptimizerFactory>();
 
-    std::shared_ptr<IModel> srcModel = modelFactory->create(graph, kTestDevice);
+    std::shared_ptr<IModel> srcModel = modelFactory->create(validatedModelGraph::create(graph), kTestDevice);
     std::vector<at::Tensor> srcParams = srcModel->parameters();
     std::shared_ptr<IOptimizer> srcOptimizer = optimizerFactory->create(srcParams, optimizerConfig);
 
@@ -175,7 +177,7 @@ int main()
 
     check(modelGraphFingerprint(restored.graph) == modelGraphFingerprint(graph),
           "checkpoint から復元した ModelGraph が保存時と一致する");
-    check(restored.graph.layers.size() == 3, "層数(Conv→ReLU→Conv)が復元される");
+    check(restored.graph.nodes.size() == 3, "層数(Conv→ReLU→Conv)が復元される");
     check(restored.model != nullptr && restored.optimizer != nullptr,
           "model / optimizer が生成される");
     check(restored.meta.epoch == savedEpoch, "meta.epoch が復元される");
@@ -270,7 +272,7 @@ int main()
 
         {
             // この時点の乱数状態が checkpoint に記録される。
-            std::shared_ptr<IModel> m = modelFactory->create(graph, kTestDevice);
+            std::shared_ptr<IModel> m = modelFactory->create(validatedModelGraph::create(graph), kTestDevice);
             std::vector<at::Tensor> p = m->parameters();
             std::shared_ptr<IOptimizer> o = optimizerFactory->create(p, optimizerConfig);
             TorchCheckpointStore store(m, o, dir.string(), "rng", graph);

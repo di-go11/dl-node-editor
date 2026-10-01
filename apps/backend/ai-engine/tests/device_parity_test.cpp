@@ -21,6 +21,8 @@
 #include "training/entities/domain-objects/ModelGraph/Layers/ActivationConfig.hpp"
 #include "training/entities/domain-objects/ModelGraph/Layers/ActivationType.hpp"
 #include "training/entities/domain-objects/ModelGraph/Layers/LayersConfig.hpp"
+#include "training/entities/domain-objects/ModelGraph/DAG/GraphValidation.hpp"
+#include "training/entities/domain-objects/ModelGraph/DAG/ModelGraphBuilder.hpp"
 #include "training/entities/domain-objects/ModelGraph/ModelGraph.hpp"
 #include "training/entities/domain-objects/OptimizerConfig.hpp"
 
@@ -50,7 +52,7 @@ constexpr int64_t kSeed = 20240611;
 
 ModelGraph makeGraph()
 {
-    ModelGraph graph;
+    ModelGraphBuilder graph;
 
     Conv2DParams conv1;
     conv1.inChannels = 3;
@@ -58,11 +60,11 @@ ModelGraph makeGraph()
     conv1.kernelSize = 3;
     conv1.stride = 1;
     conv1.padding = 1;
-    graph.layers.push_back(LayersConfig{conv1});
+    graph.add(LayersConfig{conv1});
 
     ActivationConfig act;
     act.activationType = ActivationType::ReLU;
-    graph.layers.push_back(LayersConfig{act});
+    graph.add(LayersConfig{act});
 
     Conv2DParams conv2;
     conv2.inChannels = 8;
@@ -70,9 +72,9 @@ ModelGraph makeGraph()
     conv2.kernelSize = 3;
     conv2.stride = 1;
     conv2.padding = 1;
-    graph.layers.push_back(LayersConfig{conv2});
+    graph.add(LayersConfig{conv2});
 
-    return graph;
+    return graph.build();
 }
 
 // device 上で kSteps ステップ学習し、各ステップの loss を返す。
@@ -89,7 +91,7 @@ std::vector<double> runTraining(const ComputeDevice &device,
     // 初期重みは torch::nn の初期化が CPU の global generator を使うため、
     // create の直前に seed を張れば CPU/CUDA で同一の初期値になる。
     torch::manual_seed(kSeed);
-    std::shared_ptr<IModel> model = modelFactory.create(graph, device);
+    std::shared_ptr<IModel> model = modelFactory.create(validatedModelGraph::create(graph), device);
 
     std::vector<at::Tensor> params = model->parameters();
     AdamOptimizerConfig adam;

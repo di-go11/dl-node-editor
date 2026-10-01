@@ -27,6 +27,8 @@
 #include "training/entities/domain-objects/DatasetSplit.hpp"
 #include "training/entities/domain-objects/Metrics/EpochMetrics.hpp"
 #include "training/entities/domain-objects/ModelGraph/Layers/LayersConfig.hpp"
+#include "training/entities/domain-objects/ModelGraph/DAG/GraphValidation.hpp"
+#include "training/entities/domain-objects/ModelGraph/DAG/ModelGraphBuilder.hpp"
 #include "training/entities/domain-objects/ModelGraph/ModelGraph.hpp"
 #include "training/entities/domain-objects/OptimizerConfig.hpp"
 #include "training/entities/domain-objects/TrainParam.hpp"
@@ -177,15 +179,15 @@ namespace
 
     ModelGraph oneConvGraph(int numClasses)
     {
-        ModelGraph g;
+        ModelGraphBuilder g;
         Conv2DParams conv;
         conv.inChannels = 3;
         conv.outChannels = numClasses;
         conv.kernelSize = 3;
         conv.stride = 1;
         conv.padding = 1;
-        g.layers.push_back(LayersConfig{conv});
-        return g;
+        g.add(LayersConfig{conv});
+        return g.build();
     }
 
     std::vector<at::Tensor> snapshot(const std::vector<at::Tensor> &p)
@@ -276,7 +278,7 @@ int main()
     auto optimizerFactory = std::make_shared<TorchOptimizerFactory>();
 
     const ModelGraph graph = oneConvGraph(numClasses);
-    std::shared_ptr<IModel> model = modelFactory->create(graph, kTestDevice);
+    std::shared_ptr<IModel> model = modelFactory->create(validatedModelGraph::create(graph), kTestDevice);
     std::vector<at::Tensor> params = model->parameters();
 
     AdamOptimizerConfig adam;

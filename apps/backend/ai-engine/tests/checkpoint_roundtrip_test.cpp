@@ -25,6 +25,8 @@
 #include "training/entities/domain-objects/CheckpointMeta.hpp"
 #include "training/entities/domain-objects/ModelGraph/Layers/Conv2DParams.hpp"
 #include "training/entities/domain-objects/ModelGraph/Layers/LayersConfig.hpp"
+#include "training/entities/domain-objects/ModelGraph/DAG/GraphValidation.hpp"
+#include "training/entities/domain-objects/ModelGraph/DAG/ModelGraphBuilder.hpp"
 #include "training/entities/domain-objects/ModelGraph/ModelGraph.hpp"
 #include "training/infrastructure/torchFunc/AdamOptimizer.hpp"
 #include "training/infrastructure/torchFunc/CrossEntropy.hpp"
@@ -55,15 +57,15 @@ void check(bool condition, const std::string &message)
 
 ModelGraph makeGraph(int numClasses)
 {
-    ModelGraph graph;
+    ModelGraphBuilder graph;
     Conv2DParams conv;
     conv.inChannels = 3;
     conv.outChannels = numClasses;
     conv.kernelSize = 3;
     conv.stride = 1;
     conv.padding = 1;
-    graph.layers.push_back(LayersConfig{conv});
-    return graph;
+    graph.add(LayersConfig{conv});
+    return graph.build();
 }
 
 // TorchModel と、その parameters() を束ねた AdamOptimizer をまとめて構築する。
@@ -77,7 +79,7 @@ struct Bundle
 Bundle makeBundle(const ModelGraph &graph, ILayerBuilder &builder, double lr)
 {
     Bundle b;
-    b.model = std::make_shared<TorchModel>(graph, builder, kTestDevice);
+    b.model = std::make_shared<TorchModel>(validatedModelGraph::create(graph), builder, kTestDevice);
     b.params = b.model->parameters();
     b.optimizer = std::make_shared<AdamOptimizer>(b.params, lr);
     return b;
