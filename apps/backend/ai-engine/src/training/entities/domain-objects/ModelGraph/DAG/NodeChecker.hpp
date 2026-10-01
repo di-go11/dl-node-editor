@@ -4,6 +4,7 @@
 
 #include <string>
 #include <stdexcept>
+#include <cctype>
 
 inline bool isValidGraphNodeId(const std::string &id)
 {
@@ -15,20 +16,15 @@ inline bool isValidGraphNodeId(const std::string &id)
     {
         switch (c)
         {
-        case '/':
-        case '\\':
-        case ':':
-        case '*':
-        case '?':
-        case '"':
-        case '<':
-        case '>':
-        case '|':
-        case ' ':
-        case '\t':
-        case '\r':
-        case '\n':
-            return false;
+        case '_':
+            break;
+        case '-':
+            break;
+        default:
+            if (std::isalnum(c) == 0)
+            {
+                return false;
+            }
         }
     }
     return true;
