@@ -128,7 +128,7 @@ docker run --rm --gpus all `
   -v "${PWD}:/workspaces" `
   -w /workspaces/apps/backend/ai-engine `
   ai-engine:latest `
-  bash -c "cmake -S . -B build && cmake --build build -j2 --target ai_engine_app && ./build/ai_engine_app"
+  bash -c "cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release && cmake --build build-release -j2 --target ai_engine_app && ./build-release/ai_engine_app"
 ```
 
 （PowerShell の行継続は `` ` ``（バッククォート）。1行にまとめて書いても良い）
@@ -136,6 +136,10 @@ docker run --rm --gpus all `
 - `--gpus all`: GPU をコンテナに渡す
 - `-v "${PWD}:/workspaces"`: リポジトリ全体を bind mount（`.config` の
   パスと一致させる）
+- `-DCMAKE_BUILD_TYPE=Release`: 最適化ありでビルドする。`CMakeLists.txt` に
+  ビルドタイプの既定値が無いので、指定しないと最適化なし（`-O0`）になり、
+  データ読み込み・前処理など自前の C++ 部分が数倍遅くなる。デバッグ用の
+  `build/`（Debug）と混ざらないよう、ビルドディレクトリは `build-release/` に分ける
 - `-j2`: このプロジェクトの既定方針どおりビルド並列度を抑える
   （メモリ不足で落ちるのを防ぐ。マシンのメモリに余裕があれば上げてよい）
 - `bash -c "..."` の中身はコンテナ（Linux）の中で実行されるので、
@@ -146,16 +150,19 @@ docker run --rm --gpus all `
 
 ### 繰り返し実行する場合
 
-`cmake -S . -B build` は初回だけでよい。2回目以降はビルド済みの `build/`
-がホスト側に残っているので：
+`cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release` は初回だけでよい。
+2回目以降はビルド済みの `build-release/` がホスト側に残っているので：
 
 ```powershell
 docker run --rm --gpus all `
   -v "${PWD}:/workspaces" `
   -w /workspaces/apps/backend/ai-engine `
   ai-engine:latest `
-  ./build/ai_engine_app
+  ./build-release/ai_engine_app
 ```
+
+（ソースを変更した後は `cmake --build build-release -j2 --target ai_engine_app`
+で再ビルドしてから実行する）
 
 ---
 
