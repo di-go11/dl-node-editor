@@ -10,7 +10,7 @@ class TorchPoolingLayer : public ILayer
 {
 public:
     explicit TorchPoolingLayer(const PoolingParams &params);
-    void forward(const at::Tensor &input, at::Tensor &output) override;
+    std::vector<at::Tensor> forward(const std::vector<at::Tensor> &inputs) override;
     std::vector<at::Tensor> parameters() const override;
     void setTrain(bool trainingMode) override;
     void to(const ComputeDevice &device) override;

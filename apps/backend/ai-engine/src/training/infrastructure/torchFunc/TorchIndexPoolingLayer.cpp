@@ -14,11 +14,11 @@ TorchIndexPoolingLayer::TorchIndexPoolingLayer(const IndexedPoolingParams &param
 {
 }
 
-void TorchIndexPoolingLayer::forward(const at::Tensor &input, at::Tensor &output)
+// 出力は layerPortsOf(IndexedPoolingParams) の出力ポートの順: {y, indices}。
+std::vector<at::Tensor> TorchIndexPoolingLayer::forward(const std::vector<at::Tensor> &inputs)
 {
-    auto [pooled, indices] = _module->forward_with_indices(input);
-    output = pooled;
-    _lastIndices = indices; // IIndicesSource::takeIndices()で返す
+    auto [pooled, indices] = _module->forward_with_indices(inputs[0]);
+    return {pooled, indices};
 }
 
 std::vector<at::Tensor> TorchIndexPoolingLayer::parameters() const
@@ -34,9 +34,4 @@ void TorchIndexPoolingLayer::setTrain(bool trainingMode)
 void TorchIndexPoolingLayer::to(const ComputeDevice &device)
 {
     _module->to(training::infrastructure::torchFunc::deviceToTorch(device));
-}
-
-at::Tensor TorchIndexPoolingLayer::takeIndices()
-{
-    return _lastIndices;
 }

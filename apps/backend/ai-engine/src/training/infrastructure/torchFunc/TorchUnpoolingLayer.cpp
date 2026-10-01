@@ -14,9 +14,10 @@ TorchUnpoolingLayer::TorchUnpoolingLayer(const UnpoolingParams &params) : _modul
 {
 }
 
-void TorchUnpoolingLayer::forward(const at::Tensor &input, at::Tensor &output)
+// 入力は layerPortsOf(UnpoolingParams) の入力ポートの順: {x, indices}。
+std::vector<at::Tensor> TorchUnpoolingLayer::forward(const std::vector<at::Tensor> &inputs)
 {
-    output = _module->forward(input, _indices);
+    return {_module->forward(inputs[0], inputs[1])};
 }
 
 std::vector<at::Tensor> TorchUnpoolingLayer::parameters() const
@@ -32,9 +33,4 @@ void TorchUnpoolingLayer::setTrain(bool trainingMode)
 void TorchUnpoolingLayer::to(const ComputeDevice &device)
 {
     _module->to(training::infrastructure::torchFunc::deviceToTorch(device));
-}
-
-void TorchUnpoolingLayer::provideIndices(const at::Tensor &indices)
-{
-    _indices = indices;
 }

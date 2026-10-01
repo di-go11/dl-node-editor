@@ -30,7 +30,8 @@
 #include "training/entities/domain-objects/ModelGraph/Layers/Conv2DParams.hpp"
 #include "training/entities/domain-objects/ModelGraph/Layers/IndexedPoolingParams.hpp"
 #include "training/entities/domain-objects/ModelGraph/Layers/LayersConfig.hpp"
-#include "training/entities/domain-objects/ModelGraph/ModelGraph.hpp"
+#include "training/entities/domain-objects/ModelGraph/DAG/GraphValidation.hpp"
+#include "training/entities/domain-objects/ModelGraph/DAG/ModelGraphBuilder.hpp"
 #include "training/entities/domain-objects/OptimizerConfig.hpp"
 #include "training/entities/domain-objects/ModelGraph/Layers/UnpoolingParams.hpp"
 
@@ -107,7 +108,7 @@ namespace
 
     // ---- グラフ ----
 
-    void appendConvReluBn(ModelGraph &graph, int inChannels, int outChannels)
+    void appendConvReluBn(ModelGraphBuilder &builder, int inChannels, int outChannels)
     {
         Conv2DParams conv;
         conv.inChannels = inChannels;
@@ -115,16 +116,16 @@ namespace
         conv.kernelSize = 3;
         conv.stride = 1;
         conv.padding = 1;
-        graph.layers.push_back(LayersConfig{conv});
+        builder.add(LayersConfig{conv});
 
         ActivationConfig relu;
         relu.activationType = ActivationType::ReLU;
-        graph.layers.push_back(LayersConfig{relu});
+        builder.add(LayersConfig{relu});
 
         BatchNormParams bn;
         bn.numFeatures = outChannels;
         bn.momentum = 0.5;
-        graph.layers.push_back(LayersConfig{bn});
+        builder.add(LayersConfig{bn});
     }
 
     // SegNet を小さくした構成。
@@ -135,23 +136,25 @@ namespace
     //
     // グラフの表現を変えるときは、この関数だけを書き換える。
     // 層を作る順番(= ノードの並び順)は変えないこと。重みの初期値がこの順番で決まる。
-    ModelGraph makeGraph()
+    validatedModelGraph makeGraph()
     {
-        ModelGraph graph;
+        ModelGraphBuilder builder;
 
-        appendConvReluBn(graph, 3, 4);
-        graph.layers.push_back(LayersConfig{IndexedPoolingParams{}});
+        appendConvReluBn(builder, 3, 4);
+        const std::string pool1 = builder.add(LayersConfig{IndexedPoolingParams{}});
 
-        appendConvReluBn(graph, 4, 8);
-        graph.layers.push_back(LayersConfig{IndexedPoolingParams{}});
+        appendConvReluBn(builder, 4, 8);
+        const std::string pool2 = builder.add(LayersConfig{IndexedPoolingParams{}});
 
-        graph.layers.push_back(LayersConfig{UnpoolingParams{}});
-        appendConvReluBn(graph, 8, 4);
+        builder.add(LayersConfig{UnpoolingParams{}},
+                    {NodeInput{"x", builder.lastOutput()}, NodeInput{"indices", PortRef{pool2, "indices"}}});
+        appendConvReluBn(builder, 8, 4);
 
-        graph.layers.push_back(LayersConfig{UnpoolingParams{}});
-        appendConvReluBn(graph, 4, kNumClasses);
+        builder.add(LayersConfig{UnpoolingParams{}},
+                    {NodeInput{"x", builder.lastOutput()}, NodeInput{"indices", PortRef{pool1, "indices"}}});
+        appendConvReluBn(builder, 4, kNumClasses);
 
-        return graph;
+        return validatedModelGraph::create(builder.build());
     }
 
     // ---- 比較 ----
@@ -228,7 +231,7 @@ int main()
     std::cout << std::setprecision(17);
 
     const ComputeDevice device{ComputeDeviceType::Cpu, 0};
-    const ModelGraph graph = makeGraph();
+    const validatedModelGraph graph = makeGraph();
 
     // 入力・ターゲットを seed 固定で生成する。
     torch::manual_seed(kSeed + 1);

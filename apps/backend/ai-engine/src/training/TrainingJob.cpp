@@ -101,9 +101,9 @@ TrainingStatus runTrainingJob(const ServerConfig &server,
         throw std::runtime_error("runTrainingJob: 現在は画像セグメンテーション(training_task = Image, training_task_type = Segmentation)のみ対応しています");
     }
     // モデル構造は呼び出し側(CLI ならアーキテクチャ名から、gRPC ならリクエストから)が必ず埋める。
-    if (command.modelGraph.layers.empty())
+    if (!command.modelGraph.has_value())
     {
-        throw std::runtime_error("runTrainingJob: command.modelGraph が空です");
+        throw std::runtime_error("runTrainingJob: command.modelGraph が設定されていません");
     }
 
     training::infrastructure::torchFunc::ensureComputeDeviceAvailable(command.device);
@@ -180,7 +180,7 @@ TrainingStatus runTrainingJob(const ServerConfig &server,
 
         // 復元した構造が今回依頼された構造(command.modelGraph)と食い違っていないか確認する。
         // 不一致でも学習自体は走ってしまうが、意図しない checkpoint の可能性があるため警告する。
-        if (modelGraphFingerprint(graph) != modelGraphFingerprint(command.modelGraph))
+        if (modelGraphFingerprint(graph) != modelGraphFingerprint(command.modelGraph->getGraph()))
         {
             std::cerr << "[warn] checkpoint のモデル構造が、今回指定されたモデル構造"
                          "(numClasses="
@@ -192,8 +192,8 @@ TrainingStatus runTrainingJob(const ServerConfig &server,
     else
     {
         // cold start: 依頼された構造から、モデル・Optimizer を作る。
-        graph = command.modelGraph;
-        model = modelFactory->create(graph, command.device);
+        graph = command.modelGraph->getGraph();
+        model = modelFactory->create(*command.modelGraph, command.device);
         params = model->parameters();
         optimizer = optimizerFactory->create(params, command.optimizer);
     }

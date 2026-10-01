@@ -6,11 +6,11 @@
 #include <memory>
 
 // IModelFactory の libtorch 実装。TorchLayerBuilder を内包し、
-// ModelGraph から TorchModel を組み立てる。
+// validatedModelGraph から TorchModel を組み立てる。
 class TorchModelFactory : public IModelFactory
 {
 public:
-    std::shared_ptr<IModel> create(const ModelGraph &graph, const ComputeDevice &device) override;
+    std::shared_ptr<IModel> create(const validatedModelGraph &graph, const ComputeDevice &device) override;
 
 private:
     TorchLayerBuilder _builder;

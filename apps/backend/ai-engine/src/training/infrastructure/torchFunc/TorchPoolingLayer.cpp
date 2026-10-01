@@ -19,10 +19,10 @@ TorchPoolingLayer::TorchPoolingLayer(const PoolingParams &params) : _module(make
 {
 }
 
-void TorchPoolingLayer::forward(const at::Tensor &input, at::Tensor &output)
+std::vector<at::Tensor> TorchPoolingLayer::forward(const std::vector<at::Tensor> &inputs)
 {
-    output = std::visit([&input](auto &module)
-                        { return module->forward(input); }, _module);
+    return {std::visit([&inputs](auto &module)
+                       { return module->forward(inputs[0]); }, _module)};
 }
 
 std::vector<at::Tensor> TorchPoolingLayer::parameters() const

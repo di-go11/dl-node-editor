@@ -3,9 +3,9 @@
 
 TorchConv2DLayer::TorchConv2DLayer(const Conv2DParams &params) : _module(torch::nn::Conv2dOptions(params.inChannels, params.outChannels, params.kernelSize).stride(params.stride).padding(params.padding).dilation(params.dilation)) {}
 
-void TorchConv2DLayer::forward(const at::Tensor &input, at::Tensor &output)
+std::vector<at::Tensor> TorchConv2DLayer::forward(const std::vector<at::Tensor> &inputs)
 {
-    output = _module->forward(input);
+    return {_module->forward(inputs[0])};
 }
 
 std::vector<at::Tensor> TorchConv2DLayer::parameters() const

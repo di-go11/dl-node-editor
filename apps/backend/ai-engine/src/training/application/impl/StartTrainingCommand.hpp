@@ -1,6 +1,6 @@
 #pragma once
 
-#include "training/entities/domain-objects/ModelGraph/ModelGraph.hpp"
+#include "training/entities/domain-objects/ModelGraph/DAG/GraphValidation.hpp"
 #include "training/entities/domain-objects/OptimizerConfig.hpp"
 #include "training/entities/domain-objects/LossConfig.hpp"
 #include "training/entities/domain-objects/ComputeDevice.hpp"
@@ -13,7 +13,9 @@
 struct StartTrainingCommand
 {
     std::string modelName;
-    ModelGraph modelGraph;
+    // modelGraph: 検証済みのモデル構造。validatedModelGraph は create からしか作れないので、
+    // 値が入っていれば必ず検証を通っている。呼び出し側(mapper / CLI)が埋める。nullopt = 未設定。
+    std::optional<validatedModelGraph> modelGraph;
     OptimizerConfig optimizer;
     LossConfig loss;
     unsigned int epochSize = 1;

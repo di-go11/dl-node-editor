@@ -31,6 +31,10 @@ struct Writer
     {
         out.write(prefix + key, torch::tensor(value, torch::kFloat64));
     }
+    void str(const std::string &key, const std::string &value) const
+    {
+        out.write(prefix + key, c10::IValue(value));
+    }
 };
 
 struct Reader
@@ -50,16 +54,35 @@ struct Reader
         in.read(prefix + key, t);
         return t.item<double>();
     }
+    std::string str(const std::string &key) const
+    {
+        c10::IValue value;
+        in.read(prefix + key, value);
+        return value.toStringRef();
+    }
 };
 
-std::string layerPrefix(std::size_t index)
+std::string nodePrefix(std::size_t index)
 {
-    return "layer_" + std::to_string(index) + "_";
+    return "node_" + std::to_string(index) + "_";
+}
+
+// 出力ポート 1 つへの参照を、ノード ID とポート名の 2 つの文字列として書く / 読む。
+// (グラフ入力を指すときは、どちらも空文字になる)
+void writePortRef(const Writer &w, const std::string &key, const PortRef &ref)
+{
+    w.str(key + "node", ref.nodeId);
+    w.str(key + "port", ref.port);
+}
+
+PortRef readPortRef(const Reader &r, const std::string &key)
+{
+    return PortRef{r.str(key + "node"), r.str(key + "port")};
 }
 
 void writeLayer(torch::serialize::OutputArchive &out, std::size_t index, const LayersConfig &layer)
 {
-    const Writer w{out, layerPrefix(index)};
+    const Writer w{out, nodePrefix(index)};
 
     std::visit(
         [&w](const auto &p)
@@ -123,7 +146,7 @@ Params readParams(const Reader &r)
 
 LayersConfig readLayer(torch::serialize::InputArchive &in, std::size_t index)
 {
-    const Reader r{in, layerPrefix(index)};
+    const Reader r{in, nodePrefix(index)};
     const auto kind = static_cast<LayerKind>(r.i64("kind"));
 
     switch (kind)
@@ -153,11 +176,30 @@ LayersConfig readLayer(torch::serialize::InputArchive &in, std::size_t index)
 void writeModelGraph(torch::serialize::OutputArchive &archive, const ModelGraph &graph)
 {
     archive.write("format_version", torch::tensor(kModelGraphArchiveVersion));
-    archive.write("layer_count", torch::tensor(static_cast<int64_t>(graph.layers.size())));
+    archive.write("node_count", torch::tensor(static_cast<int64_t>(graph.nodes.size())));
 
-    for (std::size_t i = 0; i < graph.layers.size(); ++i)
+    for (std::size_t i = 0; i < graph.nodes.size(); ++i)
     {
-        writeLayer(archive, i, graph.layers[i]);
+        const GraphNode &node = graph.nodes[i];
+        const Writer w{archive, nodePrefix(i)};
+
+        w.str("id", node.id);
+        writeLayer(archive, i, node.layer);
+
+        w.i64("input_count", static_cast<int64_t>(node.inputs.size()));
+        for (std::size_t j = 0; j < node.inputs.size(); ++j)
+        {
+            const std::string at = "input_" + std::to_string(j) + "_";
+            w.str(at + "port", node.inputs[j].port);
+            writePortRef(w, at + "source_", node.inputs[j].source);
+        }
+    }
+
+    const Writer w{archive, ""};
+    w.i64("output_count", static_cast<int64_t>(graph.outputs.size()));
+    for (std::size_t j = 0; j < graph.outputs.size(); ++j)
+    {
+        writePortRef(w, "output_" + std::to_string(j) + "_", graph.outputs[j]);
     }
 }
 
@@ -190,14 +232,33 @@ ModelGraph readModelGraph(torch::serialize::InputArchive &archive)
     }
 
     at::Tensor countTensor;
-    archive.read("layer_count", countTensor);
+    archive.read("node_count", countTensor);
     const auto count = static_cast<std::size_t>(countTensor.item<int64_t>());
 
     ModelGraph graph;
-    graph.layers.reserve(count);
+    graph.nodes.reserve(count);
     for (std::size_t i = 0; i < count; ++i)
     {
-        graph.layers.push_back(readLayer(archive, i));
+        const Reader r{archive, nodePrefix(i)};
+
+        GraphNode node;
+        node.id = r.str("id");
+        node.layer = readLayer(archive, i);
+
+        const auto inputCount = static_cast<std::size_t>(r.i64("input_count"));
+        for (std::size_t j = 0; j < inputCount; ++j)
+        {
+            const std::string at = "input_" + std::to_string(j) + "_";
+            node.inputs.push_back(NodeInput{r.str(at + "port"), readPortRef(r, at + "source_")});
+        }
+        graph.nodes.push_back(std::move(node));
+    }
+
+    const Reader r{archive, ""};
+    const auto outputCount = static_cast<std::size_t>(r.i64("output_count"));
+    for (std::size_t j = 0; j < outputCount; ++j)
+    {
+        graph.outputs.push_back(readPortRef(r, "output_" + std::to_string(j) + "_"));
     }
     return graph;
 }

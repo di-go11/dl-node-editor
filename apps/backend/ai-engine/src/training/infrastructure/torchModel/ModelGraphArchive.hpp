@@ -17,7 +17,7 @@
 
 // このフォーマットのバージョン。*Params にフィールドを足す等で
 // レイアウトが変わったら上げる。読み側は不一致を例外にする。
-inline constexpr int64_t kModelGraphArchiveVersion = 2;
+inline constexpr int64_t kModelGraphArchiveVersion = 3;
 
 void writeModelGraph(torch::serialize::OutputArchive &archive, const ModelGraph &graph);
 
