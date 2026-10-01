@@ -3,11 +3,39 @@
 ブランチ: `feat/DAG-struct`
 設計と経緯: `model-graph-dag.md`(ADR)。この issue は、その実装の進み具合と、これからやることをまとめる。
 
-## 現在の状態(2026-10-01、`bdc292a` 時点)
+## 現在の状態(2026-10-01、`3c196cf` 時点)
 
-**`feat/DAG-struct` の ai-engine はビルドできない。** `ModelGraph` の中身を `layers` から `nodes` / `outputs` に変えたが、それを使うほかのファイル(`TorchModel`、mapper、archive、`TrainingApp`、テストなど)が古い `layers` のままのため。「B. ビルドの復旧」が終わるまでこの状態が続く。
+**`ai_engine_lib`(`src/training/`)と、gRPC に関係しないテストはビルドできる。** `ModelGraph` を使う側を DAG に追従させる「B. ビルドの復旧」のうち、a〜h と、j の gRPC に関係しないテストが完了した。
 
-### 完了したもの
+**gRPC 側(タスク i)は未対応で、ここがまだビルドできない。** `ai_engine_proto`(`model_graph.proto` を CMake に登録していない)、`TrainingProtoMapper`、`TrainingServiceImpl`、`GrpcApp`、`ai_engine_app`、`training_proto_mapper_test`。そのため、**`ctest` が通っても `training_proto_mapper_test` の結果は信用できない**(ctest はビルドをしないので、ビルドが失敗しても古い実行ファイルを動かして Passed と出る)。
+
+### 確認できたこと / まだ確認できていないこと
+
+| | 内容 |
+|---|---|
+| 確認できた | `cmake --build build -j2 --target ai_engine_lib` が通る(`4dd7420`) |
+| 確認できた | `model_graph_golden_test` の 8 項目がすべて一致する。`TorchModel` を DAG のインタプリタに書き換えても、初期重み・出力・各ステップの loss・学習後の出力が変わっていない(学習後の出力の合計は期待値 `-117.57355…` に対して `-117.57352…`。許容内)。層を `nodes` の並び順で作ったので、重みの初期値が変わらない |
+| 確認できた | 実行して通ったテスト: `model_graph_golden_test`、`model_graph_archive_test`、`checkpoint_roundtrip_test`、`checkpoint_rebuild_test`、`device_parity_test`(CPU のみ。CUDA 側は未確認)、`graph_shape_inference_test`、`torch_seed_recall_test` |
+| **未確認** | `training_smoke_test` は、実データ(`TrainingDataset/train`)がなくスキップされた。ビルドは通るが、学習が通ることは確認できていない |
+| **未確認** | CLI でプリセット(特に SegNet)を実際に組み立てて学習すること。`buildGraph` は `validatedModelGraph::create` を通すので、組み立てのミスは学習の前に例外になるはずだが、SegNet で実行して確かめてはいない |
+| **未確認** | checkpoint の保存と再開(CLI での一連の流れ) |
+
+### 決めたこと
+
+- **`StartTrainingCommand::modelGraph` は `std::optional<validatedModelGraph>`。** `IModelFactory::create` は `const validatedModelGraph &` を受け取る。
+  - `validatedModelGraph` は `create` からしか作れないので、「値が入っていれば検証済み」を型で保証できる(不正な状態を表現できなくする)。エラーが出るのは、モデルを作る時点ではなく、リクエストの変換や CLI のプリセットを組む時点になる
+  - デフォルト構築ができないので、「未設定」を `optional` の `nullopt` で表す。`StartTrainingCommand command;` と宣言してからフィールドを埋める既存の書き方と両立する。`TrainingJob` は `has_value()` で未設定を例外にする
+- **checkpoint まわりは、データとしての `ModelGraph` のまま。** `RestoredCheckpoint::graph` と `TorchCheckpointStore` は `ModelGraph` を持ち、`CheckpointModelLoader` が、読んだグラフを `create` で検証してからモデルを組む(ファイルは外から来る入力のため)。
+- **fingerprint の文字列は v2。** ノードは `nodes` の並び順のまま書く(実行順に直さない)。重みの初期値と `parameters()` の順番が並び順で決まるため。ノード ID、入力の接続、`outputs` を含める。
+- **`ModelGraphBuilder`(新規、`DAG/ModelGraphBuilder.hpp`)は検証しない。** `build()` が返すのは検証前の `ModelGraph` で、`validatedModelGraph::create` が検証する(検証の責務を 1 か所に集める)。`add(layer)` は直前のノードの `y` を `x` につなぎ、`add(layer, inputs)` は入力を明示する(SegNet の `indices`)。
+
+### 完了したもの(コミット別)
+
+- [x] `136e066` 形状推論(C)とポートの検証(A の一部): `GraphShapeInference` / `LayerShapeRules` / `PortShape`、`tests/graph_shape_inference_test.cpp`
+- [x] `4dd7420` B の a〜h: fingerprint v2、`validatedModelGraph` への型の変更、`ILayer::forward` の変更と `IIndicesSource` / `IIndicesSink` の削除、`TorchModel` の DAG 化、archive v3、`ModelGraphBuilder` とプリセットの DAG 化
+- [x] `3c196cf` B の j(一部): gRPC に関係しないテストを新しい形に直した。`model_graph_archive_test` は、fingerprint の既知値(v2 の文字列に対する `7905992374f76ef3`)と archive のキー集合を更新し、ノード ID・接続・`outputs` の復元と、v2 以前の format の拒否の確認を足した
+
+### 完了したもの(`bdc292a` まで)
 
 - [x] 変更前の計算結果を記録するテスト(`tests/model_graph_golden_test.cpp`、`2c50f64`)
   - 小さい SegNet 型のグラフを CPU・固定 seed で動かし、構築直後のパラメータ、順伝播の出力、学習 3 ステップの loss、学習後の出力を期待値と比べる
@@ -39,14 +67,17 @@
 ```
 src/training/entities/domain-objects/ModelGraph/
 ├── ModelGraph.hpp                  nodes / outputs
-├── ModelGraphFingerprint.{hpp,cpp} まだ layers のまま(B-a で直す)
+├── ModelGraphFingerprint.{hpp,cpp} 正規化文字列は v2(nodes と接続を含む)
+├── PortShape.hpp                   形状(C, H, W)
 ├── DAG/
 │   ├── GraphNode.hpp               PortRef / NodeInput / GraphNode
 │   ├── GraphValidation.{hpp,cpp}   GraphValidationError / validatedModelGraph
+│   ├── GraphShapeInference.{hpp,cpp} 形状推論(validateGraphShapes)
+│   ├── ModelGraphBuilder.hpp       層を足していって ModelGraph を組み立てる(検証はしない)
 │   └── NodeChecker.hpp             ノード ID の文字種の確認
 └── Layers/
     ├── LayersConfig.hpp / LayersParams.hpp / LayersParamsFields.hpp
-    ├── LayersPort.hpp / PortKinds.hpp
+    ├── LayersPort.hpp / PortKinds.hpp / LayerShapeRules.hpp
     └── 各層の *Params.hpp、ActivationConfig / ActivationType、PoolingType
 ```
 
@@ -97,35 +128,37 @@ A → B の順に進める。A のポートの定義は、B の `TorchModel` で
 
 内側の層から順に直す。`src/training/` は全体で 1 つのライブラリ(`ai_engine_lib`)なので、a〜h が終わるまでライブラリはビルドできない。
 
-- [ ] **先に決める: `StartTrainingCommand` と `IModelFactory::create` が受け取る型**
+- [x] **先に決める: `StartTrainingCommand` と `IModelFactory::create` が受け取る型**(決定: `validatedModelGraph`。`StartTrainingCommand` では `optional` で持つ。「現在の状態」の「決めたこと」を参照)
   - `validatedModelGraph` にする(検証を通していないグラフではコンパイルが通らない。mapper・CLI のプリセット・checkpoint の読み込みが、それぞれ `create` を呼ぶ)← 推奨
   - `ModelGraph` のままにして、`TorchModel` のコンストラクタで `create` を呼ぶ(変更は少ないが、エラーが出るのがモデルを作る時点まで遅れる)
-- [ ] a. `ModelGraph/ModelGraphFingerprint.cpp`: `graph.nodes` を回す。正規化文字列にノード ID、入力の接続、`outputs` を足し、先頭を `v2;` にする
-- [ ] b. `application/impl/StartTrainingCommand.hpp`、`adapters/interfaces/IModelFactory.hpp`: 上で決めた型に合わせる
-- [ ] c. `adapters/interfaces/ILayer.hpp`: `forward` を `std::vector<at::Tensor> forward(const std::vector<at::Tensor> &inputs)` にする(並びは `layerPortsOf` のポート順)。`IIndicesSource.hpp` / `IIndicesSink.hpp` を削除する
-- [ ] d. `infrastructure/torchFunc/Torch*Layer.{hpp,cpp}`(7 種類): 新しい `forward` に合わせる
+- [x] a. `ModelGraph/ModelGraphFingerprint.cpp`: `graph.nodes` を回す。正規化文字列にノード ID、入力の接続、`outputs` を足し、先頭を `v2;` にする
+- [x] b. `application/impl/StartTrainingCommand.hpp`、`adapters/interfaces/IModelFactory.hpp`: 上で決めた型に合わせる
+- [x] c. `adapters/interfaces/ILayer.hpp`: `forward` を `std::vector<at::Tensor> forward(const std::vector<at::Tensor> &inputs)` にする(並びは `layerPortsOf` のポート順)。`IIndicesSource.hpp` / `IIndicesSink.hpp` を削除する
+- [x] d. `infrastructure/torchFunc/Torch*Layer.{hpp,cpp}`(7 種類): 新しい `forward` に合わせる
   - 5 種類は `{_module->forward(inputs[0])}` を返すだけ
   - `TorchIndexPoolingLayer` は `{pooled, indices}` を返す。`TorchUnpoolingLayer` は `inputs[0]`(x)と `inputs[1]`(indices)を受け取る
   - `_lastIndices` / `takeIndices` / `provideIndices` を削除する
-- [ ] e. `infrastructure/torchModel/TorchModel.{hpp,cpp}`: DAG のインタプリタにする
+- [x] e. `infrastructure/torchModel/TorchModel.{hpp,cpp}`: DAG のインタプリタにする
   - 層は **`nodes` の並び順**で作る(`getOrder()` の順ではない)。重みの初期値と `parameters()` の順番がこれで決まる
   - 構築時に、接続を添字に直して持つ(入力ごとに「グラフ入力か」「どのノードの何番目の出力か」)。ポート名から位置を引くのに `layerPortsOf` を使う
   - `forward`: `getOrder()` の順に回し、ノードごとの出力を表に入れて受け渡す。最後に `outputs[0]` が指すテンソルを返す
   - LIFO スタック、`_useIndices`、`dynamic_cast` を削除する
-- [ ] f. `infrastructure/torchModel/ModelGraphArchive.{hpp,cpp}`: format を v3 にする
+- [x] f. `infrastructure/torchModel/ModelGraphArchive.{hpp,cpp}`: format を v3 にする
   - 保存するもの: ノード数、各ノードの ID・層(今の `writeLayer` を流用)・入力の接続、`outputs`
   - v2 以前は「未対応の古いフォーマット」の例外にする
-- [ ] g. 型の変更への追従: `CheckpointArchiveIO.cpp`、`CheckpointModelLoader.cpp`、`TorchCheckpointStore.cpp`、`TorchModelFactory.cpp`、`TrainingJob.cpp`(`layers.empty()` → `nodes.empty()`)。checkpoint から読んだグラフも `create` を通す
-- [ ] h. `TrainingApp.cpp`: プリセット(Sample / SegNet / SegNetDilated / SegNetFullDilated)を DAG で組み立てる
+- [x] g. 型の変更への追従: `CheckpointArchiveIO.cpp`、`CheckpointModelLoader.cpp`、`TorchCheckpointStore.cpp`、`TorchModelFactory.cpp`、`TrainingJob.cpp`(`layers.empty()` → `nodes.empty()`)。checkpoint から読んだグラフも `create` を通す
+- [x] h. `TrainingApp.cpp`: プリセット(Sample / SegNet / SegNetDilated / SegNetFullDilated)を DAG で組み立てる
   - 層を順に足していくビルダーを entities に作る(`add(layer)` は直前の `y` を `x` につなぐ。`add(layer, inputs)` で入力を明示する。`build()` は最後のノードの `y` を `outputs` にする)
   - SegNet は、encoder の IndexedPooling のノード ID を覚えておき、decoder の Unpooling の `indices` に明示的につなぐ
 - [ ] i. gRPC(「D. proto / gRPC」を参照)
 - [ ] j. テスト: グラフの組み立てを新しい形に直す(`model_graph_golden_test` は `makeGraph()` と `appendConvReluBn()` だけ。ノードを並べる順番は今の層の順番と同じにし、`kExpected*` は変えない)。ほかに `model_graph_archive_test`、`checkpoint_rebuild_test`、`checkpoint_roundtrip_test`、`device_parity_test`、`training_smoke_test`、`training_proto_mapper_test`
+  - 完了(`3c196cf`): `model_graph_golden_test`、`model_graph_archive_test`、`checkpoint_rebuild_test`、`checkpoint_roundtrip_test`、`device_parity_test`、`training_smoke_test`(ただし smoke は実データなしでスキップされ、学習が通ることは未確認)
+  - **残り: `training_proto_mapper_test`**(i と合わせて直す)
 
 **確認の節目**
 
-1. a〜h の後: `cmake --build build -j2 --target ai_engine_lib` が通る
-2. `model_graph_golden_test` の値が一致する(**ここが一番大事**。`TorchModel` の書き直しで計算結果が変わっていないことの確認)
+1. a〜h の後: `cmake --build build -j2 --target ai_engine_lib` が通る(**済み**、`4dd7420`)
+2. `model_graph_golden_test` の値が一致する(**ここが一番大事**。`TorchModel` の書き直しで計算結果が変わっていないことの確認)(**済み**、`4dd7420`)
 3. i の後: `ai_engine_app` と `training_proto_mapper_test` がビルドできる
 4. j の後: 全テストが通り、CLI で SegNet を 1 エポック学習して、checkpoint の保存と再開ができる
 
@@ -185,11 +218,14 @@ proto の定義は完了している。残りは C++ 側の対応。
 | `PortKind` で接続の種類を照合するか | A |
 | グラフ入力を指すときの `PortRef.port` の値 | A |
 | ノード ID の長さの上限 | A |
-| `StartTrainingCommand` / `IModelFactory::create` が受け取る型 | B |
+| `StartTrainingCommand` / `IModelFactory::create` が受け取る型 | B(決定済み: `validatedModelGraph`) |
 | 複数の出力と Loss の対応(検出ヘッド、DETR) | E の第 3 段より前 |
 
 ## 注意点
 
 - **移行後は、既存の checkpoint(format v2)が読めなくなる。** `output_dir` に古い `<model_name>_last.pt` が残っていると自動再開で失敗するので、移行後に最初の学習を回す前に、退避するか `model_name` を変える
 - `model_graph_golden_test` の期待値は、この devcontainer で取得した。許容誤差は 1e-4。Jenkins やサーバーで落ちた場合は、誤差の大きさを見て許容値を調整する
-- `bdc292a` はビルドできないコミットなので、`feat/DAG-struct` の CI は B が終わるまで失敗する
+- `bdc292a` はビルドできないコミットだった。`4dd7420` 以降は `ai_engine_lib` がビルドできるが、**gRPC 側(i)が終わるまで、`ai_engine_app` を含む全体のビルドと CI は失敗する**
+- **`ctest` はビルドをしない。** ビルドに失敗したテスト(今は `training_proto_mapper_test`)は、古い実行ファイルで動いて Passed と出ることがある。結果を見る前に、`cmake --build build -j2 -- -k 0` で失敗したターゲットがないか確認する
+- **`training_smoke_test` は、実データがないとスキップされる**(終了コードは 0 になる)。CI では、`TrainingDataset/train` を用意しないと、学習が通ることを確認できない
+- この変更で、fingerprint が v2、archive が v3 になった。**これまでの `.pt` は、再開に使えない**(上の注意と同じ)
