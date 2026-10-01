@@ -292,6 +292,19 @@ target_include_directories(device_config_test PRIVATE
 )
 set_property(TARGET device_config_test PROPERTY CXX_STANDARD 17)
 
+# 14-2. ポートの検証(GraphValidation)と形状推論(GraphShapeInference)のテスト。
+#       libtorch 非依存(entities のみ)。ai_engine_lib には依存せず、必要な .cpp だけをビルドする。
+add_executable(graph_shape_inference_test
+	tests/graph_shape_inference_test.cpp
+	src/training/entities/domain-objects/ModelGraph/DAG/GraphValidation.cpp
+	src/training/entities/domain-objects/ModelGraph/DAG/GraphShapeInference.cpp
+)
+target_include_directories(graph_shape_inference_test PRIVATE
+	${CMAKE_CURRENT_SOURCE_DIR}/src
+	${CMAKE_CURRENT_SOURCE_DIR}
+)
+set_property(TARGET graph_shape_inference_test PROPERTY CXX_STANDARD 17)
+
 # 15. CPU と CUDA で学習結果が概ね一致することの確認(CUDA 無しは CPU のみで skip)。
 add_executable(device_parity_test tests/device_parity_test.cpp)
 target_include_directories(device_parity_test PRIVATE
@@ -392,6 +405,7 @@ add_test(NAME training_job_manager_test COMMAND training_job_manager_test)
 add_test(NAME training_proto_mapper_test COMMAND training_proto_mapper_test)
 add_test(NAME torch_seed_recall_test COMMAND torch_seed_recall_test)
 add_test(NAME model_graph_golden_test COMMAND model_graph_golden_test)
+add_test(NAME graph_shape_inference_test COMMAND graph_shape_inference_test)
 
 set_tests_properties(torch_loss_factory_test PROPERTIES LABELS "cpu")
 set_tests_properties(image_pipeline_test PROPERTIES LABELS "cpu")
@@ -400,3 +414,4 @@ set_tests_properties(training_job_manager_test PROPERTIES LABELS "cpu")
 set_tests_properties(training_proto_mapper_test PROPERTIES LABELS "cpu")
 set_tests_properties(torch_seed_recall_test PROPERTIES LABELS "cpu")
 set_tests_properties(model_graph_golden_test PROPERTIES LABELS "cpu")
+set_tests_properties(graph_shape_inference_test PROPERTIES LABELS "cpu")

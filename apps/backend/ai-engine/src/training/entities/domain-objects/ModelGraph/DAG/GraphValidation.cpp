@@ -1,6 +1,7 @@
 #include "GraphValidation.hpp"
 
 #include "NodeChecker.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/LayersPort.hpp"
 
 #include <set>
 #include <stdexcept>
@@ -23,10 +24,151 @@ namespace
         return indexOf;
     }
 
+    constexpr std::size_t kNoPort = static_cast<std::size_t>(-1);
+
+    // ポート名から、その層の仕様(layerPortsOf)の中での添字を引く。無ければ kNoPort。
+    template <typename PortSpecs>
+    std::size_t findPort(const PortSpecs &ports, const std::string &name)
+    {
+        for (std::size_t i = 0; i < ports.size(); ++i)
+        {
+            if (ports[i].name == name)
+            {
+                return i;
+            }
+        }
+        return kNoPort;
+    }
+
+    // 出力の種類と入力の種類をつないでよいか。Any は、どちらの種類ともつなげる。
+    bool kindsCompatible(PortKind output, PortKind input)
+    {
+        return output == PortKind::Any || input == PortKind::Any || output == input;
+    }
+
+    const char *kindName(PortKind kind)
+    {
+        switch (kind)
+        {
+        case PortKind::Feature:
+            return "Feature(特徴マップ)";
+        case PortKind::Indices:
+            return "Indices";
+        case PortKind::Tokens:
+            return "Tokens(トークン列)";
+        case PortKind::Any:
+            return "Any";
+        }
+        return "不明";
+    }
+
+    // ポートの検証。layerPortsOf と突き合わせて、つなぎ方が層の仕様に合っているか確認する。
+    //   - 入力ポート名が、その層にある
+    //   - 参照先の出力ポート名が、参照先の層にある
+    //   - 出力の種類と入力の種類が合う(PortKind)
+    //   - つなぐ本数が合う(必須のポートの未接続、可変長でないポートへの 2 本以上の接続)
+    //   - outputs のポート名が、そのノードの出力ポートにある
+    // グラフ入力(参照先のノード ID が空)は、特徴マップとして扱う。ポート名は空でなければならない。
+    void validateGraphPorts(const ModelGraph &graph,
+                            const std::unordered_map<std::string, std::size_t> &indexOf,
+                            std::vector<GraphValidationError> &errors)
+    {
+        for (const auto &node : graph.nodes)
+        {
+            const LayerPortSpec spec = layerPortsOf(node.layer);
+            std::vector<std::size_t> connectionCount(spec.inputPorts.size(), 0);
+
+            for (const auto &input : node.inputs)
+            {
+                const std::size_t portIndex = findPort(spec.inputPorts, input.port);
+                if (portIndex == kNoPort)
+                {
+                    errors.push_back({node.id, input.port, "この層に入力ポート '" + input.port + "' はありません"});
+                    continue;
+                }
+                ++connectionCount[portIndex];
+
+                PortKind sourceKind = PortKind::Feature; // グラフ入力
+                const std::string &sourceId = input.source.nodeId;
+                if (!sourceId.empty())
+                {
+                    const auto source = indexOf.find(sourceId);
+                    if (source == indexOf.end())
+                    {
+                        continue; // 参照先が存在しない問題は、上で報告済み
+                    }
+                    const LayerPortSpec sourceSpec = layerPortsOf(graph.nodes[source->second].layer);
+                    const std::size_t outputIndex = findPort(sourceSpec.outputPorts, input.source.port);
+                    if (outputIndex == kNoPort)
+                    {
+                        errors.push_back({node.id, input.port,
+                                          "参照先のノード '" + sourceId + "' に出力ポート '" + input.source.port + "' はありません"});
+                        continue;
+                    }
+                    sourceKind = sourceSpec.outputPorts[outputIndex].kind;
+                }
+                else if (!input.source.port.empty())
+                {
+                    // グラフ入力は 1 つだけなので、ポート名では区別しない(ノード ID もポート名も空で表す)
+                    errors.push_back({node.id, input.port,
+                                      "グラフ入力を指すとき(参照先のノード ID が空)は、参照先のポート名も空にしてください(現在 '" +
+                                          input.source.port + "')"});
+                }
+
+                const PortKind inputKind = spec.inputPorts[portIndex].kind;
+                if (!kindsCompatible(sourceKind, inputKind))
+                {
+                    errors.push_back({node.id, input.port,
+                                      std::string("つなげない種類です(出力: ") + kindName(sourceKind) +
+                                          "、入力: " + kindName(inputKind) + ")"});
+                }
+            }
+
+            for (std::size_t k = 0; k < spec.inputPorts.size(); ++k)
+            {
+                const InputPortSpec &port = spec.inputPorts[k];
+                const std::size_t count = connectionCount[k];
+                if (port.variadic)
+                {
+                    if (count < port.minCount)
+                    {
+                        errors.push_back({node.id, port.name,
+                                          "つなぐ本数が足りません(最低 " + std::to_string(port.minCount) +
+                                              " 本、現在 " + std::to_string(count) + " 本)"});
+                    }
+                }
+                else if (count == 0)
+                {
+                    errors.push_back({node.id, port.name, "必須の入力ポートがつながっていません"});
+                }
+                else if (count > 1)
+                {
+                    errors.push_back({node.id, port.name,
+                                      "このポートには 1 本しかつなげません(現在 " + std::to_string(count) + " 本)"});
+                }
+            }
+        }
+
+        for (const auto &output : graph.outputs)
+        {
+            const auto source = indexOf.find(output.nodeId);
+            if (source == indexOf.end())
+            {
+                continue; // 参照先が存在しない問題は、上で報告済み
+            }
+            const LayerPortSpec sourceSpec = layerPortsOf(graph.nodes[source->second].layer);
+            if (findPort(sourceSpec.outputPorts, output.port) == kNoPort)
+            {
+                errors.push_back({output.nodeId, output.port,
+                                  "outputs が指す出力ポート '" + output.port + "' が、このノードにありません"});
+            }
+        }
+    }
+
     // 規則そのもの。問題なければ空の vector を返す。
     //
     // ここで確認するのは、topologicalSort が前提にしていること(ID が一意、参照先が存在する)と、
-    // outputs の指定。ポート名の確認(層の種類ごとの入力・出力ポート)は、ノード型カタログができてから足す。
+    // outputs の指定、ポートのつなぎ方(validateGraphPorts)。
     std::vector<GraphValidationError> validateGraphStructure(const ModelGraph &graph)
     {
         std::vector<GraphValidationError> errors;
@@ -88,6 +230,8 @@ namespace
                 errors.push_back({"", output.port, "outputs の参照先のノードが存在しません: " + output.nodeId});
             }
         }
+
+        validateGraphPorts(graph, indexOf, errors);
 
         return errors;
     }

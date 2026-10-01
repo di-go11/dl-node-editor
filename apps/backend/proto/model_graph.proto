@@ -10,7 +10,7 @@ message ModelGraph {
 
 // ----Node----
 message PortRef {
-    string node_id = 1; // 参照先のノード。空=グラフ入力
+    string node_id = 1; // 参照先のノード。空=グラフ入力(このとき port も空にする)
     string port = 2; // 参照先の出力ポート名
 }
 

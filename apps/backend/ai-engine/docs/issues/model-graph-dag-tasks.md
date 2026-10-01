@@ -61,13 +61,13 @@ A → B の順に進める。A のポートの定義は、B の `TorchModel` で
   - `validateGraphStructure` のエラーメッセージは「英数字・`-`・`_` のみ」と書いているので、実装をそれに合わせる(`std::isalnum` または `-` `_`)
   - ID が空のときに例外を投げているのをやめ、`false` を返す(空の確認は `validateGraphStructure` 側にある)
   - 長さの上限を決める(例: 64 文字)
-- [ ] **`PortKind` の扱いを決める**
+- [x] **`PortKind` の扱いを決める**(照合する。`InputPortSpec` に `kind` を持たせ、`Tokens`(トークン列)と `Any`(種類を問わない。Activation / Dropout / Add など)を足した)
   - 今は `OutputPortSpec` にだけ `kind` があり、`InputPortSpec` にはない。照合する相手がないので、このままでは使い道がない
   - 照合する場合: `InputPortSpec` の `name` の次に `PortKind kind = PortKind::Feature;` を足し、Unpooling の `indices` 入力を `PortKind::Indices` にする(Add / Concat の定義は引数の位置が 1 つずれる)
   - 照合しない場合: `OutputPortSpec::kind` と `PortKinds.hpp` を外す
   - Transformer 系を入れるなら `Tokens`(トークン列 `(N, L, D)`)を足す。Conv の出力を PatchEmbedding を通さずに Attention へつなぐ間違いは、名前では検出できない
-- [ ] **グラフ入力を指すときの `PortRef.port` の値を決める**(`nodeId` が空のとき。空にするか、`"image"` のような固定の名前にするか)。決めた値以外は検証でエラーにする
-- [ ] **ポート名の検証を `validateGraphStructure` に足す**(`layerPortsOf` と突き合わせる)
+- [x] **グラフ入力を指すときの `PortRef.port` の値を決める**(決定: **空文字**。`nodeId` も `port` も空 = グラフ入力。入力は 1 つだけなので名前で区別せず、`port` が空でなければ検証でエラー。将来入力が複数になっても、空 = 既定の入力として残したまま名前付きの入力を足せる)(`nodeId` が空のとき。空にするか、`"image"` のような固定の名前にするか)。決めた値以外は検証でエラーにする
+- [x] **ポート名の検証を `validateGraphStructure` に足す**(`layerPortsOf` と突き合わせる。`validateGraphPorts`、`tests/graph_shape_inference_test.cpp` で確認)
   - 入力ポート名が、その層のカタログにある
   - 必須のポートがつながっている(`minCount`)
   - 可変長でないポートに 2 本以上つないでいない
@@ -131,11 +131,11 @@ A → B の順に進める。A のポートの定義は、B の `TorchModel` で
 
 ### C. 形状推論による検証
 
-- [ ] `validateGraphShapes(graph, 入力の C / H / W, クラス数)` を entities に追加する
+- [x] `validateGraphShapes(graph, 入力の C / H / W, クラス数)` を entities に追加する(`DAG/GraphShapeInference.{hpp,cpp}`、層ごとの規則は `Layers/LayerShapeRules.hpp`。Linear は最後の次元に作用する。最終出力の H / W = 入力の H / W も確認する)
   - 層ごとの規則: Conv2D / Pooling は PyTorch の出力サイズの式(dilation を含む)、Unpooling は `(H-1)*stride - 2*padding + kernel`、BatchNorm は `num_features == C`、Linear は最後の次元 `== in_features`
   - 確認: 前の層の出力チャンネル数 = Conv2D の `in_channels`、Unpooling の `x` と `indices` の形状が一致、出力サイズが 1 以上、最終出力のチャンネル数 = クラス数
 - [ ] `runTrainingJob` で、labelmap を読んでクラス数が決まった直後(モデルを組み立てる前)に呼ぶ
-- [ ] テスト `tests/graph_shape_inference_test.cpp`(CLI のプリセットが 256×256 で通る。チャンネル数・Unpooling の形状・クラス数の不一致を検出する)
+- [x] テスト `tests/graph_shape_inference_test.cpp`(CLI のプリセットが 256×256 で通る。チャンネル数・Unpooling の形状・クラス数の不一致を検出する)
 - 副産物: 各ノードの出力形状がわかるので、`docs/重みと計算量の見積もり.md` の計算(学習時の活性化のメモリ)を自動化でき、batch_size の目安を出せる
 
 ### D. proto / gRPC

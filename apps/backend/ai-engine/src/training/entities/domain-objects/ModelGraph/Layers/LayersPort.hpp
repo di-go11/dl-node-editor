@@ -1,3 +1,4 @@
+// 層の型としての仕様(入力ポートと出力ポートの種類と数)を定義する。
 #pragma once
 
 #include "LayersConfig.hpp"
@@ -17,6 +18,7 @@ struct OutputPortSpec
 struct InputPortSpec
 {
     std::string name;
+    PortKind kind = PortKind::Feature;
     bool variadic = false;    // trueなら同じポートに複数つなげる(concat / Add用)
     std::size_t minCount = 1; // 最低限必要な接続の本数
 };
@@ -70,17 +72,18 @@ inline LayerPortSpec layerPortsOf(const IndexedPoolingParams &)
 inline LayerPortSpec layerPortsOf(const UnpoolingParams &)
 {
     return {
-        {InputPortSpec{"x"}, InputPortSpec{"indices"}},
+        {InputPortSpec{"x"}, InputPortSpec{"indices", PortKind::Indices}},
         {OutputPortSpec{"y"}}};
 }
 
 // Activationは入力1つ(x)と出力1つ(y)
 // (LayersParams に入っている型は ActivationConfig。ActivationParams はその別名)
+// 特徴マップにもトークン列にも使えるので、種類は Any(出力は入力と同じ種類になる)
 inline LayerPortSpec layerPortsOf(const ActivationConfig &)
 {
     return {
-        {InputPortSpec{"x"}},
-        {OutputPortSpec{"y"}}};
+        {InputPortSpec{"x", PortKind::Any}},
+        {OutputPortSpec{"y", PortKind::Any}}};
 }
 
 // ---- これから追加する層 ----
@@ -99,21 +102,22 @@ struct FlattenParams;
 struct GroupNormParams;
 
 // Add(要素ごとの足し算。ResNet の残差接続、FPN)は入力2つ以上(x、可変長)と出力1つ(y)
-// 入力はすべて同じ形状であること。
+// 入力はすべて同じ形状・同じ種類であること(Feature どうし、または Tokens どうし)。
 inline LayerPortSpec layerPortsOf(const AddParams &)
 {
     return {
-        {InputPortSpec{"x", /*variadic=*/true, /*minCount=*/2}},
-        {OutputPortSpec{"y"}}};
+        {InputPortSpec{"x", PortKind::Any, /*variadic=*/true, /*minCount=*/2}},
+        {OutputPortSpec{"y", PortKind::Any}}};
 }
 
 // Concat(チャンネル方向の結合。U-Net の skip connection)は入力2つ以上(x、可変長)と出力1つ(y)
 // つないだ順にチャンネルが並ぶので、inputs の順番に意味がある。
+// 入力はすべて同じ種類であること(Feature どうし、または Tokens どうし)。
 inline LayerPortSpec layerPortsOf(const ConcatParams &)
 {
     return {
-        {InputPortSpec{"x", /*variadic=*/true, /*minCount=*/2}},
-        {OutputPortSpec{"y"}}};
+        {InputPortSpec{"x", PortKind::Any, /*variadic=*/true, /*minCount=*/2}},
+        {OutputPortSpec{"y", PortKind::Any}}};
 }
 
 // Upsample(補間による拡大)は入力1つ(x)と出力1つ(y)
@@ -140,12 +144,12 @@ inline LayerPortSpec layerPortsOf(const AdaptiveAvgPoolParams &)
         {OutputPortSpec{"y"}}};
 }
 
-// Dropoutは入力1つ(x)と出力1つ(y)
+// Dropoutは入力1つ(x)と出力1つ(y)。種類は Any(特徴マップにもトークン列にも使える)
 inline LayerPortSpec layerPortsOf(const DropoutParams &)
 {
     return {
-        {InputPortSpec{"x"}},
-        {OutputPortSpec{"y"}}};
+        {InputPortSpec{"x", PortKind::Any}},
+        {OutputPortSpec{"y", PortKind::Any}}};
 }
 
 // Flatten(Linear の前で (N, C, H, W) を (N, C*H*W) にする)は入力1つ(x)と出力1つ(y)
@@ -184,8 +188,8 @@ struct TransformerDecoderLayerParams;
 inline LayerPortSpec layerPortsOf(const PatchEmbeddingParams &)
 {
     return {
-        {InputPortSpec{"x"}},
-        {OutputPortSpec{"y"}}};
+        {InputPortSpec{"x", PortKind::Feature}},
+        {OutputPortSpec{"y", PortKind::Tokens}}};
 }
 
 // TokensToFeatureMap(トークン列を特徴マップに並べ直す。Transformer の後に Conv 系へ戻すとき)は入力1つ(x)と出力1つ(y)
@@ -193,32 +197,32 @@ inline LayerPortSpec layerPortsOf(const PatchEmbeddingParams &)
 inline LayerPortSpec layerPortsOf(const TokensToFeatureMapParams &)
 {
     return {
-        {InputPortSpec{"x"}},
-        {OutputPortSpec{"y"}}};
+        {InputPortSpec{"x", PortKind::Tokens}},
+        {OutputPortSpec{"y", PortKind::Feature}}};
 }
 
 // PositionalEncoding(トークンの位置の情報を足す)は入力1つ(x)と出力1つ(y)
 inline LayerPortSpec layerPortsOf(const PositionalEncodingParams &)
 {
     return {
-        {InputPortSpec{"x"}},
-        {OutputPortSpec{"y"}}};
+        {InputPortSpec{"x", PortKind::Tokens}},
+        {OutputPortSpec{"y", PortKind::Tokens}}};
 }
 
-// LayerNormは入力1つ(x)と出力1つ(y)
+// LayerNormは入力1つ(x)と出力1つ(y)。種類は Any(トークン列が主だが、特徴マップに使う構成もある)
 inline LayerPortSpec layerPortsOf(const LayerNormParams &)
 {
     return {
-        {InputPortSpec{"x"}},
-        {OutputPortSpec{"y"}}};
+        {InputPortSpec{"x", PortKind::Any}},
+        {OutputPortSpec{"y", PortKind::Any}}};
 }
 
 // SelfAttention(同じトークン列どうしの注意。query = key = value)は入力1つ(x)と出力1つ(y)
 inline LayerPortSpec layerPortsOf(const SelfAttentionParams &)
 {
     return {
-        {InputPortSpec{"x"}},
-        {OutputPortSpec{"y"}}};
+        {InputPortSpec{"x", PortKind::Tokens}},
+        {OutputPortSpec{"y", PortKind::Tokens}}};
 }
 
 // MultiHeadAttention(query と key / value を別に指定する注意。Cross-Attention 用)は
@@ -227,8 +231,10 @@ inline LayerPortSpec layerPortsOf(const SelfAttentionParams &)
 inline LayerPortSpec layerPortsOf(const MultiHeadAttentionParams &)
 {
     return {
-        {InputPortSpec{"query"}, InputPortSpec{"key"}, InputPortSpec{"value"}},
-        {OutputPortSpec{"y"}}};
+        {InputPortSpec{"query", PortKind::Tokens},
+         InputPortSpec{"key", PortKind::Tokens},
+         InputPortSpec{"value", PortKind::Tokens}},
+        {OutputPortSpec{"y", PortKind::Tokens}}};
 }
 
 // TransformerEncoderLayer(Self-Attention + 全結合 + 残差接続 + 正規化 をまとめた 1 ブロック)は
@@ -236,8 +242,8 @@ inline LayerPortSpec layerPortsOf(const MultiHeadAttentionParams &)
 inline LayerPortSpec layerPortsOf(const TransformerEncoderLayerParams &)
 {
     return {
-        {InputPortSpec{"x"}},
-        {OutputPortSpec{"y"}}};
+        {InputPortSpec{"x", PortKind::Tokens}},
+        {OutputPortSpec{"y", PortKind::Tokens}}};
 }
 
 // TransformerDecoderLayer(Self-Attention + encoder の出力への Cross-Attention + 全結合 をまとめた 1 ブロック)は
@@ -246,8 +252,8 @@ inline LayerPortSpec layerPortsOf(const TransformerEncoderLayerParams &)
 inline LayerPortSpec layerPortsOf(const TransformerDecoderLayerParams &)
 {
     return {
-        {InputPortSpec{"x"}, InputPortSpec{"memory"}},
-        {OutputPortSpec{"y"}}};
+        {InputPortSpec{"x", PortKind::Tokens}, InputPortSpec{"memory", PortKind::Tokens}},
+        {OutputPortSpec{"y", PortKind::Tokens}}};
 }
 
 // ---- LayersConfig(variant)から引く入口 ----
