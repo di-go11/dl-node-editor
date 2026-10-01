@@ -6,6 +6,7 @@
 
 #include <memory>
 
+class ISeed;
 class ITrainingProgressObserver;
 class TrainingStopToken;
 
@@ -15,9 +16,11 @@ class TrainingStopToken;
 // command.modelGraph は呼び出し側が埋めておくこと(空なら例外)。
 //
 // progressObserver: エポックごとの結果の通知先(onEpochCompleted だけが呼ばれる)。
+// seedApplier: 乱数シードの適用先(借用)。command.seed が指定されたときだけ、モデル構築より前に適用する。
 // stopToken: 停止要求。nullptr なら止められない。
 // 戻り値: Completed または Stopped。失敗は例外で返るので、onFinished での終了通知は呼び出し側が行う。
 TrainingStatus runTrainingJob(const ServerConfig &server,
                               const StartTrainingCommand &command,
                               const std::shared_ptr<ITrainingProgressObserver> &progressObserver,
+                              const ISeed &seedApplier,
                               const TrainingStopToken *stopToken = nullptr);

@@ -101,6 +101,17 @@ int main()
         check(seg != nullptr && seg->ignoreIndex == 255, "変換: task_specs.segmentation.ignore_index");
     }
     {
+        // seed: 未指定は nullopt、0 を含む指定値はそのまま渡る
+        training::v1::StartTrainingRequest r = makeValidRequest();
+        check(!toStartTrainingCommand(r).seed.has_value(), "変換: seed 未指定は nullopt");
+        r.mutable_seed()->set_value(0);
+        const auto zero = toStartTrainingCommand(r).seed;
+        check(zero.has_value() && *zero == 0, "変換: seed = 0 は有効な値として渡る");
+        r.mutable_seed()->set_value(18446744073709551615ULL);
+        const auto big = toStartTrainingCommand(r).seed;
+        check(big.has_value() && *big == 18446744073709551615ULL, "変換: seed は uint64 の最大値まで保持する");
+    }
+    {
         // ignore_index = 0 は正しい値として通す(拒否しない)
         training::v1::StartTrainingRequest r = makeValidRequest();
         r.mutable_data_spec()->mutable_image()->mutable_task_specs()->mutable_segmentation()->set_ignore_index(0);

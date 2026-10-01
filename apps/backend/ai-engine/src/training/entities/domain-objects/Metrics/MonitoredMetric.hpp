@@ -5,6 +5,7 @@
 
 #include <string>
 #include <variant>
+#include <vector>
 
 struct MonitoredMetric
 {
@@ -29,6 +30,21 @@ inline MonitoredMetric monitoredMetric(const TaskMetrics &m)
                       m);
 };
 
+// クラスごとの値を "v0, v1, ..." の形に並べる(インデックス = クラス番号)
+inline std::string joinPerClass(const std::vector<double> &values)
+{
+    std::string joined;
+    for (size_t i = 0; i < values.size(); ++i)
+    {
+        if (i > 0)
+        {
+            joined += ", ";
+        }
+        joined += std::to_string(values[i]);
+    }
+    return joined;
+}
+
 // ログ用の文字列
 inline std::string describe(const TaskMetrics &m)
 {
@@ -39,15 +55,13 @@ inline std::string describe(const TaskMetrics &m)
                                      ", meanIoU: " + std::to_string(s.meanIoU) +
                                      ", fwIoU: " + std::to_string(s.fwIoU) +
                                      ", meanClassAccuracy: " + std::to_string(s.meanClassAccuracy) +
-                                     ", perClassIoU: [" + (s.perClassIoU.empty() ? "" : std::to_string(s.perClassIoU[0])) +
-                                     (s.perClassIoU.size() > 1 ? ", ..." : "") + "]}";
+                                     ", perClassIoU: [" + joinPerClass(s.perClassIoU) + "]}";
                           },
                           [](const ClassificationMetricsConfig &c)
                           {
                               return "ClassificationMetricsConfig{accuracy: " + std::to_string(c.accuracy) +
                                      ", macroF1: " + std::to_string(c.macroF1) +
-                                     ", perClassAccuracy: [" + (c.perClassAccuracy.empty() ? "" : std::to_string(c.perClassAccuracy[0])) +
-                                     (c.perClassAccuracy.size() > 1 ? ", ..." : "") + "]}";
+                                     ", perClassAccuracy: [" + joinPerClass(c.perClassAccuracy) + "]}";
                           },
                       },
                       m);
