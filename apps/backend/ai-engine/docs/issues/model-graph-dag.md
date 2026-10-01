@@ -219,7 +219,13 @@ message ModelGraph {
 
 ## 実装計画
 
-ブランチ `feat/model-graph-dag`(main から)で、下のコミット単位で進める。**各コミットの時点でビルドと全テストが通り、CLI の SegNet 学習が動く**状態を保つ(途中で止めても main に戻せるように)。
+> **進捗と残りのタスクは `model-graph-dag-tasks.md` にまとめている。** 以下は当初の計画で、ファイルの置き場所などが実際の構成と違う箇所がある(違いは `model-graph-dag-tasks.md` の「ADR から変わった点」)。
+
+ブランチ `feat/DAG-struct` で、下の順に進める。
+
+> **順番の変更(2026-10-01)**: proto の DAG 化とファイル分割(`model_graph.proto`、パッケージ `model.v1`)を先に行った。そのため、4 のうち proto の定義は完了済みで、**2 が終わるまで ai-engine はビルドできない**。0(変更前の出力の記録)は、proto を変更する前のコミット(main)でテストを書いて値を取る。mapper は 2 の中で、proto の `Node` をドメインの `GraphNode` に直接詰め替える形で書く(`linearToGraph` を経由する一時的な形は不要になった)。
+>
+> 当初の方針「各コミットの時点でビルドと全テストが通る」は、2 の完了以降に適用する。
 
 C++ 側(1〜6)で ADR の範囲は完了する。Rust・フロントエンド・Capabilities(7〜9)は別の issue に分ける。
 

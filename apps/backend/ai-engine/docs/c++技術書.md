@@ -92,7 +92,7 @@ int main()
 
 // 受け取る側: 「f(x) と書ける型」なら何でも受け付ける
 template <class F>
-void applyAll(const std::vector<int> &xs, F &&f) 
+void applyAll(const std::vector<int> &xs, F &&f)
 {
     for (int x : xs) {
         std::cout << f(x) << "\n";           // ← 呼び出し構文 f(x) だけを前提にする
@@ -238,7 +238,7 @@ if (int* p = std::get_if<int>(&v)) {
 }
 ```
 
-### std::min 
+### std::min
 
 - `#include <algorithm>`必須
 
@@ -1943,3 +1943,42 @@ int main() {
 
     return 0;
 }
+```
+
+## tips
+
+### 静的メソッドをつかって、契約通りのオブジェクトを生成する
+
+```c++
+#pragma once
+
+#include "training/entities/domain-objects/ModelGraph/ModelGraph.hpp"
+
+#include <string>
+#include <vector>
+#include <cstddef>
+
+struct GraphValidationError
+{
+    std::string nodeId;
+    std::string port;
+    std::string message;
+};
+
+class validatedModelGraph
+{
+public:
+    static validatedModelGraph create(const ModelGraph &graph); // 検証済みモデルのオブジェクトを返すことを保証する。 staticにすることでオブジェクトを作らなくても使用できるためstaticを使う。
+
+    const ModelGraph &getGraph() const { return _graph; };
+
+private:
+    validatedModelGraph(ModelGraph, std::vector<std::size_t> order);
+
+    ModelGraph _graph;
+    std::vector<std::size_t> _order;
+};
+```
+
+- privateにコンストラクタを置くことで、外部からオブジェクトを生成できなくなる。
+  - この時、静的メソッドのcreateを通すことでしか、クラス型のオブジェクトを返せない。=検証済み(validated)のモデルグラフの生成が約束できる。
