@@ -1,14 +1,16 @@
 // TrainingProtoMapper(proto <-> ドメインの変換と値の確認)の単体テスト。
-// torch に依存しない(ai_engine_grpc / ai_engine_proto だけをリンクする)。
+// torch に依存しない(ai_engine_grpc / ai_engine_proto と、グラフの検証の GraphValidation.cpp だけをリンクする)。
 
 #include "api/grpc/TrainingProtoMapper.hpp"
 
 #include <cmath>
+#include <cstddef>
 #include <functional>
 #include <iostream>
 #include <stdexcept>
 #include <string>
 #include <variant>
+#include <vector>
 
 namespace
 {
@@ -23,18 +25,46 @@ void check(bool condition, const std::string &message)
     }
 }
 
-// Rust 側が送る想定の、正しいリクエスト(画像セグメンテーション、Conv 1 層)。
-training::v1::StartTrainingRequest makeValidRequest()
+// model_graph にノードを 1 つ足す。層は Conv2D(値はすべて正しい)。入力はつながない。
+model::v1::Node *addConvNode(training::v1::StartTrainingRequest &r, const std::string &id)
 {
-    training::v1::StartTrainingRequest r;
-    r.set_model_name("seg_model-1");
-    auto *conv = r.mutable_model_graph()->add_layers()->mutable_conv2d();
+    model::v1::Node *node = r.mutable_model_graph()->add_nodes();
+    node->set_id(id);
+    auto *conv = node->mutable_layer()->mutable_conv2d();
     conv->set_in_channels(3);
     conv->set_out_channels(3);
     conv->set_kernel_size(3);
     conv->set_stride(1);
     conv->set_padding(1);
     conv->set_dilation(1);
+    return node;
+}
+
+// node の入力ポート port に、ノード sourceId の出力ポート sourcePort をつなぐ。
+// sourceId も sourcePort も空 = グラフ入力(画像)。
+void connect(model::v1::Node *node, const std::string &port, const std::string &sourceId, const std::string &sourcePort)
+{
+    model::v1::NodeInput *input = node->add_inputs();
+    input->set_port(port);
+    input->mutable_source()->set_node_id(sourceId);
+    input->mutable_source()->set_port(sourcePort);
+}
+
+void addOutput(training::v1::StartTrainingRequest &r, const std::string &nodeId, const std::string &port)
+{
+    model::v1::PortRef *output = r.mutable_model_graph()->add_outputs();
+    output->set_node_id(nodeId);
+    output->set_port(port);
+}
+
+// Rust 側が送る想定の、正しいリクエスト(画像セグメンテーション、Conv 1 層)。
+// グラフ: グラフ入力 → conv1(x → y)→ モデルの出力
+training::v1::StartTrainingRequest makeValidRequest()
+{
+    training::v1::StartTrainingRequest r;
+    r.set_model_name("seg_model-1");
+    connect(addConvNode(r, "conv1"), "x", "", "");
+    addOutput(r, "conv1", "y");
 
     auto *adam = r.mutable_optimizer()->mutable_adam();
     adam->set_learning_rate(0.005);
@@ -73,6 +103,27 @@ void checkRejected(const std::function<void(training::v1::StartTrainingRequest &
     }
     check(rejected, "拒否: " + message);
 }
+
+// modify で壊したリクエストを変換したときの、invalid_argument のメッセージ。拒否されなければ空。
+std::string rejectionMessage(const std::function<void(training::v1::StartTrainingRequest &)> &modify)
+{
+    training::v1::StartTrainingRequest r = makeValidRequest();
+    modify(r);
+    try
+    {
+        toStartTrainingCommand(r);
+    }
+    catch (const std::invalid_argument &e)
+    {
+        return e.what();
+    }
+    return "";
+}
+
+bool contains(const std::string &text, const std::string &part)
+{
+    return text.find(part) != std::string::npos;
+}
 } // namespace
 
 int main()
@@ -81,10 +132,20 @@ int main()
     {
         const StartTrainingCommand c = toStartTrainingCommand(makeValidRequest());
         check(c.modelName == "seg_model-1", "変換: model_name");
-        check(c.modelGraph.layers.size() == 1 &&
-                  std::holds_alternative<Conv2DParams>(c.modelGraph.layers[0].params) &&
-                  std::get<Conv2DParams>(c.modelGraph.layers[0].params).padding == 1,
-              "変換: model_graph(Conv2D)");
+        check(c.modelGraph.has_value(), "変換: model_graph は検証済みのグラフとして入る");
+        if (c.modelGraph.has_value())
+        {
+            const ModelGraph &g = c.modelGraph->getGraph();
+            check(g.nodes.size() == 1 && g.nodes[0].id == "conv1" &&
+                      std::holds_alternative<Conv2DParams>(g.nodes[0].layer.params) &&
+                      std::get<Conv2DParams>(g.nodes[0].layer.params).padding == 1,
+                  "変換: model_graph のノード(ID と Conv2D)");
+            check(g.nodes.size() == 1 && g.nodes[0].inputs.size() == 1 && g.nodes[0].inputs[0].port == "x" &&
+                      g.nodes[0].inputs[0].source.nodeId.empty() && g.nodes[0].inputs[0].source.port.empty(),
+                  "変換: model_graph の入力の接続(グラフ入力 → x)");
+            check(g.outputs.size() == 1 && g.outputs[0].nodeId == "conv1" && g.outputs[0].port == "y",
+                  "変換: model_graph の outputs");
+        }
         check(std::holds_alternative<AdamOptimizerConfig>(c.optimizer) &&
                   std::get<AdamOptimizerConfig>(c.optimizer).learningRate == 0.005,
               "変換: optimizer(Adam)");
@@ -99,6 +160,51 @@ int main()
               "変換: data_spec.image.annotation(PascalVoc)");
         const SegmentationSpec *seg = image ? std::get_if<SegmentationSpec>(&image->taskSpecs) : nullptr;
         check(seg != nullptr && seg->ignoreIndex == 255, "変換: task_specs.segmentation.ignore_index");
+    }
+    {
+        // 分岐のある DAG: conv1 → pool →(y と indices の 2 本)→ unpool → モデルの出力。
+        // nodes は実行順と逆に並べて送る(並び順のまま保持され、実行順は別に求まる)。
+        training::v1::StartTrainingRequest r = makeValidRequest();
+        model::v1::ModelGraph *graph = r.mutable_model_graph();
+        graph->Clear();
+
+        model::v1::Node *unpool = graph->add_nodes();
+        unpool->set_id("unpool");
+        unpool->mutable_layer()->mutable_unpooling()->set_kernel_size(2);
+        unpool->mutable_layer()->mutable_unpooling()->set_stride(2);
+        connect(unpool, "x", "pool", "y");
+        connect(unpool, "indices", "pool", "indices");
+
+        model::v1::Node *pool = graph->add_nodes();
+        pool->set_id("pool");
+        pool->mutable_layer()->mutable_indexed_pooling()->set_kernel_size(2);
+        pool->mutable_layer()->mutable_indexed_pooling()->set_stride(2);
+        connect(pool, "x", "conv1", "y");
+
+        connect(addConvNode(r, "conv1"), "x", "", "");
+        addOutput(r, "unpool", "y");
+
+        const StartTrainingCommand c = toStartTrainingCommand(r);
+        check(c.modelGraph.has_value(), "変換(DAG): 分岐のあるグラフが検証を通る");
+        if (c.modelGraph.has_value())
+        {
+            const ModelGraph &g = c.modelGraph->getGraph();
+            check(g.nodes.size() == 3 && g.nodes[0].id == "unpool" && g.nodes[1].id == "pool" && g.nodes[2].id == "conv1",
+                  "変換(DAG): nodes は送った並び順のまま");
+            check(g.nodes.size() == 3 && std::holds_alternative<UnpoolingParams>(g.nodes[0].layer.params) &&
+                      std::holds_alternative<IndexedPoolingParams>(g.nodes[1].layer.params),
+                  "変換(DAG): 層の種類(Unpooling / IndexedPooling)");
+            check(g.nodes.size() == 3 && g.nodes[0].inputs.size() == 2 &&
+                      g.nodes[0].inputs[0].port == "x" && g.nodes[0].inputs[0].source.nodeId == "pool" &&
+                      g.nodes[0].inputs[0].source.port == "y" &&
+                      g.nodes[0].inputs[1].port == "indices" && g.nodes[0].inputs[1].source.nodeId == "pool" &&
+                      g.nodes[0].inputs[1].source.port == "indices",
+                  "変換(DAG): 同じノードから 2 本の接続(y と indices)");
+            check(c.modelGraph->getOrder() == std::vector<std::size_t>{2, 1, 0},
+                  "変換(DAG): 実行順は conv1 → pool → unpool");
+            check(g.outputs.size() == 1 && g.outputs[0].nodeId == "unpool" && g.outputs[0].port == "y",
+                  "変換(DAG): outputs");
+        }
     }
     {
         // seed: 未指定は nullopt、0 を含む指定値はそのまま渡る
@@ -123,12 +229,92 @@ int main()
     // ---------- 拒否されるリクエスト ----------
     checkRejected([](auto &r) { r.set_model_name(""); }, "model_name が空");
     checkRejected([](auto &r) { r.set_model_name("../evil"); }, "model_name にパスの区切りが含まれる");
-    checkRejected([](auto &r) { r.clear_model_graph(); }, "model_graph.layers が空");
-    checkRejected([](auto &r) { r.mutable_model_graph()->add_layers(); }, "層の種類が未指定");
-    checkRejected([](auto &r) { r.mutable_model_graph()->mutable_layers(0)->mutable_conv2d()->set_kernel_size(0); },
+    checkRejected([](auto &r) { r.clear_model_graph(); }, "model_graph.nodes が空");
+    checkRejected([](auto &r) { r.mutable_model_graph()->add_nodes()->set_id("n2"); }, "層の種類が未指定");
+    checkRejected([](auto &r)
+                  { r.mutable_model_graph()->mutable_nodes(0)->mutable_layer()->mutable_conv2d()->set_kernel_size(0); },
                   "conv2d.kernel_size = 0");
-    checkRejected([](auto &r) { r.mutable_model_graph()->add_layers()->mutable_pooling2d()->set_kernel_size(2); },
+    checkRejected([](auto &r)
+                  {
+                      model::v1::Node *node = r.mutable_model_graph()->add_nodes();
+                      node->set_id("pool");
+                      node->mutable_layer()->mutable_pooling2d()->set_kernel_size(2);
+                  },
                   "pooling_type が UNSPECIFIED");
+
+    // グラフの検証(validatedModelGraph::create)で見つかる問題も、invalid_argument になる
+    checkRejected([](auto &r) { r.mutable_model_graph()->mutable_nodes(0)->set_id(""); }, "ノード ID が空");
+    checkRejected([](auto &r) { connect(addConvNode(r, "conv1"), "x", "conv1", "y"); }, "ノード ID が重複");
+    checkRejected([](auto &r) { connect(addConvNode(r, "conv/2"), "x", "conv1", "y"); }, "ノード ID に使えない文字");
+    checkRejected([](auto &r) { connect(addConvNode(r, "conv2"), "x", "missing", "y"); }, "存在しない参照先");
+    checkRejected([](auto &r) { addConvNode(r, "conv2"); }, "未接続の入力ポート");
+    checkRejected([](auto &r) { connect(addConvNode(r, "conv2"), "x", "conv1", "indices"); },
+                  "参照先に無い出力ポート(Conv2D の indices)");
+    checkRejected([](auto &r)
+                  {
+                      model::v1::Node *node = addConvNode(r, "conv2");
+                      connect(node, "x", "conv1", "y");
+                      connect(node, "x", "conv1", "y");
+                  },
+                  "1 本しかつなげないポートに 2 本");
+    checkRejected([](auto &r)
+                  {
+                      // conv1.x ← conv2.y、conv2.x ← conv1.y
+                      model::v1::PortRef *source = r.mutable_model_graph()->mutable_nodes(0)->mutable_inputs(0)->mutable_source();
+                      source->set_node_id("conv2");
+                      source->set_port("y");
+                      connect(addConvNode(r, "conv2"), "x", "conv1", "y");
+                  },
+                  "閉路");
+    checkRejected([](auto &r) { r.mutable_model_graph()->clear_outputs(); }, "outputs が空");
+    checkRejected([](auto &r) { addOutput(r, "conv1", "y"); }, "outputs が 2 個");
+    checkRejected([](auto &r) { r.mutable_model_graph()->mutable_outputs(0)->set_node_id("missing"); },
+                  "outputs の参照先が存在しない");
+
+    // エラーの位置は、ノードの添字と ID で示す
+    check(contains(rejectionMessage([](auto &r)
+                                    { r.mutable_model_graph()->mutable_nodes(0)->mutable_layer()->mutable_conv2d()->set_kernel_size(0); }),
+                   "model_graph.nodes[0](id=conv1).layer.conv2d.kernel_size"),
+          "エラーの位置: model_graph.nodes[0](id=conv1).layer.conv2d.kernel_size");
+    check(contains(rejectionMessage([](auto &r) { connect(addConvNode(r, "conv2"), "x", "missing", "y"); }),
+                   "model_graph が不正です"),
+          "エラーの位置: グラフの検証のエラーは「model_graph が不正です」で始まる");
+    check(contains(rejectionMessage([](auto &r)
+                                    {
+                                        model::v1::Node *node = addConvNode(r, "conv2");
+                                        connect(node, "x", "conv1", "y");
+                                        connect(node, "z", "missing", "y");
+                                    }),
+                   "model_graph.nodes[1](id=conv2).inputs[1]: 参照先のノードが存在しません: missing"),
+          "エラーの位置: 入力の接続は model_graph.nodes[1](id=conv2).inputs[1]");
+    check(contains(rejectionMessage([](auto &r) { addConvNode(r, "conv2"); }),
+                   "model_graph.nodes[1](id=conv2) の入力ポート 'x': 必須の入力ポートがつながっていません"),
+          "エラーの位置: 未接続のポートは、ノードの位置とポート名");
+    check(contains(rejectionMessage([](auto &r) { r.mutable_model_graph()->mutable_nodes(0)->set_id(""); }),
+                   "model_graph.nodes[0](id=): ノード ID が空です"),
+          "エラーの位置: ID が空のノードは添字でわかる");
+    check(contains(rejectionMessage([](auto &r) { r.mutable_model_graph()->mutable_outputs(0)->set_node_id("missing"); }),
+                   "model_graph.outputs[0]: outputs の参照先のノードが存在しません: missing"),
+          "エラーの位置: outputs は model_graph.outputs[0]");
+    check(contains(rejectionMessage([](auto &r)
+                                    {
+                                        model::v1::PortRef *source = r.mutable_model_graph()->mutable_nodes(0)->mutable_inputs(0)->mutable_source();
+                                        source->set_node_id("conv2");
+                                        source->set_port("y");
+                                        connect(addConvNode(r, "conv2"), "x", "conv1", "y");
+                                    }),
+                   "model_graph: グラフに閉路があります。実行できないノード: conv1, conv2"),
+          "エラーの位置: 閉路はグラフ全体の問題として、実行できないノードを示す");
+    {
+        // 問題が複数あるときは、最初の 1 つで止めずに、すべて報告する
+        const std::string message = rejectionMessage([](auto &r)
+                                                     {
+                                                         connect(addConvNode(r, "conv2"), "x", "missing", "y");
+                                                         r.mutable_model_graph()->mutable_outputs(0)->set_port("z");
+                                                     });
+        check(contains(message, "model_graph.nodes[1](id=conv2).inputs[0]") && contains(message, "model_graph.outputs[0]"),
+              "エラーの位置: 複数の問題をすべて報告する");
+    }
     checkRejected([](auto &r) { r.clear_optimizer(); }, "optimizer が未指定");
     checkRejected([](auto &r) { r.mutable_optimizer()->mutable_adam()->set_learning_rate(0.0); }, "learning_rate = 0");
     checkRejected([](auto &r) { r.mutable_optimizer()->mutable_adam()->set_eps(0.0); }, "adam.eps = 0");

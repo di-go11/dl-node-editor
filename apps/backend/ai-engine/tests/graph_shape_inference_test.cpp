@@ -316,6 +316,44 @@ namespace
             expectCreateThrows(graph, "outputs が指す出力ポート 'z'", "outputs の存在しないポート名を検出する");
         }
     }
+
+    // validateGraphStructure は例外を投げず、問題の一覧を返す。場所は添字でもわかる。
+    void testValidateGraphStructure()
+    {
+        check(validateGraphStructure(makeSegNetGraph()).empty(), "validateGraphStructure: 正しいグラフではエラーを返さない");
+        {
+            ModelGraph graph;
+            graph.nodes.push_back({"a", LayersConfig{Conv2DParams{}}, {fromGraphInput("x")}});
+            graph.nodes.push_back({"b", LayersConfig{Conv2DParams{}}, {connect("x", "missing", "y")}});
+            graph.outputs.push_back(PortRef{"b", "y"});
+            const auto errors = validateGraphStructure(graph);
+            check(errors.size() == 1 && errors[0].nodeId == "b" && errors[0].nodeIndex == std::size_t{1} &&
+                      errors[0].inputIndex == std::size_t{0} && !errors[0].outputIndex.has_value(),
+                  "validateGraphStructure: 入力の接続の問題は、ノードと入力の添字を返す");
+            printErrors(errors);
+        }
+        {
+            ModelGraph graph = makeSegNetGraph();
+            graph.outputs[0].port = "z";
+            const auto errors = validateGraphStructure(graph);
+            check(errors.size() == 1 && errors[0].outputIndex == std::size_t{0} && !errors[0].inputIndex.has_value(),
+                  "validateGraphStructure: outputs の問題は、outputs の添字を返す");
+            printErrors(errors);
+        }
+        {
+            // a.x ← b.y、b.x ← a.y
+            ModelGraph graph;
+            graph.nodes.push_back({"a", LayersConfig{Conv2DParams{}}, {connect("x", "b", "y")}});
+            graph.nodes.push_back({"b", LayersConfig{Conv2DParams{}}, {connect("x", "a", "y")}});
+            graph.outputs.push_back(PortRef{"b", "y"});
+            const auto errors = validateGraphStructure(graph);
+            check(errors.size() == 1 && errors[0].message.find("閉路") != std::string::npos &&
+                      errors[0].message.find("a, b") != std::string::npos,
+                  "validateGraphStructure: 閉路を、例外ではなくエラーとして返す");
+            printErrors(errors);
+            expectCreateThrows(graph, "閉路", "閉路のあるグラフは create で例外になる");
+        }
+    }
 } // namespace
 
 int main()
@@ -329,6 +367,7 @@ int main()
     testClassCountMismatch();
     testOutputSizeMismatch();
     testPortValidation();
+    testValidateGraphStructure();
 
     std::cout << (failureCount == 0 ? "ALL PASSED" : "FAILED: " + std::to_string(failureCount)) << std::endl;
     return failureCount == 0 ? 0 : 1;

@@ -91,9 +91,10 @@ set_property(TARGET ai_engine_lib PROPERTY CXX_STANDARD 17)
 set(PROTO_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/protoGenerated)
 file(MAKE_DIRECTORY ${PROTO_GEN_DIR})
 
-add_library(ai_engine_proto STATIC 
+add_library(ai_engine_proto STATIC
 		${PROTO_DIR}/capabilities.proto
-		${PROTO_DIR}/training.proto)
+		${PROTO_DIR}/training.proto
+		${PROTO_DIR}/model_graph.proto)
 target_link_libraries(ai_engine_proto PUBLIC gRPC::grpc++ SystemProtobuf::libprotobuf)
 target_include_directories(ai_engine_proto PUBLIC ${PROTO_GEN_DIR})
 set_property(TARGET ai_engine_proto PROPERTY CXX_STANDARD 17)
@@ -355,7 +356,11 @@ set_property(TARGET training_job_manager_test PROPERTY CXX_STANDARD 17)
 
 # 19. TrainingProtoMapper(proto <-> ドメインの変換と値の確認)の単体テスト。
 # ai_engine_grpc と同じ理由で、torch のヘッダを見せない(libtorch 同梱の protobuf ヘッダと衝突するため)。
-add_executable(training_proto_mapper_test tests/training_proto_mapper_test.cpp)
+# mapper が呼ぶ validatedModelGraph::create の実体は ai_engine_lib にあるが、上の理由でリンクできないので、
+# GraphValidation.cpp(entities のみ、torch 非依存)だけを直接ビルドする。
+add_executable(training_proto_mapper_test
+	tests/training_proto_mapper_test.cpp
+	src/training/entities/domain-objects/ModelGraph/DAG/GraphValidation.cpp)
 target_include_directories(training_proto_mapper_test PRIVATE
 	${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(training_proto_mapper_test PRIVATE ai_engine_grpc ai_engine_proto)
@@ -406,6 +411,16 @@ add_test(NAME training_proto_mapper_test COMMAND training_proto_mapper_test)
 add_test(NAME torch_seed_recall_test COMMAND torch_seed_recall_test)
 add_test(NAME model_graph_golden_test COMMAND model_graph_golden_test)
 add_test(NAME graph_shape_inference_test COMMAND graph_shape_inference_test)
+add_test(NAME image_resize_test COMMAND image_resize_test)
+add_test(NAME model_evaluator_test COMMAND model_evaluator_test)
+add_test(NAME best_checkpoint_test COMMAND best_checkpoint_test)
+add_test(NAME checkpoint_roundtrip_test COMMAND checkpoint_roundtrip_test)
+add_test(NAME model_graph_archive_test COMMAND model_graph_archive_test)
+add_test(NAME checkpoint_rebuild_test COMMAND checkpoint_rebuild_test)
+add_test(NAME training_smoke_test COMMAND training_smoke_test)
+add_test(NAME device_config_test COMMAND device_config_test)
+add_test(NAME device_parity_test COMMAND device_parity_test)
+add_test(NAME loss_function_test COMMAND loss_function_test)
 
 set_tests_properties(torch_loss_factory_test PROPERTIES LABELS "cpu")
 set_tests_properties(image_pipeline_test PROPERTIES LABELS "cpu")
@@ -415,3 +430,18 @@ set_tests_properties(training_proto_mapper_test PROPERTIES LABELS "cpu")
 set_tests_properties(torch_seed_recall_test PROPERTIES LABELS "cpu")
 set_tests_properties(model_graph_golden_test PROPERTIES LABELS "cpu")
 set_tests_properties(graph_shape_inference_test PROPERTIES LABELS "cpu")
+set_tests_properties(image_resize_test PROPERTIES LABELS "cpu")
+set_tests_properties(model_evaluator_test PROPERTIES LABELS "cpu")
+set_tests_properties(best_checkpoint_test PROPERTIES LABELS "cpu")
+set_tests_properties(checkpoint_roundtrip_test PROPERTIES LABELS "cpu")
+set_tests_properties(model_graph_archive_test PROPERTIES LABELS "cpu")
+set_tests_properties(checkpoint_rebuild_test PROPERTIES LABELS "cpu")
+set_tests_properties(training_smoke_test PROPERTIES LABELS "cpu")
+set_tests_properties(device_config_test PROPERTIES LABELS "cpu")
+# device_parity_test は、CUDA が無い環境では CPU 側だけを実行する(CUDA との比較は省かれる)。
+set_tests_properties(device_parity_test PROPERTIES LABELS "cpu")
+set_tests_properties(loss_function_test PROPERTIES LABELS "cpu")
+
+# training_smoke_test は、実データ(TrainingDataset/train。リポジトリには含めていない)が無いと
+# 何も確認せずに終了コード 0 で終わる。Passed と区別できるよう、ctest の表示を Skipped にする。
+set_tests_properties(training_smoke_test PROPERTIES SKIP_REGULAR_EXPRESSION "\\[SKIP\\]")

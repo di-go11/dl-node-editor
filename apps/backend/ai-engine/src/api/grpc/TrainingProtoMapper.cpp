@@ -1,11 +1,15 @@
 #include "api/grpc/TrainingProtoMapper.hpp"
 
+#include "training/entities/domain-objects/ModelGraph/DAG/GraphValidation.hpp"
 #include "training/entities/utils/Overloaded.hpp"
 
 #include <cctype>
+#include <cstddef>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <variant>
+#include <vector>
 
 namespace
 {
@@ -57,12 +61,11 @@ namespace
 
     // ---- model_graph ----
 
-    LayersConfig toLayer(const training::v1::LayerConfig &layer, size_t index)
+    LayersConfig toLayer(const model::v1::LayerConfig &layer, const std::string &at)
     {
-        const std::string at = "model_graph.layers[" + std::to_string(index) + "]";
         switch (layer.params_case())
         {
-        case training::v1::LayerConfig::kConv2D:
+        case model::v1::LayerConfig::kConv2D:
         {
             const auto &p = layer.conv2d();
             Conv2DParams conv;
@@ -80,16 +83,16 @@ namespace
             requirePositive(conv.dilation, at + ".conv2d.dilation");
             return LayersConfig{conv};
         }
-        case training::v1::LayerConfig::kPooling2D:
+        case model::v1::LayerConfig::kPooling2D:
         {
             const auto &p = layer.pooling2d();
             PoolingParams pool;
             switch (p.pooling_type())
             {
-            case training::v1::POOLING_TYPE_MAX:
+            case model::v1::POOLING_TYPE_MAX:
                 pool.type = PoolingType::Max;
                 break;
-            case training::v1::POOLING_TYPE_AVERAGE:
+            case model::v1::POOLING_TYPE_AVERAGE:
                 pool.type = PoolingType::Average;
                 break;
             default:
@@ -103,7 +106,7 @@ namespace
             requireNonNegative(pool.padding, at + ".pooling2d.padding");
             return LayersConfig{pool};
         }
-        case training::v1::LayerConfig::kBatchNorm:
+        case model::v1::LayerConfig::kBatchNorm:
         {
             const auto &p = layer.batch_norm();
             BatchNormParams bn;
@@ -114,7 +117,7 @@ namespace
             requireGreaterThanZero(bn.eps, at + ".batch_norm.eps");
             return LayersConfig{bn};
         }
-        case training::v1::LayerConfig::kLinear:
+        case model::v1::LayerConfig::kLinear:
         {
             const auto &p = layer.linear();
             LinearParams linear;
@@ -125,22 +128,22 @@ namespace
             requirePositive(linear.outFeatures, at + ".linear.out_features");
             return LayersConfig{linear};
         }
-        case training::v1::LayerConfig::kActivation:
+        case model::v1::LayerConfig::kActivation:
         {
             const auto &p = layer.activation();
             ActivationParams activation;
             switch (p.activation_type())
             {
-            case training::v1::ACTIVATION_TYPE_RELU:
+            case model::v1::ACTIVATION_TYPE_RELU:
                 activation.activationType = ActivationType::ReLU;
                 break;
-            case training::v1::ACTIVATION_TYPE_SIGMOID:
+            case model::v1::ACTIVATION_TYPE_SIGMOID:
                 activation.activationType = ActivationType::Sigmoid;
                 break;
-            case training::v1::ACTIVATION_TYPE_SOFTMAX:
+            case model::v1::ACTIVATION_TYPE_SOFTMAX:
                 activation.activationType = ActivationType::Softmax;
                 break;
-            case training::v1::ACTIVATION_TYPE_TANH:
+            case model::v1::ACTIVATION_TYPE_TANH:
                 activation.activationType = ActivationType::Tanh;
                 break;
             default:
@@ -149,7 +152,7 @@ namespace
             activation.dim = p.dim();
             return LayersConfig{activation};
         }
-        case training::v1::LayerConfig::kIndexedPooling:
+        case model::v1::LayerConfig::kIndexedPooling:
         {
             const auto &p = layer.indexed_pooling();
             IndexedPoolingParams pool;
@@ -161,7 +164,7 @@ namespace
             requireNonNegative(pool.padding, at + ".indexed_pooling.padding");
             return LayersConfig{pool};
         }
-        case training::v1::LayerConfig::kUnpooling:
+        case model::v1::LayerConfig::kUnpooling:
         {
             const auto &p = layer.unpooling();
             UnpoolingParams unpool;
@@ -173,25 +176,91 @@ namespace
             requireNonNegative(unpool.padding, at + ".unpooling.padding");
             return LayersConfig{unpool};
         }
-        case training::v1::LayerConfig::PARAMS_NOT_SET:
+        case model::v1::LayerConfig::PARAMS_NOT_SET:
             break;
         }
         invalid(at + " の層の種類が指定されていません");
     }
 
-    ModelGraph toModelGraph(const training::v1::ModelGraph &graph)
+    // ノードの位置の表記。添字だけでは探しにくいので、ノード ID も付ける。
+    std::string nodeLocation(std::size_t index, const std::string &id)
     {
-        if (graph.layers_size() == 0)
-        {
-            invalid("model_graph.layers が空です");
-        }
+        return "model_graph.nodes[" + std::to_string(index) + "](id=" + id + ")";
+    }
+
+    ModelGraph toModelGraph(const model::v1::ModelGraph &graph)
+    {
         ModelGraph result;
-        result.layers.reserve(graph.layers_size());
-        for (int i = 0; i < graph.layers_size(); ++i)
+        for (int i = 0; i < graph.nodes_size(); i++)
         {
-            result.layers.push_back(toLayer(graph.layers(i), static_cast<size_t>(i)));
+            const auto &node = graph.nodes(i);
+            const std::string at = nodeLocation(static_cast<std::size_t>(i), node.id());
+            GraphNode out{node.id(), toLayer(node.layer(), at + ".layer"), {}};
+            for (const auto &input : node.inputs())
+            {
+                out.inputs.push_back(NodeInput{
+                    input.port(),
+                    PortRef{input.source().node_id(), input.source().port()},
+                });
+            }
+            result.nodes.push_back(std::move(out));
         }
+        for (int i = 0; i < graph.outputs_size(); i++)
+        {
+            result.outputs.push_back(PortRef{
+                graph.outputs(i).node_id(),
+                graph.outputs(i).port(),
+            });
+        }
+
         return result;
+    }
+
+    // グラフの検証で見つかった問題の位置を、リクエストの中の位置で表す。
+    //   入力の接続の問題: model_graph.nodes[3](id=enc2_pool).inputs[1]
+    //   ポート単位の問題(未接続など): model_graph.nodes[3](id=enc2_pool) の入力ポート 'x'
+    //   outputs の問題: model_graph.outputs[0]
+    //   グラフ全体の問題(ノードが空、閉路など): model_graph
+    std::string locationOf(const GraphValidationError &error, const ModelGraph &graph)
+    {
+        if (error.outputIndex.has_value())
+        {
+            return "model_graph.outputs[" + std::to_string(*error.outputIndex) + "]";
+        }
+        if (!error.nodeIndex.has_value())
+        {
+            return "model_graph";
+        }
+
+        std::string at = nodeLocation(*error.nodeIndex, graph.nodes[*error.nodeIndex].id);
+        if (error.inputIndex.has_value())
+        {
+            at += ".inputs[" + std::to_string(*error.inputIndex) + "]";
+        }
+        else if (!error.port.empty())
+        {
+            at += " の入力ポート '" + error.port + "'";
+        }
+        return at;
+    }
+
+    // proto のグラフを詰め替えて検証する。問題があれば、見つかったものをすべて 1 つの invalid_argument にまとめる。
+    validatedModelGraph toValidatedModelGraph(const model::v1::ModelGraph &proto)
+    {
+        const ModelGraph graph = toModelGraph(proto);
+
+        const std::vector<GraphValidationError> errors = validateGraphStructure(graph);
+        if (!errors.empty())
+        {
+            std::string message = "model_graph が不正です:";
+            for (const auto &error : errors)
+            {
+                message += "\n  - " + locationOf(error, graph) + ": " + error.message;
+            }
+            invalid(message);
+        }
+
+        return validatedModelGraph::create(graph);
     }
 
     // ---- optimizer / loss ----
@@ -372,7 +441,7 @@ StartTrainingCommand toStartTrainingCommand(const training::v1::StartTrainingReq
     validateModelName(request.model_name());
     command.modelName = request.model_name();
 
-    command.modelGraph = toModelGraph(request.model_graph());
+    command.modelGraph = toValidatedModelGraph(request.model_graph());
     command.optimizer = toOptimizer(request.optimizer());
     command.loss = toLoss(request.loss());
 

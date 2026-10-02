@@ -3,6 +3,7 @@
 #include "NodeChecker.hpp"
 #include "training/entities/domain-objects/ModelGraph/Layers/LayersPort.hpp"
 
+#include <optional>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -13,7 +14,7 @@
 namespace
 {
     // ノードの ID から、graph.nodes の中での添字を引く表を作る。
-    // ID が重複していると後のノードで上書きされるため、validateGraphStructure を通った後に使うこと。
+    // ID が重複していると後のノードで上書きされるため、collectStructureErrors を通った後に使うこと。
     std::unordered_map<std::string, std::size_t> buildIndexOf(const ModelGraph &graph)
     {
         std::unordered_map<std::string, std::size_t> indexOf;
@@ -73,17 +74,19 @@ namespace
                             const std::unordered_map<std::string, std::size_t> &indexOf,
                             std::vector<GraphValidationError> &errors)
     {
-        for (const auto &node : graph.nodes)
+        for (std::size_t i = 0; i < graph.nodes.size(); ++i)
         {
+            const GraphNode &node = graph.nodes[i];
             const LayerPortSpec spec = layerPortsOf(node.layer);
             std::vector<std::size_t> connectionCount(spec.inputPorts.size(), 0);
 
-            for (const auto &input : node.inputs)
+            for (std::size_t j = 0; j < node.inputs.size(); ++j)
             {
+                const NodeInput &input = node.inputs[j];
                 const std::size_t portIndex = findPort(spec.inputPorts, input.port);
                 if (portIndex == kNoPort)
                 {
-                    errors.push_back({node.id, input.port, "この層に入力ポート '" + input.port + "' はありません"});
+                    errors.push_back({node.id, input.port, "この層に入力ポート '" + input.port + "' はありません", i, j});
                     continue;
                 }
                 ++connectionCount[portIndex];
@@ -102,7 +105,8 @@ namespace
                     if (outputIndex == kNoPort)
                     {
                         errors.push_back({node.id, input.port,
-                                          "参照先のノード '" + sourceId + "' に出力ポート '" + input.source.port + "' はありません"});
+                                          "参照先のノード '" + sourceId + "' に出力ポート '" + input.source.port + "' はありません",
+                                          i, j});
                         continue;
                     }
                     sourceKind = sourceSpec.outputPorts[outputIndex].kind;
@@ -112,7 +116,8 @@ namespace
                     // グラフ入力は 1 つだけなので、ポート名では区別しない(ノード ID もポート名も空で表す)
                     errors.push_back({node.id, input.port,
                                       "グラフ入力を指すとき(参照先のノード ID が空)は、参照先のポート名も空にしてください(現在 '" +
-                                          input.source.port + "')"});
+                                          input.source.port + "')",
+                                      i, j});
                 }
 
                 const PortKind inputKind = spec.inputPorts[portIndex].kind;
@@ -120,7 +125,8 @@ namespace
                 {
                     errors.push_back({node.id, input.port,
                                       std::string("つなげない種類です(出力: ") + kindName(sourceKind) +
-                                          "、入力: " + kindName(inputKind) + ")"});
+                                          "、入力: " + kindName(inputKind) + ")",
+                                      i, j});
                 }
             }
 
@@ -134,23 +140,25 @@ namespace
                     {
                         errors.push_back({node.id, port.name,
                                           "つなぐ本数が足りません(最低 " + std::to_string(port.minCount) +
-                                              " 本、現在 " + std::to_string(count) + " 本)"});
+                                              " 本、現在 " + std::to_string(count) + " 本)",
+                                          i});
                     }
                 }
                 else if (count == 0)
                 {
-                    errors.push_back({node.id, port.name, "必須の入力ポートがつながっていません"});
+                    errors.push_back({node.id, port.name, "必須の入力ポートがつながっていません", i});
                 }
                 else if (count > 1)
                 {
                     errors.push_back({node.id, port.name,
-                                      "このポートには 1 本しかつなげません(現在 " + std::to_string(count) + " 本)"});
+                                      "このポートには 1 本しかつなげません(現在 " + std::to_string(count) + " 本)", i});
                 }
             }
         }
 
-        for (const auto &output : graph.outputs)
+        for (std::size_t o = 0; o < graph.outputs.size(); ++o)
         {
+            const PortRef &output = graph.outputs[o];
             const auto source = indexOf.find(output.nodeId);
             if (source == indexOf.end())
             {
@@ -160,16 +168,17 @@ namespace
             if (findPort(sourceSpec.outputPorts, output.port) == kNoPort)
             {
                 errors.push_back({output.nodeId, output.port,
-                                  "outputs が指す出力ポート '" + output.port + "' が、このノードにありません"});
+                                  "outputs が指す出力ポート '" + output.port + "' が、ノード '" + output.nodeId + "' にありません",
+                                  std::nullopt, std::nullopt, o});
             }
         }
     }
 
-    // 規則そのもの。問題なければ空の vector を返す。
+    // 閉路以外の規則。問題なければ空の vector を返す。
     //
     // ここで確認するのは、topologicalSort が前提にしていること(ID が一意、参照先が存在する)と、
     // outputs の指定、ポートのつなぎ方(validateGraphPorts)。
-    std::vector<GraphValidationError> validateGraphStructure(const ModelGraph &graph)
+    std::vector<GraphValidationError> collectStructureErrors(const ModelGraph &graph)
     {
         std::vector<GraphValidationError> errors;
 
@@ -186,30 +195,32 @@ namespace
             if (id.empty())
             {
                 // 空の ID は「グラフ入力」を指す値として使うため、ノードには付けられない
-                errors.push_back({"", "", "nodes[" + std::to_string(i) + "] の ID が空です"});
+                errors.push_back({"", "", "ノード ID が空です", i});
                 continue;
             }
 
             const bool inserted = indexOf.emplace(id, i).second;
             if (!inserted)
             {
-                errors.push_back({id, "", "ノード ID が重複しています"});
+                errors.push_back({id, "", "ノード ID が重複しています", i});
             }
             else if (!isValidGraphNodeId(id))
             {
-                errors.push_back({id, "", "ノード ID に使えない文字が含まれています(英数字・'-'・'_' のみ)"});
+                errors.push_back({id, "", "ノード ID に使えない文字が含まれています(英数字・'-'・'_' のみ)", i});
             }
         }
 
         // 各入力の参照先のノードが存在すること(空 = グラフ入力 は対象外)
-        for (const auto &node : graph.nodes)
+        for (std::size_t i = 0; i < graph.nodes.size(); ++i)
         {
-            for (const auto &input : node.inputs)
+            const GraphNode &node = graph.nodes[i];
+            for (std::size_t j = 0; j < node.inputs.size(); ++j)
             {
+                const NodeInput &input = node.inputs[j];
                 const std::string &sourceId = input.source.nodeId;
                 if (!sourceId.empty() && indexOf.count(sourceId) == 0)
                 {
-                    errors.push_back({node.id, input.port, "参照先のノードが存在しません: " + sourceId});
+                    errors.push_back({node.id, input.port, "参照先のノードが存在しません: " + sourceId, i, j});
                 }
             }
         }
@@ -219,15 +230,17 @@ namespace
         {
             errors.push_back({"", "", "outputs は 1 つだけ指定してください(現在 " + std::to_string(graph.outputs.size()) + " 個)"});
         }
-        for (const auto &output : graph.outputs)
+        for (std::size_t o = 0; o < graph.outputs.size(); ++o)
         {
+            const PortRef &output = graph.outputs[o];
             if (output.nodeId.empty())
             {
-                errors.push_back({"", output.port, "outputs にグラフ入力は指定できません"});
+                errors.push_back({"", output.port, "outputs にグラフ入力は指定できません", std::nullopt, std::nullopt, o});
             }
             else if (indexOf.count(output.nodeId) == 0)
             {
-                errors.push_back({"", output.port, "outputs の参照先のノードが存在しません: " + output.nodeId});
+                errors.push_back({"", output.port, "outputs の参照先のノードが存在しません: " + output.nodeId,
+                                  std::nullopt, std::nullopt, o});
             }
         }
 
@@ -238,7 +251,8 @@ namespace
 
     // トポロジカルソート(Kahn 法)。実行順を、graph.nodes の添字の並びで返す。
     // 同順位のノードが複数ある場合、`nodes` の並び順(添字の小さい順)で決める。
-    // 閉路があれば例外を投げる。validateGraphStructure を通ったグラフを渡すこと。
+    // 閉路があると、並べられたノードだけを返す(返り値の個数がノード数より少なくなる)。
+    // collectStructureErrors を通ったグラフを渡すこと。
     std::vector<std::size_t> topologicalSort(const ModelGraph &graph)
     {
         const auto indexOf = buildIndexOf(graph);
@@ -293,18 +307,38 @@ namespace
             }
         }
 
-        // 実行できるノードがなくなったのに、まだ残っているノードがある = 閉路
-        if (order.size() != n)
+        return order;
+    }
+
+    // 構造の検証と実行順の計算をまとめて行う。見つかった問題を errors に入れ、実行順を返す(問題があれば空)。
+    std::vector<std::size_t> validateAndSort(const ModelGraph &graph, std::vector<GraphValidationError> &errors)
+    {
+        errors = collectStructureErrors(graph);
+        if (!errors.empty())
         {
-            std::string stuck;
-            for (std::size_t i = 0; i < n; ++i)
+            return {}; // topologicalSort の前提(ID が一意、参照先が存在する)が崩れているので、閉路は調べない
+        }
+
+        std::vector<std::size_t> order = topologicalSort(graph);
+
+        // 実行できるノードがなくなったのに、まだ残っているノードがある = 閉路
+        if (order.size() != graph.nodes.size())
+        {
+            std::vector<bool> sorted(graph.nodes.size(), false);
+            for (const std::size_t index : order)
             {
-                if (remaining[i] > 0)
+                sorted[index] = true;
+            }
+            std::string stuck;
+            for (std::size_t i = 0; i < graph.nodes.size(); ++i)
+            {
+                if (!sorted[i])
                 {
                     stuck += (stuck.empty() ? "" : ", ") + graph.nodes[i].id;
                 }
             }
-            throw std::runtime_error("グラフに閉路があります。実行できないノード: " + stuck);
+            errors.push_back({"", "", "グラフに閉路があります。実行できないノード: " + stuck});
+            return {};
         }
 
         return order;
@@ -326,10 +360,21 @@ namespace
                 }
                 message += ": ";
             }
+            else if (error.nodeIndex.has_value())
+            {
+                message += "nodes[" + std::to_string(*error.nodeIndex) + "]: "; // ID が空のノードは、添字で示す
+            }
             message += error.message;
         }
         return message;
     }
+}
+
+std::vector<GraphValidationError> validateGraphStructure(const ModelGraph &graph)
+{
+    std::vector<GraphValidationError> errors;
+    validateAndSort(graph, errors);
+    return errors;
 }
 
 validatedModelGraph::validatedModelGraph(ModelGraph graph, std::vector<std::size_t> order)
@@ -339,12 +384,12 @@ validatedModelGraph::validatedModelGraph(ModelGraph graph, std::vector<std::size
 
 validatedModelGraph validatedModelGraph::create(const ModelGraph &graph)
 {
-    const auto errors = validateGraphStructure(graph);
+    std::vector<GraphValidationError> errors;
+    auto order = validateAndSort(graph, errors);
     if (!errors.empty())
     {
         throw std::runtime_error(formatErrors(errors));
     }
 
-    auto order = topologicalSort(graph);
     return validatedModelGraph(graph, std::move(order));
 }
