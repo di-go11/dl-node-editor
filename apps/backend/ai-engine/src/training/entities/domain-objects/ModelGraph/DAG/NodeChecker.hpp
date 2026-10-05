@@ -10,7 +10,7 @@ inline bool isValidGraphNodeId(const std::string &id)
 {
     if (id.empty())
     {
-        throw std::runtime_error("GraphNode: id が空です");
+        return false;
     }
     for (const char c : id)
     {
@@ -26,6 +26,10 @@ inline bool isValidGraphNodeId(const std::string &id)
                 return false;
             }
         }
+    }
+    if (id.size() > 64)
+    {
+        return false; // 大きすぎるIDは負荷
     }
     return true;
 }
