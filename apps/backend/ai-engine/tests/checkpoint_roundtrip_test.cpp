@@ -79,7 +79,7 @@ struct Bundle
 Bundle makeBundle(const ModelGraph &graph, ILayerBuilder &builder, double lr)
 {
     Bundle b;
-    b.model = std::make_shared<TorchModel>(validatedModelGraph::create(graph), builder, kTestDevice);
+    b.model = std::make_shared<TorchModel>(ValidatedModelGraph::create(graph), builder, kTestDevice);
     b.params = b.model->parameters();
     b.optimizer = std::make_shared<AdamOptimizer>(b.params, lr);
     return b;

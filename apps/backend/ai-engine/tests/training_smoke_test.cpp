@@ -278,7 +278,7 @@ int main()
     auto optimizerFactory = std::make_shared<TorchOptimizerFactory>();
 
     const ModelGraph graph = oneConvGraph(numClasses);
-    std::shared_ptr<IModel> model = modelFactory->create(validatedModelGraph::create(graph), kTestDevice);
+    std::shared_ptr<IModel> model = modelFactory->create(ValidatedModelGraph::create(graph), kTestDevice);
     std::vector<at::Tensor> params = model->parameters();
 
     AdamOptimizerConfig adam;

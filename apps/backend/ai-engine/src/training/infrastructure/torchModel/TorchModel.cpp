@@ -33,7 +33,7 @@ namespace
     }
 } // namespace
 
-TorchModel::TorchModel(const validatedModelGraph &graph, ILayerBuilder &builder, const ComputeDevice &device)
+TorchModel::TorchModel(const ValidatedModelGraph &graph, ILayerBuilder &builder, const ComputeDevice &device)
     : _device(device), _order(graph.getOrder())
 {
     const ModelGraph &g = graph.getGraph();

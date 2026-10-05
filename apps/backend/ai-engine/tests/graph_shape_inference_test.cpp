@@ -3,7 +3,7 @@
 //
 // 小さい SegNet 型のグラフ(IndexedPooling / Unpooling を 2 組)を作り、
 //   - 正しいグラフで、各ノードの出力形状が期待どおりに求まること
-//   - つなぎ方の間違い(ポート名・種類・本数)を、validatedModelGraph::create が検出すること
+//   - つなぎ方の間違い(ポート名・種類・本数)を、ValidatedModelGraph::create が検出すること
 //   - 形状の間違い(チャンネル数・サイズ・Unpooling の対応・クラス数)を、validateGraphShapes が検出すること
 // を確認する。
 
@@ -137,12 +137,12 @@ namespace
         }
     }
 
-    // validatedModelGraph::create が、メッセージに expected を含む例外を投げること。
+    // ValidatedModelGraph::create が、メッセージに expected を含む例外を投げること。
     void expectCreateThrows(const ModelGraph &graph, const std::string &expected, const std::string &name)
     {
         try
         {
-            validatedModelGraph::create(graph);
+            ValidatedModelGraph::create(graph);
             check(false, name + "(例外が投げられなかった)");
         }
         catch (const std::exception &e)
@@ -160,7 +160,7 @@ namespace
 
     void testValidGraph()
     {
-        const auto validated = validatedModelGraph::create(makeSegNetGraph());
+        const auto validated = ValidatedModelGraph::create(makeSegNetGraph());
         const GraphShapes shapes = inferGraphShapes(validated, kInput);
         check(shapes.errors.empty(), "正しいグラフ: 形状推論でエラーがない");
         printErrors(shapes.errors);
@@ -202,7 +202,7 @@ namespace
     {
         ModelGraph graph = makeSegNetGraph();
         std::get<Conv2DParams>(nodeOf(graph, "e2_conv").layer.params).inChannels = 5; // 実際は 4
-        const auto errors = validateGraphShapes(validatedModelGraph::create(graph), kInput, kNumClasses);
+        const auto errors = validateGraphShapes(ValidatedModelGraph::create(graph), kInput, kNumClasses);
         check(hasErrorAt(errors, "e2_conv"), "Conv2D の in_channels の不一致を、そのノードで検出する");
         check(errors.size() == 1, "不一致のノードより先のノードでは、重ねて報告しない");
         printErrors(errors);
@@ -212,7 +212,7 @@ namespace
     {
         ModelGraph graph = makeSegNetGraph();
         std::get<BatchNormParams>(nodeOf(graph, "e1_bn").layer.params).numFeatures = 5; // 実際は 4
-        const auto errors = validateGraphShapes(validatedModelGraph::create(graph), kInput, kNumClasses);
+        const auto errors = validateGraphShapes(ValidatedModelGraph::create(graph), kInput, kNumClasses);
         check(hasErrorAt(errors, "e1_bn"), "BatchNorm の num_features の不一致を検出する");
     }
 
@@ -221,7 +221,7 @@ namespace
         ModelGraph graph = makeSegNetGraph();
         // u2 の indices を、別の段(p1)のものにつなぎ替える。ポートの種類は合っているが、形状が合わない。
         nodeOf(graph, "u2").inputs[1] = connect("indices", "p1", "indices");
-        const auto errors = validateGraphShapes(validatedModelGraph::create(graph), kInput, kNumClasses);
+        const auto errors = validateGraphShapes(ValidatedModelGraph::create(graph), kInput, kNumClasses);
         check(hasErrorAt(errors, "u2"), "Unpooling の x と indices の形状の不一致を検出する");
         printErrors(errors);
     }
@@ -229,7 +229,7 @@ namespace
     void testOddInputSize()
     {
         // 250 は 2 回の pooling で 125 → 62 になり、Unpooling で 124 に戻るため、p1 の indices(125)と合わない。
-        const auto errors = validateGraphShapes(validatedModelGraph::create(makeSegNetGraph()),
+        const auto errors = validateGraphShapes(ValidatedModelGraph::create(makeSegNetGraph()),
                                                 FeatureMapShape{3, 250, 250}, kNumClasses);
         check(hasErrorAt(errors, "u1"), "奇数サイズの入力で、Unpooling の形状の不一致を検出する");
         printErrors(errors);
@@ -237,7 +237,7 @@ namespace
 
     void testTooSmallInput()
     {
-        const auto errors = validateGraphShapes(validatedModelGraph::create(makeSegNetGraph()),
+        const auto errors = validateGraphShapes(ValidatedModelGraph::create(makeSegNetGraph()),
                                                 FeatureMapShape{3, 1, 1}, kNumClasses);
         check(hasErrorAt(errors, "p1"), "入力が小さすぎて、pooling の出力サイズが 1 未満になるのを検出する");
         printErrors(errors);
@@ -245,7 +245,7 @@ namespace
 
     void testClassCountMismatch()
     {
-        const auto errors = validateGraphShapes(validatedModelGraph::create(makeSegNetGraph()), kInput, kNumClasses + 1);
+        const auto errors = validateGraphShapes(ValidatedModelGraph::create(makeSegNetGraph()), kInput, kNumClasses + 1);
         check(hasErrorAt(errors, "d1_bn"), "最終出力のチャンネル数とクラス数の不一致を検出する");
         printErrors(errors);
     }
@@ -262,7 +262,7 @@ namespace
         graph.nodes.push_back({"pool", LayersConfig{PoolingParams{}}, {connect("x", "conv", "y")}});
         graph.outputs.push_back(PortRef{"pool", "y"});
 
-        const auto errors = validateGraphShapes(validatedModelGraph::create(graph), kInput, kNumClasses);
+        const auto errors = validateGraphShapes(ValidatedModelGraph::create(graph), kInput, kNumClasses);
         check(!errors.empty() && errors[0].message.find("H / W") != std::string::npos,
               "最終出力の H / W が入力と合わないのを検出する");
         printErrors(errors);

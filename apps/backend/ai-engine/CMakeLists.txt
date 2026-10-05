@@ -356,7 +356,7 @@ set_property(TARGET training_job_manager_test PROPERTY CXX_STANDARD 17)
 
 # 19. TrainingProtoMapper(proto <-> ドメインの変換と値の確認)の単体テスト。
 # ai_engine_grpc と同じ理由で、torch のヘッダを見せない(libtorch 同梱の protobuf ヘッダと衝突するため)。
-# mapper が呼ぶ validatedModelGraph::create の実体は ai_engine_lib にあるが、上の理由でリンクできないので、
+# mapper が呼ぶ ValidatedModelGraph::create の実体は ai_engine_lib にあるが、上の理由でリンクできないので、
 # GraphValidation.cpp(entities のみ、torch 非依存)だけを直接ビルドする。
 add_executable(training_proto_mapper_test
 	tests/training_proto_mapper_test.cpp

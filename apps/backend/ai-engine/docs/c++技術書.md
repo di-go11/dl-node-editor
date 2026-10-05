@@ -1965,15 +1965,15 @@ struct GraphValidationError
     std::string message;
 };
 
-class validatedModelGraph
+class ValidatedModelGraph
 {
 public:
-    static validatedModelGraph create(const ModelGraph &graph); // 検証済みモデルのオブジェクトを返すことを保証する。 staticにすることでオブジェクトを作らなくても使用できるためstaticを使う。
+    static ValidatedModelGraph create(const ModelGraph &graph); // 検証済みモデルのオブジェクトを返すことを保証する。 staticにすることでオブジェクトを作らなくても使用できるためstaticを使う。
 
     const ModelGraph &getGraph() const { return _graph; };
 
 private:
-    validatedModelGraph(ModelGraph, std::vector<std::size_t> order);
+    ValidatedModelGraph(ModelGraph, std::vector<std::size_t> order);
 
     ModelGraph _graph;
     std::vector<std::size_t> _order;

@@ -9,7 +9,7 @@
 // ModelGraph を、層を足していく形で組み立てる。
 //
 // 検証はしない。build() が返すのは検証前の ModelGraph で、
-// validatedModelGraph::create が検証と実行順の計算を行う(検証の責務はそこに集める)。
+// ValidatedModelGraph::create が検証と実行順の計算を行う(検証の責務はそこに集める)。
 //
 // 使い方(直列の場合):
 //   ModelGraphBuilder builder;

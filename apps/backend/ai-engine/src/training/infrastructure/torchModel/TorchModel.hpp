@@ -13,12 +13,12 @@ namespace at
 
 class ILayer;
 class ILayerBuilder;
-class validatedModelGraph;
+class ValidatedModelGraph;
 
 class TorchModel : public IModel
 {
 public:
-    TorchModel(const validatedModelGraph &graph, ILayerBuilder &builder, const ComputeDevice &device);
+    TorchModel(const ValidatedModelGraph &graph, ILayerBuilder &builder, const ComputeDevice &device);
 
     at::Tensor forward(const at::Tensor &input) override;
 

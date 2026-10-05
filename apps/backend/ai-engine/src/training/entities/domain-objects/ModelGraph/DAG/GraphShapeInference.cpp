@@ -52,7 +52,7 @@ namespace
     }
 }
 
-GraphShapes inferGraphShapes(const validatedModelGraph &validated, const FeatureMapShape &input)
+GraphShapes inferGraphShapes(const ValidatedModelGraph &validated, const FeatureMapShape &input)
 {
     const ModelGraph &graph = validated.getGraph();
 
@@ -118,7 +118,7 @@ GraphShapes inferGraphShapes(const validatedModelGraph &validated, const Feature
     return result;
 }
 
-std::vector<GraphValidationError> validateGraphShapes(const validatedModelGraph &validated,
+std::vector<GraphValidationError> validateGraphShapes(const ValidatedModelGraph &validated,
                                                       const FeatureMapShape &input,
                                                       int64_t numClasses)
 {

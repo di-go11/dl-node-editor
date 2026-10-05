@@ -7,7 +7,7 @@
 
 class IModel;
 
-// validatedModelGraph(検証済みのモデル構造)から IModel を組み立てるポート。
+// ValidatedModelGraph(検証済みのモデル構造)から IModel を組み立てるポート。
 // 検証を通っていないグラフは、型の上で渡せない(実装側で再検証する必要がない)。
 //
 // 「どの具象レイヤ実装を使うか」(libtorch / 将来の別バックエンド)は
@@ -18,5 +18,5 @@ class IModelFactory
 public:
     virtual ~IModelFactory() = default;
 
-    virtual std::shared_ptr<IModel> create(const validatedModelGraph &graph,const ComputeDevice &device) = 0;
+    virtual std::shared_ptr<IModel> create(const ValidatedModelGraph &graph,const ComputeDevice &device) = 0;
 };

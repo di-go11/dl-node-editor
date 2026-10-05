@@ -203,18 +203,18 @@ namespace
 
     // .config の model_architecture に応じてグラフ組み立て関数を選び、検証を通した結果を返す。
     // 組み立てを間違えていれば、ここ(学習を始める前)で、原因のノードつきの例外になる。
-    validatedModelGraph buildGraph(ModelArchitectureType architecture, int numClasses)
+    ValidatedModelGraph buildGraph(ModelArchitectureType architecture, int numClasses)
     {
         switch (architecture)
         {
         case ModelArchitectureType::Sample:
-            return validatedModelGraph::create(buildSampleModelGraph(numClasses));
+            return ValidatedModelGraph::create(buildSampleModelGraph(numClasses));
         case ModelArchitectureType::SegNet:
-            return validatedModelGraph::create(buildSegNetGraph(numClasses));
+            return ValidatedModelGraph::create(buildSegNetGraph(numClasses));
         case ModelArchitectureType::SegNetDilated:
-            return validatedModelGraph::create(buildSegNetDilatedGraph(numClasses));
+            return ValidatedModelGraph::create(buildSegNetDilatedGraph(numClasses));
         case ModelArchitectureType::SegNetFullDilated:
-            return validatedModelGraph::create(buildSegNetFullDilatedGraph(numClasses));
+            return ValidatedModelGraph::create(buildSegNetFullDilatedGraph(numClasses));
         }
         throw std::runtime_error("runTraining: unknown ModelArchitectureType");
     }

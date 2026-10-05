@@ -13,9 +13,9 @@
 struct StartTrainingCommand
 {
     std::string modelName;
-    // modelGraph: 検証済みのモデル構造。validatedModelGraph は create からしか作れないので、
+    // modelGraph: 検証済みのモデル構造。ValidatedModelGraph は create からしか作れないので、
     // 値が入っていれば必ず検証を通っている。呼び出し側(mapper / CLI)が埋める。nullopt = 未設定。
-    std::optional<validatedModelGraph> modelGraph;
+    std::optional<ValidatedModelGraph> modelGraph;
     OptimizerConfig optimizer;
     LossConfig loss;
     unsigned int epochSize = 1;

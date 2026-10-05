@@ -245,7 +245,7 @@ namespace
     }
 
     // proto のグラフを詰め替えて検証する。問題があれば、見つかったものをすべて 1 つの invalid_argument にまとめる。
-    validatedModelGraph toValidatedModelGraph(const model::v1::ModelGraph &proto)
+    ValidatedModelGraph toValidatedModelGraph(const model::v1::ModelGraph &proto)
     {
         const ModelGraph graph = toModelGraph(proto);
 
@@ -260,7 +260,7 @@ namespace
             invalid(message);
         }
 
-        return validatedModelGraph::create(graph);
+        return ValidatedModelGraph::create(graph);
     }
 
     // ---- optimizer / loss ----

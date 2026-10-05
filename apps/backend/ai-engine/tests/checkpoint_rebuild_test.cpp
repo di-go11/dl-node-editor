@@ -155,7 +155,7 @@ int main()
     auto modelFactory = std::make_shared<TorchModelFactory>();
     auto optimizerFactory = std::make_shared<TorchOptimizerFactory>();
 
-    std::shared_ptr<IModel> srcModel = modelFactory->create(validatedModelGraph::create(graph), kTestDevice);
+    std::shared_ptr<IModel> srcModel = modelFactory->create(ValidatedModelGraph::create(graph), kTestDevice);
     std::vector<at::Tensor> srcParams = srcModel->parameters();
     std::shared_ptr<IOptimizer> srcOptimizer = optimizerFactory->create(srcParams, optimizerConfig);
 
@@ -272,7 +272,7 @@ int main()
 
         {
             // この時点の乱数状態が checkpoint に記録される。
-            std::shared_ptr<IModel> m = modelFactory->create(validatedModelGraph::create(graph), kTestDevice);
+            std::shared_ptr<IModel> m = modelFactory->create(ValidatedModelGraph::create(graph), kTestDevice);
             std::vector<at::Tensor> p = m->parameters();
             std::shared_ptr<IOptimizer> o = optimizerFactory->create(p, optimizerConfig);
             TorchCheckpointStore store(m, o, dir.string(), "rng", graph);

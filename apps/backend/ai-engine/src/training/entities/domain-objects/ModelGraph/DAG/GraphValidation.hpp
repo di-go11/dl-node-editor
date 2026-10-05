@@ -24,17 +24,17 @@ struct GraphValidationError
 // 閉路は、ほかの問題がないときだけ調べる(実行順の計算が、ID が一意で参照先が存在することを前提にするため)。
 std::vector<GraphValidationError> validateGraphStructure(const ModelGraph &graph);
 
-class validatedModelGraph
+class ValidatedModelGraph
 {
 public:
-    static validatedModelGraph create(const ModelGraph &graph); // 検証済みモデルのオブジェクトを返すことを保証する。 staticにすることでオブジェクトを作らなくても使用できるためstaticを使う。
+    static ValidatedModelGraph create(const ModelGraph &graph); // 検証済みモデルのオブジェクトを返すことを保証する。 staticにすることでオブジェクトを作らなくても使用できるためstaticを使う。
 
     const ModelGraph &getGraph() const { return _graph; };
     // 検証のときに求めた実行順(graph.nodes の添字)。
     const std::vector<std::size_t> &getOrder() const { return _order; }
 
 private:
-    validatedModelGraph(ModelGraph, std::vector<std::size_t> order);
+    ValidatedModelGraph(ModelGraph, std::vector<std::size_t> order);
 
     ModelGraph _graph;
     std::vector<std::size_t> _order;

@@ -377,12 +377,12 @@ std::vector<GraphValidationError> validateGraphStructure(const ModelGraph &graph
     return errors;
 }
 
-validatedModelGraph::validatedModelGraph(ModelGraph graph, std::vector<std::size_t> order)
+ValidatedModelGraph::ValidatedModelGraph(ModelGraph graph, std::vector<std::size_t> order)
     : _graph(std::move(graph)), _order(std::move(order))
 {
 }
 
-validatedModelGraph validatedModelGraph::create(const ModelGraph &graph)
+ValidatedModelGraph ValidatedModelGraph::create(const ModelGraph &graph)
 {
     std::vector<GraphValidationError> errors;
     auto order = validateAndSort(graph, errors);
@@ -391,5 +391,5 @@ validatedModelGraph validatedModelGraph::create(const ModelGraph &graph)
         throw std::runtime_error(formatErrors(errors));
     }
 
-    return validatedModelGraph(graph, std::move(order));
+    return ValidatedModelGraph(graph, std::move(order));
 }

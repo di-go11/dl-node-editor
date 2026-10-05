@@ -91,7 +91,7 @@ std::vector<double> runTraining(const ComputeDevice &device,
     // 初期重みは torch::nn の初期化が CPU の global generator を使うため、
     // create の直前に seed を張れば CPU/CUDA で同一の初期値になる。
     torch::manual_seed(kSeed);
-    std::shared_ptr<IModel> model = modelFactory.create(validatedModelGraph::create(graph), device);
+    std::shared_ptr<IModel> model = modelFactory.create(ValidatedModelGraph::create(graph), device);
 
     std::vector<at::Tensor> params = model->parameters();
     AdamOptimizerConfig adam;

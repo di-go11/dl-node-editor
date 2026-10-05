@@ -242,7 +242,7 @@ int main()
                   },
                   "pooling_type が UNSPECIFIED");
 
-    // グラフの検証(validatedModelGraph::create)で見つかる問題も、invalid_argument になる
+    // グラフの検証(ValidatedModelGraph::create)で見つかる問題も、invalid_argument になる
     checkRejected([](auto &r) { r.mutable_model_graph()->mutable_nodes(0)->set_id(""); }, "ノード ID が空");
     checkRejected([](auto &r) { connect(addConvNode(r, "conv1"), "x", "conv1", "y"); }, "ノード ID が重複");
     checkRejected([](auto &r) { connect(addConvNode(r, "conv/2"), "x", "conv1", "y"); }, "ノード ID に使えない文字");

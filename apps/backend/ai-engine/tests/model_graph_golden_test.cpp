@@ -136,7 +136,7 @@ namespace
     //
     // グラフの表現を変えるときは、この関数だけを書き換える。
     // 層を作る順番(= ノードの並び順)は変えないこと。重みの初期値がこの順番で決まる。
-    validatedModelGraph makeGraph()
+    ValidatedModelGraph makeGraph()
     {
         ModelGraphBuilder builder;
 
@@ -154,7 +154,7 @@ namespace
                     {NodeInput{"x", builder.lastOutput()}, NodeInput{"indices", PortRef{pool1, "indices"}}});
         appendConvReluBn(builder, 4, kNumClasses);
 
-        return validatedModelGraph::create(builder.build());
+        return ValidatedModelGraph::create(builder.build());
     }
 
     // ---- 比較 ----
@@ -231,7 +231,7 @@ int main()
     std::cout << std::setprecision(17);
 
     const ComputeDevice device{ComputeDeviceType::Cpu, 0};
-    const validatedModelGraph graph = makeGraph();
+    const ValidatedModelGraph graph = makeGraph();
 
     // 入力・ターゲットを seed 固定で生成する。
     torch::manual_seed(kSeed + 1);
