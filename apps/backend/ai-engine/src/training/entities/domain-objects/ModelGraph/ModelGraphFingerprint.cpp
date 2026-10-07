@@ -1,6 +1,6 @@
 #include "training/entities/domain-objects/ModelGraph/ModelGraphFingerprint.hpp"
 
-#include "training/entities/domain-objects/ModelGraph/Layers/LayersParamsFields.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/NodeSpecFields.hpp"
 
 #include <cstdint>
 #include <sstream>
@@ -42,7 +42,7 @@ namespace
     // 各ノードは「[ID]層の種類|フィールド...<入力ポート=接続元,...」の形で、
     // 同じ層の並びでも、つなぎ方が違えば別の値になる。
     //
-    // フィールドの列挙は LayersParamsFields.hpp に一元化してある。
+    // フィールドの列挙は NodeSpecFields.hpp に一元化してある。
     // この文字列のフォーマット(区切り文字・並び順)を変えると
     // 既存の .pt に記録された fingerprint と一致しなくなるため変更しないこと。
     // (v1 は layers の配列を前提にしていた。DAG 化で作り直したので、v1 の checkpoint とは一致しない)
@@ -66,7 +66,7 @@ namespace
                                          appendValue(os, value);
                                      });
                 },
-                node.layer.params);
+                node.spec);
 
             // 入力の接続。ノード ID の文字種は英数字・'-'・'_' に限られるので、'<' '=' ',' '.' と衝突しない。
             char separator = '<';

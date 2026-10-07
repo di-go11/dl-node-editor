@@ -14,14 +14,14 @@
 
 #include "training/entities/domain-objects/ModelGraph/DAG/GraphShapeInference.hpp"
 #include "training/entities/domain-objects/ModelGraph/DAG/GraphValidation.hpp"
-#include "training/entities/domain-objects/ModelGraph/Layers/ActivationConfig.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/ActivationSpec.hpp"
 #include "training/entities/domain-objects/ModelGraph/Layers/ActivationType.hpp"
-#include "training/entities/domain-objects/ModelGraph/Layers/BatchNormParams.hpp"
-#include "training/entities/domain-objects/ModelGraph/Layers/Conv2DParams.hpp"
-#include "training/entities/domain-objects/ModelGraph/Layers/IndexedPoolingParams.hpp"
-#include "training/entities/domain-objects/ModelGraph/Layers/LayersConfig.hpp"
-#include "training/entities/domain-objects/ModelGraph/Layers/PoolingParams.hpp"
-#include "training/entities/domain-objects/ModelGraph/Layers/UnpoolingParams.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/BatchNormSpec.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/Conv2DSpec.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/IndexedPoolingSpec.hpp"
+#include "training/entities/domain-objects/ModelGraph/NodeSpec.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/PoolingSpec.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/UnpoolingSpec.hpp"
 #include "training/entities/domain-objects/ModelGraph/ModelGraph.hpp"
 
 namespace
@@ -57,20 +57,20 @@ namespace
     std::string addConvReluBn(ModelGraph &graph, const std::string &prefix, int64_t in, int64_t out,
                               const NodeInput &first)
     {
-        Conv2DParams conv;
+        Conv2DSpec conv;
         conv.inChannels = in;
         conv.outChannels = out;
         conv.kernelSize = 3;
         conv.padding = 1;
-        graph.nodes.push_back({prefix + "_conv", LayersConfig{conv}, {first}});
+        graph.nodes.push_back({prefix + "_conv", NodeSpec{conv}, {first}});
 
-        ActivationConfig relu;
+        ActivationSpec relu;
         relu.activationType = ActivationType::ReLU;
-        graph.nodes.push_back({prefix + "_relu", LayersConfig{relu}, {connect("x", prefix + "_conv", "y")}});
+        graph.nodes.push_back({prefix + "_relu", NodeSpec{relu}, {connect("x", prefix + "_conv", "y")}});
 
-        BatchNormParams bn;
+        BatchNormSpec bn;
         bn.numFeatures = out;
-        graph.nodes.push_back({prefix + "_bn", LayersConfig{bn}, {connect("x", prefix + "_relu", "y")}});
+        graph.nodes.push_back({prefix + "_bn", NodeSpec{bn}, {connect("x", prefix + "_relu", "y")}});
         return prefix + "_bn";
     }
 
@@ -84,18 +84,18 @@ namespace
         ModelGraph graph;
 
         const std::string e1 = addConvReluBn(graph, "e1", 3, 4, fromGraphInput("x"));
-        graph.nodes.push_back({"p1", LayersConfig{IndexedPoolingParams{}}, {connect("x", e1, "y")}});
+        graph.nodes.push_back({"p1", NodeSpec{IndexedPoolingSpec{}}, {connect("x", e1, "y")}});
 
         const std::string e2 = addConvReluBn(graph, "e2", 4, 8, connect("x", "p1", "y"));
-        graph.nodes.push_back({"p2", LayersConfig{IndexedPoolingParams{}}, {connect("x", e2, "y")}});
+        graph.nodes.push_back({"p2", NodeSpec{IndexedPoolingSpec{}}, {connect("x", e2, "y")}});
 
         graph.nodes.push_back({"u2",
-                               LayersConfig{UnpoolingParams{}},
+                               NodeSpec{UnpoolingSpec{}},
                                {connect("x", "p2", "y"), connect("indices", "p2", "indices")}});
         const std::string d2 = addConvReluBn(graph, "d2", 8, 4, connect("x", "u2", "y"));
 
         graph.nodes.push_back({"u1",
-                               LayersConfig{UnpoolingParams{}},
+                               NodeSpec{UnpoolingSpec{}},
                                {connect("x", d2, "y"), connect("indices", "p1", "indices")}});
         const std::string d1 = addConvReluBn(graph, "d1", 4, kNumClasses, connect("x", "u1", "y"));
 
@@ -201,7 +201,7 @@ namespace
     void testChannelMismatch()
     {
         ModelGraph graph = makeSegNetGraph();
-        std::get<Conv2DParams>(nodeOf(graph, "e2_conv").layer.params).inChannels = 5; // 実際は 4
+        std::get<Conv2DSpec>(nodeOf(graph, "e2_conv").spec).inChannels = 5; // 実際は 4
         const auto errors = validateGraphShapes(ValidatedModelGraph::create(graph), kInput, kNumClasses);
         check(hasErrorAt(errors, "e2_conv"), "Conv2D の in_channels の不一致を、そのノードで検出する");
         check(errors.size() == 1, "不一致のノードより先のノードでは、重ねて報告しない");
@@ -211,7 +211,7 @@ namespace
     void testBatchNormMismatch()
     {
         ModelGraph graph = makeSegNetGraph();
-        std::get<BatchNormParams>(nodeOf(graph, "e1_bn").layer.params).numFeatures = 5; // 実際は 4
+        std::get<BatchNormSpec>(nodeOf(graph, "e1_bn").spec).numFeatures = 5; // 実際は 4
         const auto errors = validateGraphShapes(ValidatedModelGraph::create(graph), kInput, kNumClasses);
         check(hasErrorAt(errors, "e1_bn"), "BatchNorm の num_features の不一致を検出する");
     }
@@ -254,12 +254,12 @@ namespace
     {
         // Conv → Pooling の 2 ノードだけ。出力は 128x128 になり、入力(256x256)と合わない。
         ModelGraph graph;
-        Conv2DParams conv;
+        Conv2DSpec conv;
         conv.inChannels = 3;
         conv.outChannels = kNumClasses;
         conv.padding = 1;
-        graph.nodes.push_back({"conv", LayersConfig{conv}, {fromGraphInput("x")}});
-        graph.nodes.push_back({"pool", LayersConfig{PoolingParams{}}, {connect("x", "conv", "y")}});
+        graph.nodes.push_back({"conv", NodeSpec{conv}, {fromGraphInput("x")}});
+        graph.nodes.push_back({"pool", NodeSpec{PoolingSpec{}}, {connect("x", "conv", "y")}});
         graph.outputs.push_back(PortRef{"pool", "y"});
 
         const auto errors = validateGraphShapes(ValidatedModelGraph::create(graph), kInput, kNumClasses);
@@ -323,8 +323,8 @@ namespace
         check(validateGraphStructure(makeSegNetGraph()).empty(), "validateGraphStructure: 正しいグラフではエラーを返さない");
         {
             ModelGraph graph;
-            graph.nodes.push_back({"a", LayersConfig{Conv2DParams{}}, {fromGraphInput("x")}});
-            graph.nodes.push_back({"b", LayersConfig{Conv2DParams{}}, {connect("x", "missing", "y")}});
+            graph.nodes.push_back({"a", NodeSpec{Conv2DSpec{}}, {fromGraphInput("x")}});
+            graph.nodes.push_back({"b", NodeSpec{Conv2DSpec{}}, {connect("x", "missing", "y")}});
             graph.outputs.push_back(PortRef{"b", "y"});
             const auto errors = validateGraphStructure(graph);
             check(errors.size() == 1 && errors[0].nodeId == "b" && errors[0].nodeIndex == std::size_t{1} &&
@@ -343,8 +343,8 @@ namespace
         {
             // a.x ← b.y、b.x ← a.y
             ModelGraph graph;
-            graph.nodes.push_back({"a", LayersConfig{Conv2DParams{}}, {connect("x", "b", "y")}});
-            graph.nodes.push_back({"b", LayersConfig{Conv2DParams{}}, {connect("x", "a", "y")}});
+            graph.nodes.push_back({"a", NodeSpec{Conv2DSpec{}}, {connect("x", "b", "y")}});
+            graph.nodes.push_back({"b", NodeSpec{Conv2DSpec{}}, {connect("x", "a", "y")}});
             graph.outputs.push_back(PortRef{"b", "y"});
             const auto errors = validateGraphStructure(graph);
             check(errors.size() == 1 && errors[0].message.find("閉路") != std::string::npos &&

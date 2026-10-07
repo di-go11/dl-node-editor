@@ -1,14 +1,14 @@
 #pragma once
 
 #include "training/adapters/interfaces/ILayer.hpp"
-#include "training/entities/domain-objects/ModelGraph/Layers/LinearParams.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/LinearSpec.hpp"
 
 #include <torch/nn/modules/linear.h>
 
 class TorchLinearLayer : public ILayer
 {
 public:
-    explicit TorchLinearLayer(const LinearParams &params);
+    explicit TorchLinearLayer(const LinearSpec &params);
     std::vector<at::Tensor> forward(const std::vector<at::Tensor> &inputs) override;
     std::vector<at::Tensor> parameters() const override;
     void setTrain(bool trainingMode) override;

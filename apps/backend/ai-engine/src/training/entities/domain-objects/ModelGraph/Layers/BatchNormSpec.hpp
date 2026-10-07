@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-struct BatchNormParams
+struct BatchNormSpec
 {
     int64_t numFeatures = 1;
     double eps = 1e-5;

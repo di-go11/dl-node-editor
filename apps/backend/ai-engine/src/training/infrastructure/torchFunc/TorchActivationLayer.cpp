@@ -6,7 +6,7 @@
 
 #include <torch/torch.h>
 
-TorchActivationLayer::TorchActivationLayer(const ActivationParams &params)
+TorchActivationLayer::TorchActivationLayer(const ActivationSpec &params)
 {
     switch (params.activationType)
     {

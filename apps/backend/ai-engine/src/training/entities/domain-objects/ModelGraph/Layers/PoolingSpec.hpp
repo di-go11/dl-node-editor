@@ -2,8 +2,11 @@
 
 #include <cstdint>
 
-struct IndexedPoolingParams
+#include "PoolingType.hpp"
+
+struct PoolingSpec
 {
+    PoolingType type = PoolingType::Max;
     int64_t kernelSize = 2;
     int64_t stride = 2;
     int64_t padding = 0;

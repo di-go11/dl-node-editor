@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-struct UnpoolingParams
+struct UnpoolingSpec
 {
     int64_t kernelSize = 2;
     int64_t stride = 2;

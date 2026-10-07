@@ -1,6 +1,6 @@
 #pragma once
 
-#include "LayersConfig.hpp"
+#include "training/entities/domain-objects/ModelGraph/NodeSpec.hpp"
 #include "training/entities/domain-objects/ModelGraph/PortShape.hpp"
 
 #include <cstdint>
@@ -81,7 +81,7 @@ namespace shape_rules_detail
 }
 
 // Conv2D: in_channels == C。出力は (out_channels, 出力 H, 出力 W)。
-inline ShapeResult inferOutputShapes(const Conv2DParams &p, const std::vector<PortShape> &inputs)
+inline ShapeResult inferOutputShapes(const Conv2DSpec &p, const std::vector<PortShape> &inputs)
 {
     const auto *in = std::get_if<FeatureMapShape>(&inputs.at(0));
     if (!in)
@@ -105,7 +105,7 @@ inline ShapeResult inferOutputShapes(const Conv2DParams &p, const std::vector<Po
 }
 
 // Pooling: チャンネル数は変わらず、H と W が縮む。
-inline ShapeResult inferOutputShapes(const PoolingParams &p, const std::vector<PortShape> &inputs)
+inline ShapeResult inferOutputShapes(const PoolingSpec &p, const std::vector<PortShape> &inputs)
 {
     const auto *in = std::get_if<FeatureMapShape>(&inputs.at(0));
     if (!in)
@@ -122,7 +122,7 @@ inline ShapeResult inferOutputShapes(const PoolingParams &p, const std::vector<P
 }
 
 // IndexedPooling: 出力 y と indices は、どちらも縮んだ後の形状。
-inline ShapeResult inferOutputShapes(const IndexedPoolingParams &p, const std::vector<PortShape> &inputs)
+inline ShapeResult inferOutputShapes(const IndexedPoolingSpec &p, const std::vector<PortShape> &inputs)
 {
     const auto *in = std::get_if<FeatureMapShape>(&inputs.at(0));
     if (!in)
@@ -139,7 +139,7 @@ inline ShapeResult inferOutputShapes(const IndexedPoolingParams &p, const std::v
 }
 
 // Unpooling: x と indices の形状が一致すること。出力 H, W は (in - 1) * stride - 2 * padding + kernel。
-inline ShapeResult inferOutputShapes(const UnpoolingParams &p, const std::vector<PortShape> &inputs)
+inline ShapeResult inferOutputShapes(const UnpoolingSpec &p, const std::vector<PortShape> &inputs)
 {
     const auto *x = std::get_if<FeatureMapShape>(&inputs.at(0));
     if (!x)
@@ -169,7 +169,7 @@ inline ShapeResult inferOutputShapes(const UnpoolingParams &p, const std::vector
 }
 
 // BatchNorm: num_features == C。形状は変わらない。
-inline ShapeResult inferOutputShapes(const BatchNormParams &p, const std::vector<PortShape> &inputs)
+inline ShapeResult inferOutputShapes(const BatchNormSpec &p, const std::vector<PortShape> &inputs)
 {
     const auto *in = std::get_if<FeatureMapShape>(&inputs.at(0));
     if (!in)
@@ -186,7 +186,7 @@ inline ShapeResult inferOutputShapes(const BatchNormParams &p, const std::vector
 
 // Linear: 入力の最後の次元(特徴マップなら W、トークン列なら D)に作用する(PyTorch と同じ)。
 // 最後の次元 == in_features で、出力ではその次元が out_features になる。
-inline ShapeResult inferOutputShapes(const LinearParams &p, const std::vector<PortShape> &inputs)
+inline ShapeResult inferOutputShapes(const LinearSpec &p, const std::vector<PortShape> &inputs)
 {
     if (const auto *map = std::get_if<FeatureMapShape>(&inputs.at(0)))
     {
@@ -212,18 +212,23 @@ inline ShapeResult inferOutputShapes(const LinearParams &p, const std::vector<Po
 }
 
 // Activation: 形状は変わらない(種類は Any なので、入力の種類を引き継ぐ)。
-inline ShapeResult inferOutputShapes(const ActivationConfig &, const std::vector<PortShape> &inputs)
+inline ShapeResult inferOutputShapes(const ActivationSpec &, const std::vector<PortShape> &inputs)
 {
     return ShapeResult::success({inputs.at(0)});
 }
 
-// ---- LayersConfig(variant)から引く入口 ----
+// ---- NodeSpec(variant)から引く入口 ----
 //
 // 入っている層の種類に合う inferOutputShapes が呼ばれる。
-// LayersParams に型を足したのに上の規則を書き忘れると、ここでコンパイルエラーになる。
-inline ShapeResult inferOutputShapes(const LayersConfig &layer, const std::vector<PortShape> &inputs)
+// NodeSpec に型を足したのに上の規則を書き忘れると、ここでコンパイルエラーになる。
+// 下の delete は、その「書き忘れ」をコンパイルエラーにするためのもの。これがないと、規則のない型が
+// NodeSpec へ暗黙に変換されて、この関数自身を呼び続けてしまう。
+template <class Spec>
+ShapeResult inferOutputShapes(const Spec &, const std::vector<PortShape> &) = delete;
+
+inline ShapeResult inferOutputShapes(const NodeSpec &spec, const std::vector<PortShape> &inputs)
 {
-    return std::visit([&inputs](const auto &params)
-                      { return inferOutputShapes(params, inputs); },
-                      layer.params);
+    return std::visit([&inputs](const auto &s)
+                      { return inferOutputShapes(s, inputs); },
+                      spec);
 }

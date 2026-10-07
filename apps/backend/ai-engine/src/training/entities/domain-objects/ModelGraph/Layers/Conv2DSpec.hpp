@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-struct Conv2DParams
+struct Conv2DSpec
 {
     int64_t inChannels = 1;
     int64_t outChannels = 1;

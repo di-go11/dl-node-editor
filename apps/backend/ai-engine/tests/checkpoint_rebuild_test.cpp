@@ -24,11 +24,11 @@
 
 #include "training/adapters/interfaces/IModel.hpp"
 #include "training/adapters/interfaces/IOptimizer.hpp"
-#include "training/entities/domain-objects/ModelGraph/Layers/ActivationConfig.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/ActivationSpec.hpp"
 #include "training/entities/domain-objects/ModelGraph/Layers/ActivationType.hpp"
 #include "training/entities/domain-objects/CheckpointMeta.hpp"
-#include "training/entities/domain-objects/ModelGraph/Layers/Conv2DParams.hpp"
-#include "training/entities/domain-objects/ModelGraph/Layers/LayersConfig.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/Conv2DSpec.hpp"
+#include "training/entities/domain-objects/ModelGraph/NodeSpec.hpp"
 #include "training/entities/domain-objects/ModelGraph/DAG/GraphValidation.hpp"
 #include "training/entities/domain-objects/ModelGraph/DAG/ModelGraphBuilder.hpp"
 #include "training/entities/domain-objects/ModelGraph/ModelGraph.hpp"
@@ -69,25 +69,25 @@ ModelGraph makeGraph(int numClasses)
 {
     ModelGraphBuilder graph;
 
-    Conv2DParams conv1;
+    Conv2DSpec conv1;
     conv1.inChannels = 3;
     conv1.outChannels = 4;
     conv1.kernelSize = 3;
     conv1.stride = 1;
     conv1.padding = 1;
-    graph.add(LayersConfig{conv1});
+    graph.add(NodeSpec{conv1});
 
-    ActivationConfig act;
+    ActivationSpec act;
     act.activationType = ActivationType::ReLU;
-    graph.add(LayersConfig{act});
+    graph.add(NodeSpec{act});
 
-    Conv2DParams conv2;
+    Conv2DSpec conv2;
     conv2.inChannels = 4;
     conv2.outChannels = numClasses;
     conv2.kernelSize = 3;
     conv2.stride = 1;
     conv2.padding = 1;
-    graph.add(LayersConfig{conv2});
+    graph.add(NodeSpec{conv2});
 
     return graph.build();
 }

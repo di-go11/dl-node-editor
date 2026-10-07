@@ -1,14 +1,14 @@
 #pragma once
 
 #include "training/adapters/interfaces/ILayer.hpp"
-#include "training/entities/domain-objects/ModelGraph/Layers/IndexedPoolingParams.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/IndexedPoolingSpec.hpp"
 
 #include <torch/nn/modules/pooling.h>
 
 class TorchIndexPoolingLayer : public ILayer
 {
 public:
-    explicit TorchIndexPoolingLayer(const IndexedPoolingParams &params);
+    explicit TorchIndexPoolingLayer(const IndexedPoolingSpec &params);
 
     std::vector<at::Tensor> forward(const std::vector<at::Tensor> &inputs) override;
     std::vector<at::Tensor> parameters() const override;

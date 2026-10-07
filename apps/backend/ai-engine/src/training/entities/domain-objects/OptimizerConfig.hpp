@@ -9,7 +9,7 @@
 // 以前は OptimizerConfig を基底に継承していたが、AppConfig が基底の「値」で
 // 保持していたためスライシングが起き、beta1 / momentum といった派生固有の
 // フィールドが Factory まで届かなかった。
-// LayersParams(モデル層のパラメータ)と同じ std::variant 方式に揃え、
+// NodeSpec(モデル層のパラメータ)と同じ std::variant 方式に揃え、
 // 「種別ごとに必要なフィールドだけを持つ独立した構造体」として扱う。
 //
 // 既定値は各 Optimizer 実装のコンストラクタ既定値と一致させてある。

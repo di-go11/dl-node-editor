@@ -61,14 +61,14 @@ namespace
 
     // ---- model_graph ----
 
-    LayersConfig toLayer(const model::v1::LayerConfig &layer, const std::string &at)
+    NodeSpec toLayer(const model::v1::NodeSpec &layer, const std::string &at)
     {
         switch (layer.params_case())
         {
-        case model::v1::LayerConfig::kConv2D:
+        case model::v1::NodeSpec::kConv2D:
         {
             const auto &p = layer.conv2d();
-            Conv2DParams conv;
+            Conv2DSpec conv;
             conv.inChannels = p.in_channels();
             conv.outChannels = p.out_channels();
             conv.kernelSize = p.kernel_size();
@@ -81,12 +81,12 @@ namespace
             requirePositive(conv.stride, at + ".conv2d.stride");
             requireNonNegative(conv.padding, at + ".conv2d.padding");
             requirePositive(conv.dilation, at + ".conv2d.dilation");
-            return LayersConfig{conv};
+            return NodeSpec{conv};
         }
-        case model::v1::LayerConfig::kPooling2D:
+        case model::v1::NodeSpec::kPooling2D:
         {
             const auto &p = layer.pooling2d();
-            PoolingParams pool;
+            PoolingSpec pool;
             switch (p.pooling_type())
             {
             case model::v1::POOLING_TYPE_MAX:
@@ -104,34 +104,34 @@ namespace
             requirePositive(pool.kernelSize, at + ".pooling2d.kernel_size");
             requirePositive(pool.stride, at + ".pooling2d.stride");
             requireNonNegative(pool.padding, at + ".pooling2d.padding");
-            return LayersConfig{pool};
+            return NodeSpec{pool};
         }
-        case model::v1::LayerConfig::kBatchNorm:
+        case model::v1::NodeSpec::kBatchNorm:
         {
             const auto &p = layer.batch_norm();
-            BatchNormParams bn;
+            BatchNormSpec bn;
             bn.numFeatures = p.num_features();
             bn.eps = p.eps();
             bn.momentum = p.momentum();
             requirePositive(bn.numFeatures, at + ".batch_norm.num_features");
             requireGreaterThanZero(bn.eps, at + ".batch_norm.eps");
-            return LayersConfig{bn};
+            return NodeSpec{bn};
         }
-        case model::v1::LayerConfig::kLinear:
+        case model::v1::NodeSpec::kLinear:
         {
             const auto &p = layer.linear();
-            LinearParams linear;
+            LinearSpec linear;
             linear.inFeatures = p.in_features();
             linear.outFeatures = p.out_features();
             linear.bias = p.bias();
             requirePositive(linear.inFeatures, at + ".linear.in_features");
             requirePositive(linear.outFeatures, at + ".linear.out_features");
-            return LayersConfig{linear};
+            return NodeSpec{linear};
         }
-        case model::v1::LayerConfig::kActivation:
+        case model::v1::NodeSpec::kActivation:
         {
             const auto &p = layer.activation();
-            ActivationParams activation;
+            ActivationSpec activation;
             switch (p.activation_type())
             {
             case model::v1::ACTIVATION_TYPE_RELU:
@@ -150,33 +150,33 @@ namespace
                 invalid(at + ".activation.activation_type が指定されていません");
             }
             activation.dim = p.dim();
-            return LayersConfig{activation};
+            return NodeSpec{activation};
         }
-        case model::v1::LayerConfig::kIndexedPooling:
+        case model::v1::NodeSpec::kIndexedPooling:
         {
             const auto &p = layer.indexed_pooling();
-            IndexedPoolingParams pool;
+            IndexedPoolingSpec pool;
             pool.kernelSize = p.kernel_size();
             pool.stride = p.stride();
             pool.padding = p.padding();
             requirePositive(pool.kernelSize, at + ".indexed_pooling.kernel_size");
             requirePositive(pool.stride, at + ".indexed_pooling.stride");
             requireNonNegative(pool.padding, at + ".indexed_pooling.padding");
-            return LayersConfig{pool};
+            return NodeSpec{pool};
         }
-        case model::v1::LayerConfig::kUnpooling:
+        case model::v1::NodeSpec::kUnpooling:
         {
             const auto &p = layer.unpooling();
-            UnpoolingParams unpool;
+            UnpoolingSpec unpool;
             unpool.kernelSize = p.kernel_size();
             unpool.stride = p.stride();
             unpool.padding = p.padding();
             requirePositive(unpool.kernelSize, at + ".unpooling.kernel_size");
             requirePositive(unpool.stride, at + ".unpooling.stride");
             requireNonNegative(unpool.padding, at + ".unpooling.padding");
-            return LayersConfig{unpool};
+            return NodeSpec{unpool};
         }
-        case model::v1::LayerConfig::PARAMS_NOT_SET:
+        case model::v1::NodeSpec::PARAMS_NOT_SET:
             break;
         }
         invalid(at + " の層の種類が指定されていません");
@@ -195,7 +195,7 @@ namespace
         {
             const auto &node = graph.nodes(i);
             const std::string at = nodeLocation(static_cast<std::size_t>(i), node.id());
-            GraphNode out{node.id(), toLayer(node.layer(), at + ".layer"), {}};
+            GraphNode out{node.id(), toLayer(node.spec(), at + ".spec"), {}};
             for (const auto &input : node.inputs())
             {
                 out.inputs.push_back(NodeInput{

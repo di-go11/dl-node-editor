@@ -1,6 +1,6 @@
 #pragma once
 
-#include "training/entities/domain-objects/ModelGraph/Layers/LayersConfig.hpp"
+#include "training/entities/domain-objects/ModelGraph/NodeSpec.hpp"
 
 #include <vector>
 #include <string>
@@ -22,6 +22,6 @@ struct NodeInput
 struct GraphNode
 {
     std::string id;
-    LayersConfig layer;
+    NodeSpec spec; // このノードが何をするか(層の種類とパラメータ、または Add などの汎用ノード)
     std::vector<NodeInput> inputs;
 };

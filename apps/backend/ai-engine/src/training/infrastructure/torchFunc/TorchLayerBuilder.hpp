@@ -7,5 +7,5 @@ class TorchLayerBuilder : public ILayerBuilder
 {
 public:
     TorchLayerBuilder();
-    std::shared_ptr<ILayer> build(const LayersConfig &config);
+    std::shared_ptr<ILayer> build(const NodeSpec &config);
 };

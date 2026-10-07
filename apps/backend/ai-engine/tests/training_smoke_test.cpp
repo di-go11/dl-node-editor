@@ -22,11 +22,11 @@
 #include <torch/torch.h>
 
 #include "training/entities/domain-objects/ComputeDevice.hpp"
-#include "training/entities/domain-objects/ModelGraph/Layers/Conv2DParams.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/Conv2DSpec.hpp"
 #include "training/entities/domain-objects/DataSpecs/DataSpec.hpp"
 #include "training/entities/domain-objects/DatasetSplit.hpp"
 #include "training/entities/domain-objects/Metrics/EpochMetrics.hpp"
-#include "training/entities/domain-objects/ModelGraph/Layers/LayersConfig.hpp"
+#include "training/entities/domain-objects/ModelGraph/NodeSpec.hpp"
 #include "training/entities/domain-objects/ModelGraph/DAG/GraphValidation.hpp"
 #include "training/entities/domain-objects/ModelGraph/DAG/ModelGraphBuilder.hpp"
 #include "training/entities/domain-objects/ModelGraph/ModelGraph.hpp"
@@ -180,13 +180,13 @@ namespace
     ModelGraph oneConvGraph(int numClasses)
     {
         ModelGraphBuilder g;
-        Conv2DParams conv;
+        Conv2DSpec conv;
         conv.inChannels = 3;
         conv.outChannels = numClasses;
         conv.kernelSize = 3;
         conv.stride = 1;
         conv.padding = 1;
-        g.add(LayersConfig{conv});
+        g.add(NodeSpec{conv});
         return g.build();
     }
 

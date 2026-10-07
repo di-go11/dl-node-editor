@@ -23,17 +23,17 @@
 
 #include <torch/torch.h>
 
-#include "training/entities/domain-objects/ModelGraph/Layers/ActivationConfig.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/ActivationSpec.hpp"
 #include "training/entities/domain-objects/ModelGraph/Layers/ActivationType.hpp"
-#include "training/entities/domain-objects/ModelGraph/Layers/BatchNormParams.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/BatchNormSpec.hpp"
 #include "training/entities/domain-objects/ComputeDevice.hpp"
-#include "training/entities/domain-objects/ModelGraph/Layers/Conv2DParams.hpp"
-#include "training/entities/domain-objects/ModelGraph/Layers/IndexedPoolingParams.hpp"
-#include "training/entities/domain-objects/ModelGraph/Layers/LayersConfig.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/Conv2DSpec.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/IndexedPoolingSpec.hpp"
+#include "training/entities/domain-objects/ModelGraph/NodeSpec.hpp"
 #include "training/entities/domain-objects/ModelGraph/DAG/GraphValidation.hpp"
 #include "training/entities/domain-objects/ModelGraph/DAG/ModelGraphBuilder.hpp"
 #include "training/entities/domain-objects/OptimizerConfig.hpp"
-#include "training/entities/domain-objects/ModelGraph/Layers/UnpoolingParams.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/UnpoolingSpec.hpp"
 
 #include "training/adapters/interfaces/IModel.hpp"
 #include "training/adapters/interfaces/IOptimizer.hpp"
@@ -110,22 +110,22 @@ namespace
 
     void appendConvReluBn(ModelGraphBuilder &builder, int inChannels, int outChannels)
     {
-        Conv2DParams conv;
+        Conv2DSpec conv;
         conv.inChannels = inChannels;
         conv.outChannels = outChannels;
         conv.kernelSize = 3;
         conv.stride = 1;
         conv.padding = 1;
-        builder.add(LayersConfig{conv});
+        builder.add(NodeSpec{conv});
 
-        ActivationConfig relu;
+        ActivationSpec relu;
         relu.activationType = ActivationType::ReLU;
-        builder.add(LayersConfig{relu});
+        builder.add(NodeSpec{relu});
 
-        BatchNormParams bn;
+        BatchNormSpec bn;
         bn.numFeatures = outChannels;
         bn.momentum = 0.5;
-        builder.add(LayersConfig{bn});
+        builder.add(NodeSpec{bn});
     }
 
     // SegNet を小さくした構成。
@@ -141,16 +141,16 @@ namespace
         ModelGraphBuilder builder;
 
         appendConvReluBn(builder, 3, 4);
-        const std::string pool1 = builder.add(LayersConfig{IndexedPoolingParams{}});
+        const std::string pool1 = builder.add(NodeSpec{IndexedPoolingSpec{}});
 
         appendConvReluBn(builder, 4, 8);
-        const std::string pool2 = builder.add(LayersConfig{IndexedPoolingParams{}});
+        const std::string pool2 = builder.add(NodeSpec{IndexedPoolingSpec{}});
 
-        builder.add(LayersConfig{UnpoolingParams{}},
+        builder.add(NodeSpec{UnpoolingSpec{}},
                     {NodeInput{"x", builder.lastOutput()}, NodeInput{"indices", PortRef{pool2, "indices"}}});
         appendConvReluBn(builder, 8, 4);
 
-        builder.add(LayersConfig{UnpoolingParams{}},
+        builder.add(NodeSpec{UnpoolingSpec{}},
                     {NodeInput{"x", builder.lastOutput()}, NodeInput{"indices", PortRef{pool1, "indices"}}});
         appendConvReluBn(builder, 4, kNumClasses);
 

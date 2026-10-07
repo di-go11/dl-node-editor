@@ -13,8 +13,8 @@
 //
 // 使い方(直列の場合):
 //   ModelGraphBuilder builder;
-//   builder.add(LayersConfig{conv});   // 最初のノードは、グラフ入力を x につなぐ
-//   builder.add(LayersConfig{relu});   // 直前のノードの y を x につなぐ
+//   builder.add(NodeSpec{conv});   // 最初のノードは、グラフ入力を x につなぐ
+//   builder.add(NodeSpec{relu});   // 直前のノードの y を x につなぐ
 //   ModelGraph graph = builder.build(); // 最後に足したノードの y が、モデルの出力になる
 //
 // 分岐・合流(SegNet の indices など)は、add の第 2 引数で入力を明示する。
@@ -22,17 +22,17 @@ class ModelGraphBuilder
 {
 public:
     // 直前のノードの出力 y を、入力 x につないで足す。足したノードの ID を返す。
-    std::string add(const LayersConfig &layer)
+    std::string add(const NodeSpec &layer)
     {
         return add(layer, {NodeInput{"x", previousOutput()}});
     }
 
     // 入力を明示して足す。足したノードの ID を返す。
-    std::string add(const LayersConfig &layer, std::vector<NodeInput> inputs)
+    std::string add(const NodeSpec &layer, std::vector<NodeInput> inputs)
     {
         GraphNode node;
         node.id = "n" + std::to_string(_graph.nodes.size());
-        node.layer = layer;
+        node.spec = layer;
         node.inputs = std::move(inputs);
         _graph.nodes.push_back(std::move(node));
         return _graph.nodes.back().id;

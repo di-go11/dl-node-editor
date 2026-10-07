@@ -23,8 +23,8 @@
 #include <torch/torch.h>
 
 #include "training/entities/domain-objects/CheckpointMeta.hpp"
-#include "training/entities/domain-objects/ModelGraph/Layers/Conv2DParams.hpp"
-#include "training/entities/domain-objects/ModelGraph/Layers/LayersConfig.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/Conv2DSpec.hpp"
+#include "training/entities/domain-objects/ModelGraph/NodeSpec.hpp"
 #include "training/entities/domain-objects/ModelGraph/DAG/GraphValidation.hpp"
 #include "training/entities/domain-objects/ModelGraph/DAG/ModelGraphBuilder.hpp"
 #include "training/entities/domain-objects/ModelGraph/ModelGraph.hpp"
@@ -58,13 +58,13 @@ void check(bool condition, const std::string &message)
 ModelGraph makeGraph(int numClasses)
 {
     ModelGraphBuilder graph;
-    Conv2DParams conv;
+    Conv2DSpec conv;
     conv.inChannels = 3;
     conv.outChannels = numClasses;
     conv.kernelSize = 3;
     conv.stride = 1;
     conv.padding = 1;
-    graph.add(LayersConfig{conv});
+    graph.add(NodeSpec{conv});
     return graph.build();
 }
 

@@ -10,11 +10,11 @@
 
 namespace
 {
-// LayersParams の alternative が増減したらここで気付けるようにする。
-// 増やした場合は LayersParamsFields.hpp(LayerKind・フィールド列挙)の更新と、
+// NodeSpec の alternative が増減したらここで気付けるようにする。
+// 増やした場合は NodeSpecFields.hpp(LayerKind・フィールド列挙)の更新と、
 // 下の readLayer の分岐追加、kModelGraphArchiveVersion のインクリメントが必要。
-static_assert(std::variant_size_v<LayersParams> == 7,
-              "LayersParams の要素数が変わりました。ModelGraphArchive の対応を更新してください。");
+static_assert(std::variant_size_v<NodeSpec> == 7,
+              "NodeSpec の要素数が変わりました。ModelGraphArchive の対応を更新してください。");
 
 // archive への読み書きヘルパ。スカラーは 1 要素テンソルとして保存する
 // (既存の TorchCheckpointStore / TorchModel と同じ表現)。
@@ -80,7 +80,7 @@ PortRef readPortRef(const Reader &r, const std::string &key)
     return PortRef{r.str(key + "node"), r.str(key + "port")};
 }
 
-void writeLayer(torch::serialize::OutputArchive &out, std::size_t index, const LayersConfig &layer)
+void writeLayer(torch::serialize::OutputArchive &out, std::size_t index, const NodeSpec &layer)
 {
     const Writer w{out, nodePrefix(index)};
 
@@ -113,16 +113,16 @@ void writeLayer(torch::serialize::OutputArchive &out, std::size_t index, const L
                                  }
                              });
         },
-        layer.params);
+        layer);
 }
 
 // 同じフィールド列挙を「代入する側」から使う。
-// visitLayerFields に非 const の Params を渡すとメンバへの可変参照が来るため、
+// visitLayerFields に非 const の Spec を渡すとメンバへの可変参照が来るため、
 // そこへ archive から読んだ値を書き込む。
-template <class Params>
-Params readParams(const Reader &r)
+template <class Spec>
+Spec readSpec(const Reader &r)
 {
-    Params p;
+    Spec p;
     visitLayerFields(p,
                      [&r](const char *name, auto &value)
                      {
@@ -144,7 +144,7 @@ Params readParams(const Reader &r)
     return p;
 }
 
-LayersConfig readLayer(torch::serialize::InputArchive &in, std::size_t index)
+NodeSpec readLayer(torch::serialize::InputArchive &in, std::size_t index)
 {
     const Reader r{in, nodePrefix(index)};
     const auto kind = static_cast<LayerKind>(r.i64("kind"));
@@ -152,19 +152,19 @@ LayersConfig readLayer(torch::serialize::InputArchive &in, std::size_t index)
     switch (kind)
     {
     case LayerKind::Conv2D:
-        return LayersConfig{readParams<Conv2DParams>(r)};
+        return NodeSpec{readSpec<Conv2DSpec>(r)};
     case LayerKind::Pooling:
-        return LayersConfig{readParams<PoolingParams>(r)};
+        return NodeSpec{readSpec<PoolingSpec>(r)};
     case LayerKind::BatchNorm:
-        return LayersConfig{readParams<BatchNormParams>(r)};
+        return NodeSpec{readSpec<BatchNormSpec>(r)};
     case LayerKind::Linear:
-        return LayersConfig{readParams<LinearParams>(r)};
+        return NodeSpec{readSpec<LinearSpec>(r)};
     case LayerKind::Activation:
-        return LayersConfig{readParams<ActivationConfig>(r)};
+        return NodeSpec{readSpec<ActivationSpec>(r)};
     case LayerKind::IndexedPooling:
-        return LayersConfig{readParams<IndexedPoolingParams>(r)};
+        return NodeSpec{readSpec<IndexedPoolingSpec>(r)};
     case LayerKind::Unpooling:
-        return LayersConfig{readParams<UnpoolingParams>(r)};
+        return NodeSpec{readSpec<UnpoolingSpec>(r)};
     }
 
     throw std::runtime_error(
@@ -184,7 +184,7 @@ void writeModelGraph(torch::serialize::OutputArchive &archive, const ModelGraph 
         const Writer w{archive, nodePrefix(i)};
 
         w.str("id", node.id);
-        writeLayer(archive, i, node.layer);
+        writeLayer(archive, i, node.spec);
 
         w.i64("input_count", static_cast<int64_t>(node.inputs.size()));
         for (std::size_t j = 0; j < node.inputs.size(); ++j)
@@ -243,7 +243,7 @@ ModelGraph readModelGraph(torch::serialize::InputArchive &archive)
 
         GraphNode node;
         node.id = r.str("id");
-        node.layer = readLayer(archive, i);
+        node.spec = readLayer(archive, i);
 
         const auto inputCount = static_cast<std::size_t>(r.i64("input_count"));
         for (std::size_t j = 0; j < inputCount; ++j)

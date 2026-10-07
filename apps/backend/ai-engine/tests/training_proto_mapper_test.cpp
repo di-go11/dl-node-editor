@@ -30,7 +30,7 @@ model::v1::Node *addConvNode(training::v1::StartTrainingRequest &r, const std::s
 {
     model::v1::Node *node = r.mutable_model_graph()->add_nodes();
     node->set_id(id);
-    auto *conv = node->mutable_layer()->mutable_conv2d();
+    auto *conv = node->mutable_spec()->mutable_conv2d();
     conv->set_in_channels(3);
     conv->set_out_channels(3);
     conv->set_kernel_size(3);
@@ -137,8 +137,8 @@ int main()
         {
             const ModelGraph &g = c.modelGraph->getGraph();
             check(g.nodes.size() == 1 && g.nodes[0].id == "conv1" &&
-                      std::holds_alternative<Conv2DParams>(g.nodes[0].layer.params) &&
-                      std::get<Conv2DParams>(g.nodes[0].layer.params).padding == 1,
+                      std::holds_alternative<Conv2DSpec>(g.nodes[0].spec) &&
+                      std::get<Conv2DSpec>(g.nodes[0].spec).padding == 1,
                   "変換: model_graph のノード(ID と Conv2D)");
             check(g.nodes.size() == 1 && g.nodes[0].inputs.size() == 1 && g.nodes[0].inputs[0].port == "x" &&
                       g.nodes[0].inputs[0].source.nodeId.empty() && g.nodes[0].inputs[0].source.port.empty(),
@@ -170,15 +170,15 @@ int main()
 
         model::v1::Node *unpool = graph->add_nodes();
         unpool->set_id("unpool");
-        unpool->mutable_layer()->mutable_unpooling()->set_kernel_size(2);
-        unpool->mutable_layer()->mutable_unpooling()->set_stride(2);
+        unpool->mutable_spec()->mutable_unpooling()->set_kernel_size(2);
+        unpool->mutable_spec()->mutable_unpooling()->set_stride(2);
         connect(unpool, "x", "pool", "y");
         connect(unpool, "indices", "pool", "indices");
 
         model::v1::Node *pool = graph->add_nodes();
         pool->set_id("pool");
-        pool->mutable_layer()->mutable_indexed_pooling()->set_kernel_size(2);
-        pool->mutable_layer()->mutable_indexed_pooling()->set_stride(2);
+        pool->mutable_spec()->mutable_indexed_pooling()->set_kernel_size(2);
+        pool->mutable_spec()->mutable_indexed_pooling()->set_stride(2);
         connect(pool, "x", "conv1", "y");
 
         connect(addConvNode(r, "conv1"), "x", "", "");
@@ -191,8 +191,8 @@ int main()
             const ModelGraph &g = c.modelGraph->getGraph();
             check(g.nodes.size() == 3 && g.nodes[0].id == "unpool" && g.nodes[1].id == "pool" && g.nodes[2].id == "conv1",
                   "変換(DAG): nodes は送った並び順のまま");
-            check(g.nodes.size() == 3 && std::holds_alternative<UnpoolingParams>(g.nodes[0].layer.params) &&
-                      std::holds_alternative<IndexedPoolingParams>(g.nodes[1].layer.params),
+            check(g.nodes.size() == 3 && std::holds_alternative<UnpoolingSpec>(g.nodes[0].spec) &&
+                      std::holds_alternative<IndexedPoolingSpec>(g.nodes[1].spec),
                   "変換(DAG): 層の種類(Unpooling / IndexedPooling)");
             check(g.nodes.size() == 3 && g.nodes[0].inputs.size() == 2 &&
                       g.nodes[0].inputs[0].port == "x" && g.nodes[0].inputs[0].source.nodeId == "pool" &&
@@ -232,13 +232,13 @@ int main()
     checkRejected([](auto &r) { r.clear_model_graph(); }, "model_graph.nodes が空");
     checkRejected([](auto &r) { r.mutable_model_graph()->add_nodes()->set_id("n2"); }, "層の種類が未指定");
     checkRejected([](auto &r)
-                  { r.mutable_model_graph()->mutable_nodes(0)->mutable_layer()->mutable_conv2d()->set_kernel_size(0); },
+                  { r.mutable_model_graph()->mutable_nodes(0)->mutable_spec()->mutable_conv2d()->set_kernel_size(0); },
                   "conv2d.kernel_size = 0");
     checkRejected([](auto &r)
                   {
                       model::v1::Node *node = r.mutable_model_graph()->add_nodes();
                       node->set_id("pool");
-                      node->mutable_layer()->mutable_pooling2d()->set_kernel_size(2);
+                      node->mutable_spec()->mutable_pooling2d()->set_kernel_size(2);
                   },
                   "pooling_type が UNSPECIFIED");
 
@@ -273,9 +273,9 @@ int main()
 
     // エラーの位置は、ノードの添字と ID で示す
     check(contains(rejectionMessage([](auto &r)
-                                    { r.mutable_model_graph()->mutable_nodes(0)->mutable_layer()->mutable_conv2d()->set_kernel_size(0); }),
-                   "model_graph.nodes[0](id=conv1).layer.conv2d.kernel_size"),
-          "エラーの位置: model_graph.nodes[0](id=conv1).layer.conv2d.kernel_size");
+                                    { r.mutable_model_graph()->mutable_nodes(0)->mutable_spec()->mutable_conv2d()->set_kernel_size(0); }),
+                   "model_graph.nodes[0](id=conv1).spec.conv2d.kernel_size"),
+          "エラーの位置: model_graph.nodes[0](id=conv1).spec.conv2d.kernel_size");
     check(contains(rejectionMessage([](auto &r) { connect(addConvNode(r, "conv2"), "x", "missing", "y"); }),
                    "model_graph が不正です"),
           "エラーの位置: グラフの検証のエラーは「model_graph が不正です」で始まる");

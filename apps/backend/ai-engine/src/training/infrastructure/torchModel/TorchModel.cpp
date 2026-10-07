@@ -54,7 +54,7 @@ TorchModel::TorchModel(const ValidatedModelGraph &graph, ILayerBuilder &builder,
             return source;
         }
         source.node = indexOf.at(ref.nodeId);
-        source.port = portIndexOf(layerPortsOf(g.nodes[source.node].layer).outputPorts, ref.port, ref.nodeId);
+        source.port = portIndexOf(layerPortsOf(g.nodes[source.node].spec).outputPorts, ref.port, ref.nodeId);
         return source;
     };
 
@@ -63,14 +63,14 @@ TorchModel::TorchModel(const ValidatedModelGraph &graph, ILayerBuilder &builder,
     _inputs.reserve(g.nodes.size());
     for (const GraphNode &node : g.nodes)
     {
-        auto layer = builder.build(node.layer);
+        auto layer = builder.build(node.spec);
         layer->to(_device);
         _layers.push_back(std::move(layer));
 
         // 層の forward に渡す順(入力ポートの順)に、接続元を並べる。
         // 同じポートに複数つながる場合(Add / Concat)は、つないだ順に並ぶ。
         std::vector<InputSource> sources;
-        for (const InputPortSpec &port : layerPortsOf(node.layer).inputPorts)
+        for (const InputPortSpec &port : layerPortsOf(node.spec).inputPorts)
         {
             for (const NodeInput &input : node.inputs)
             {

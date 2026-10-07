@@ -3,18 +3,18 @@
 
 namespace
 {
-    torch::nn::MaxUnpool2d makeModule(const UnpoolingParams &params)
+    torch::nn::MaxUnpool2d makeModule(const UnpoolingSpec &params)
     {
         return torch::nn::MaxUnpool2d(
             torch::nn::MaxUnpool2dOptions(params.kernelSize).stride(params.stride).padding(params.padding));
     }
 }
 
-TorchUnpoolingLayer::TorchUnpoolingLayer(const UnpoolingParams &params) : _module(makeModule(params))
+TorchUnpoolingLayer::TorchUnpoolingLayer(const UnpoolingSpec &params) : _module(makeModule(params))
 {
 }
 
-// 入力は layerPortsOf(UnpoolingParams) の入力ポートの順: {x, indices}。
+// 入力は layerPortsOf(UnpoolingSpec) の入力ポートの順: {x, indices}。
 std::vector<at::Tensor> TorchUnpoolingLayer::forward(const std::vector<at::Tensor> &inputs)
 {
     return {_module->forward(inputs[0], inputs[1])};

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "training/entities/domain-objects/ModelGraph/Layers/UnpoolingParams.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/UnpoolingSpec.hpp"
 #include "training/adapters/interfaces/ILayer.hpp"
 
 #include <torch/nn/modules/pooling.h>
@@ -8,7 +8,7 @@
 class TorchUnpoolingLayer : public ILayer
 {
 public:
-    explicit TorchUnpoolingLayer(const UnpoolingParams &params);
+    explicit TorchUnpoolingLayer(const UnpoolingSpec &params);
 
     std::vector<at::Tensor> forward(const std::vector<at::Tensor> &inputs) override;
     std::vector<at::Tensor> parameters() const override;

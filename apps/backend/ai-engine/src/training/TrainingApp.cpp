@@ -6,11 +6,11 @@
 #include "training/entities/domain-objects/ModelGraph/ModelGraph.hpp"
 #include "training/entities/domain-objects/ModelGraph/DAG/GraphValidation.hpp"
 #include "training/entities/domain-objects/ModelGraph/DAG/ModelGraphBuilder.hpp"
-#include "training/entities/domain-objects/ModelGraph/Layers/Conv2DParams.hpp"
-#include "training/entities/domain-objects/ModelGraph/Layers/ActivationParams.hpp"
-#include "training/entities/domain-objects/ModelGraph/Layers/BatchNormParams.hpp"
-#include "training/entities/domain-objects/ModelGraph/Layers/IndexedPoolingParams.hpp"
-#include "training/entities/domain-objects/ModelGraph/Layers/UnpoolingParams.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/Conv2DSpec.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/ActivationSpec.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/BatchNormSpec.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/IndexedPoolingSpec.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/UnpoolingSpec.hpp"
 #include "training/entities/domain-objects/ModelArchitectureType.hpp"
 #include "training/entities/image/ColorLabelMap.hpp"
 
@@ -37,13 +37,13 @@ namespace
     {
         ModelGraphBuilder builder;
 
-        Conv2DParams conv;
+        Conv2DSpec conv;
         conv.inChannels = 3; // 実データ(RGB画像)に合わせて3チャンネル
         conv.outChannels = numClasses;
         conv.kernelSize = 3;
         conv.stride = 1;
         conv.padding = 1;
-        builder.add(LayersConfig{conv});
+        builder.add(NodeSpec{conv});
 
         return builder.build();
     }
@@ -55,41 +55,41 @@ namespace
     // 層は、直前のノードの出力につなぐ(ModelGraphBuilder::add の既定のつなぎ方)。
     void appendConvReluBnPair(ModelGraphBuilder &builder, int inChannels, int outChannels, double bnMomentum, int dilation = 1)
     {
-        Conv2DParams conv1;
+        Conv2DSpec conv1;
         conv1.inChannels = inChannels;
         conv1.outChannels = outChannels;
         conv1.kernelSize = 3;
         conv1.stride = 1;
         conv1.padding = dilation;
         conv1.dilation = dilation;
-        builder.add(LayersConfig{conv1});
+        builder.add(NodeSpec{conv1});
 
-        ActivationConfig relu1;
+        ActivationSpec relu1;
         relu1.activationType = ActivationType::ReLU;
-        builder.add(LayersConfig{relu1});
+        builder.add(NodeSpec{relu1});
 
-        BatchNormParams bn1;
+        BatchNormSpec bn1;
         bn1.numFeatures = outChannels;
         bn1.momentum = bnMomentum;
-        builder.add(LayersConfig{bn1});
+        builder.add(NodeSpec{bn1});
 
-        Conv2DParams conv2;
+        Conv2DSpec conv2;
         conv2.inChannels = outChannels;
         conv2.outChannels = outChannels;
         conv2.kernelSize = 3;
         conv2.stride = 1;
         conv2.padding = dilation;
         conv2.dilation = dilation;
-        builder.add(LayersConfig{conv2});
+        builder.add(NodeSpec{conv2});
 
-        ActivationConfig relu2;
+        ActivationSpec relu2;
         relu2.activationType = ActivationType::ReLU;
-        builder.add(LayersConfig{relu2});
+        builder.add(NodeSpec{relu2});
 
-        BatchNormParams bn2;
+        BatchNormSpec bn2;
         bn2.numFeatures = outChannels;
         bn2.momentum = bnMomentum;
-        builder.add(LayersConfig{bn2});
+        builder.add(NodeSpec{bn2});
     }
 
     // encoder_block: Conv×2 の後に indices を記録する pooling。
@@ -98,11 +98,11 @@ namespace
     {
         appendConvReluBnPair(builder, inChannels, outChannels, bnMomentum);
 
-        IndexedPoolingParams pool;
+        IndexedPoolingSpec pool;
         pool.kernelSize = 2;
         pool.stride = 2;
         pool.padding = 0;
-        return builder.add(LayersConfig{pool});
+        return builder.add(NodeSpec{pool});
     }
 
     // decoder_block: 対応する pooling の indices を使う unpooling の後に Conv×2。
@@ -111,12 +111,12 @@ namespace
     void appendDecoderBlock(ModelGraphBuilder &builder, int inChannels, int outChannels, double bnMomentum,
                             const std::string &poolNodeId)
     {
-        UnpoolingParams unpool;
+        UnpoolingSpec unpool;
         unpool.kernelSize = 2;
         unpool.stride = 2;
         unpool.padding = 0;
         // x は直前のノードの出力、indices は対応する pooling の indices。
-        builder.add(LayersConfig{unpool},
+        builder.add(NodeSpec{unpool},
                     {NodeInput{"x", builder.lastOutput()},
                      NodeInput{"indices", PortRef{poolNodeId, "indices"}}});
 

@@ -14,9 +14,9 @@
 
 #include <torch/torch.h>
 
-#include "training/entities/domain-objects/ModelGraph/Layers/ActivationConfig.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/ActivationSpec.hpp"
 #include "training/entities/domain-objects/ModelGraph/Layers/ActivationType.hpp"
-#include "training/entities/domain-objects/ModelGraph/Layers/LayersConfig.hpp"
+#include "training/entities/domain-objects/ModelGraph/NodeSpec.hpp"
 #include "training/entities/domain-objects/ModelGraph/DAG/ModelGraphBuilder.hpp"
 #include "training/entities/domain-objects/ModelGraph/ModelGraph.hpp"
 #include "training/entities/domain-objects/ModelGraph/ModelGraphFingerprint.hpp"
@@ -51,38 +51,38 @@ ModelGraph makeFullGraph()
 {
     ModelGraphBuilder graph;
 
-    Conv2DParams conv;
+    Conv2DSpec conv;
     conv.inChannels = 3;
     conv.outChannels = 16;
     conv.kernelSize = 5;
     conv.stride = 2;
     conv.padding = 1;
     conv.dilation = 2;
-    graph.add(LayersConfig{conv});
+    graph.add(NodeSpec{conv});
 
-    BatchNormParams bn;
+    BatchNormSpec bn;
     bn.numFeatures = 16;
     bn.eps = 1e-4;
     bn.momentum = 0.05;
-    graph.add(LayersConfig{bn});
+    graph.add(NodeSpec{bn});
 
-    ActivationConfig act;
+    ActivationSpec act;
     act.activationType = ActivationType::Softmax;
     act.dim = 2;
-    graph.add(LayersConfig{act});
+    graph.add(NodeSpec{act});
 
-    PoolingParams pool;
+    PoolingSpec pool;
     pool.type = PoolingType::Average;
     pool.kernelSize = 3;
     pool.stride = 3;
     pool.padding = 0;
-    graph.add(LayersConfig{pool});
+    graph.add(NodeSpec{pool});
 
-    LinearParams lin;
+    LinearSpec lin;
     lin.inFeatures = 128;
     lin.outFeatures = 10;
     lin.bias = false;
-    graph.add(LayersConfig{lin});
+    graph.add(NodeSpec{lin});
 
     return graph.build();
 }
@@ -114,17 +114,17 @@ int main()
     // ---- fingerprint の後方互換 ----
     // fingerprint は checkpoint に記録され、復元時に照合される。文字列フォーマットが
     // 変わると過去の .pt がすべて読めなくなるため、既知のグラフに対する値を固定する。
-    // フィールド列挙を LayersParamsFields.hpp に集約するリファクタでも
+    // フィールド列挙を NodeSpecFields.hpp に集約するリファクタでも
     // この値が変わらないことを確認した。
     {
         ModelGraphBuilder simple;
-        Conv2DParams conv;
+        Conv2DSpec conv;
         conv.inChannels = 3;
         conv.outChannels = 21;
         conv.kernelSize = 3;
         conv.stride = 1;
         conv.padding = 1;
-        simple.add(LayersConfig{conv});
+        simple.add(NodeSpec{conv});
 
         const std::string fp = modelGraphFingerprint(simple.build());
         std::cout << "  (fingerprint of Conv2D(3,21,3,1,1) = " << fp << ")" << std::endl;
@@ -154,20 +154,20 @@ int main()
     // 代表フィールドの明示チェック(fingerprint 任せにしない)
     if (restored.nodes.size() == 5)
     {
-        const auto &conv = std::get<Conv2DParams>(restored.nodes[0].layer.params);
+        const auto &conv = std::get<Conv2DSpec>(restored.nodes[0].spec);
         check(conv.outChannels == 16 && conv.kernelSize == 5 && conv.stride == 2,
-              "Conv2DParams が復元される");
-        check(conv.dilation == 2, "Conv2DParams の dilation が復元される");
-        const auto &bn = std::get<BatchNormParams>(restored.nodes[1].layer.params);
+              "Conv2DSpec が復元される");
+        check(conv.dilation == 2, "Conv2DSpec の dilation が復元される");
+        const auto &bn = std::get<BatchNormSpec>(restored.nodes[1].spec);
         check(std::abs(bn.eps - 1e-4) < 1e-12 && std::abs(bn.momentum - 0.05) < 1e-12,
-              "BatchNormParams の double フィールドが復元される");
-        const auto &act = std::get<ActivationConfig>(restored.nodes[2].layer.params);
+              "BatchNormSpec の double フィールドが復元される");
+        const auto &act = std::get<ActivationSpec>(restored.nodes[2].spec);
         check(act.activationType == ActivationType::Softmax && act.dim == 2,
-              "ActivationConfig の enum / dim が復元される");
-        const auto &pool = std::get<PoolingParams>(restored.nodes[3].layer.params);
-        check(pool.type == PoolingType::Average, "PoolingParams の enum が復元される");
-        const auto &lin = std::get<LinearParams>(restored.nodes[4].layer.params);
-        check(lin.bias == false && lin.inFeatures == 128, "LinearParams の bias が復元される");
+              "ActivationSpec の enum / dim が復元される");
+        const auto &pool = std::get<PoolingSpec>(restored.nodes[3].spec);
+        check(pool.type == PoolingType::Average, "PoolingSpec の enum が復元される");
+        const auto &lin = std::get<LinearSpec>(restored.nodes[4].spec);
+        check(lin.bias == false && lin.inFeatures == 128, "LinearSpec の bias が復元される");
     }
     else
     {
@@ -195,13 +195,13 @@ int main()
         const std::filesystem::path pinPath = dir / "pin.pt";
         {
             ModelGraphBuilder g;
-            Conv2DParams conv;
+            Conv2DSpec conv;
             conv.inChannels = 3;
             conv.outChannels = 21;
             conv.kernelSize = 3;
             conv.stride = 1;
             conv.padding = 1;
-            g.add(LayersConfig{conv});
+            g.add(NodeSpec{conv});
 
             torch::serialize::OutputArchive out;
             writeModelGraph(out, g.build());

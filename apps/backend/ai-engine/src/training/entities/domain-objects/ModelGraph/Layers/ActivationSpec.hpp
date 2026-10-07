@@ -2,7 +2,7 @@
 
 #include "ActivationType.hpp"
 
-struct ActivationConfig
+struct ActivationSpec
 {
     ActivationType activationType = ActivationType::ReLU;
     int dim = 1; // Softmaxでのみ使用

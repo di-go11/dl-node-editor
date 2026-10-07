@@ -2,7 +2,7 @@
 
 #include <torch/serialize.h>
 
-#include "training/entities/domain-objects/ModelGraph/Layers/LayersParamsFields.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/NodeSpecFields.hpp"
 #include "training/entities/domain-objects/ModelGraph/ModelGraph.hpp"
 
 // ModelGraph(モデル構造の内部表現)を libtorch の archive に書き出す / 読み戻す。
@@ -11,11 +11,11 @@
 // プリミティブ(int64 / double のスカラーテンソル)で直接書く。これにより
 // 「重み + optimizer 状態 + 構造」を 1 ファイルに閉じ込められる。
 //
-// どのフィールドを書くかは entities の LayersParamsFields.hpp に一元化してあり
+// どのフィールドを書くかは entities の NodeSpecFields.hpp に一元化してあり
 // (LayerKind もそちらで定義)、ここは「訪問された値を archive の型に載せ替える」
 // だけを担当する。libtorch 依存はこの infrastructure 層に閉じる。
 
-// このフォーマットのバージョン。*Params にフィールドを足す等で
+// このフォーマットのバージョン。*Spec にフィールドを足す等で
 // レイアウトが変わったら上げる。読み側は不一致を例外にする。
 inline constexpr int64_t kModelGraphArchiveVersion = 3;
 

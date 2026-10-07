@@ -1,13 +1,13 @@
 #pragma once
 
-#include "training/entities/domain-objects/ModelGraph/Layers/LayersConfig.hpp"
+#include "training/entities/domain-objects/ModelGraph/NodeSpec.hpp"
 
 #include <cstdint>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
 
-// 層パラメータ(*Params)のフィールド定義を集約する唯一の場所。
+// 層パラメータ(*Spec)のフィールド定義を集約する唯一の場所。
 //
 // 以前は ModelGraphFingerprint(ハッシュ計算)と ModelGraphArchive(読み書き)が
 // それぞれ独立に全フィールドを列挙していたため、層のパラメータを 1 つ増やすと
@@ -31,13 +31,13 @@ enum class LayerKind : std::int64_t
     Unpooling = 6
 };
 
-inline LayerKind layerKindOf(const Conv2DParams &) { return LayerKind::Conv2D; }
-inline LayerKind layerKindOf(const PoolingParams &) { return LayerKind::Pooling; }
-inline LayerKind layerKindOf(const BatchNormParams &) { return LayerKind::BatchNorm; }
-inline LayerKind layerKindOf(const LinearParams &) { return LayerKind::Linear; }
-inline LayerKind layerKindOf(const ActivationConfig &) { return LayerKind::Activation; }
-inline LayerKind layerKindOf(const IndexedPoolingParams &) { return LayerKind::IndexedPooling; }
-inline LayerKind layerKindOf(const UnpoolingParams &) { return LayerKind::Unpooling; }
+inline LayerKind layerKindOf(const Conv2DSpec &) { return LayerKind::Conv2D; }
+inline LayerKind layerKindOf(const PoolingSpec &) { return LayerKind::Pooling; }
+inline LayerKind layerKindOf(const BatchNormSpec &) { return LayerKind::BatchNorm; }
+inline LayerKind layerKindOf(const LinearSpec &) { return LayerKind::Linear; }
+inline LayerKind layerKindOf(const ActivationSpec &) { return LayerKind::Activation; }
+inline LayerKind layerKindOf(const IndexedPoolingSpec &) { return LayerKind::IndexedPooling; }
+inline LayerKind layerKindOf(const UnpoolingSpec &) { return LayerKind::Unpooling; }
 
 // fingerprint の正規化文字列に使う層種名。
 inline std::string layerKindTag(LayerKind kind)
@@ -64,19 +64,19 @@ inline std::string layerKindTag(LayerKind kind)
                              std::to_string(static_cast<std::int64_t>(kind)) + ")");
 }
 
-// *Params の各フィールドを (archive のキー名, メンバ参照) の順に訪問する。
+// *Spec の各フィールドを (archive のキー名, メンバ参照) の順に訪問する。
 //
-// Params が const なら読み取り用、非 const なら「訪問しながら代入する」
+// Spec が const なら読み取り用、非 const なら「訪問しながら代入する」
 // 読み込み用として使える(archive からの復元がこれを使う)。
 //
 // フィールドの並び順は fingerprint の文字列にも反映されるため、
 // 既存フィールドの順序は変更しないこと。追加は各ブロックの末尾に。
-template <class Params, class F>
-void visitLayerFields(Params &p, F &&f)
+template <class Spec, class F>
+void visitLayerFields(Spec &p, F &&f)
 {
-    using T = std::remove_const_t<Params>;
+    using T = std::remove_const_t<Spec>;
 
-    if constexpr (std::is_same_v<T, Conv2DParams>)
+    if constexpr (std::is_same_v<T, Conv2DSpec>)
     {
         f("in_channels", p.inChannels);
         f("out_channels", p.outChannels);
@@ -85,37 +85,37 @@ void visitLayerFields(Params &p, F &&f)
         f("padding", p.padding);
         f("dilation", p.dilation);
     }
-    else if constexpr (std::is_same_v<T, PoolingParams>)
+    else if constexpr (std::is_same_v<T, PoolingSpec>)
     {
         f("pooling_type", p.type);
         f("kernel_size", p.kernelSize);
         f("stride", p.stride);
         f("padding", p.padding);
     }
-    else if constexpr (std::is_same_v<T, BatchNormParams>)
+    else if constexpr (std::is_same_v<T, BatchNormSpec>)
     {
         f("num_features", p.numFeatures);
         f("eps", p.eps);
         f("momentum", p.momentum);
     }
-    else if constexpr (std::is_same_v<T, LinearParams>)
+    else if constexpr (std::is_same_v<T, LinearSpec>)
     {
         f("in_features", p.inFeatures);
         f("out_features", p.outFeatures);
         f("bias", p.bias);
     }
-    else if constexpr (std::is_same_v<T, ActivationConfig>)
+    else if constexpr (std::is_same_v<T, ActivationSpec>)
     {
         f("activation_type", p.activationType);
         f("dim", p.dim);
     }
-    else if constexpr (std::is_same_v<T, IndexedPoolingParams>)
+    else if constexpr (std::is_same_v<T, IndexedPoolingSpec>)
     {
         f("kernel_size", p.kernelSize);
         f("stride", p.stride);
         f("padding", p.padding);
     }
-    else if constexpr (std::is_same_v<T, UnpoolingParams>)
+    else if constexpr (std::is_same_v<T, UnpoolingSpec>)
     {
         f("kernel_size", p.kernelSize);
         f("stride", p.stride);
@@ -123,6 +123,6 @@ void visitLayerFields(Params &p, F &&f)
     }
     else
     {
-        static_assert(sizeof(T) == 0, "未対応の LayersParams 型です");
+        static_assert(sizeof(T) == 0, "未対応の NodeSpec 型です");
     }
 }
