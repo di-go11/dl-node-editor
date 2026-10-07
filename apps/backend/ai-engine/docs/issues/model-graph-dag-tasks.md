@@ -47,7 +47,7 @@
   - 検証: ノードが空、ID が空・重複・文字種、参照先が存在しない、`outputs` の不備
   - トポロジカルソート: Kahn 法。同順位は `nodes` の並び順。閉路は例外
 - [x] entities: 層の種類ごとのポートの定義(`Layers/LayersPort.hpp`)(`bdc292a`)
-  - 既存の 7 種類と、variant から引く入口 `layerPortsOf(const LayersConfig &)`
+  - 既存の 7 種類と、variant から引く入口 `layerPortsOf(const NodeSpec &)`
   - これから追加する層(`*Params` は前方宣言のみ): Add / Concat / Upsample / ConvTranspose2D / AdaptiveAvgPool / Dropout / Flatten / GroupNorm、PatchEmbedding / TokensToFeatureMap / PositionalEncoding / LayerNorm / SelfAttention / MultiHeadAttention / TransformerEncoderLayer / TransformerDecoderLayer
 
 ### ADR から変わった点
@@ -69,16 +69,19 @@ src/training/entities/domain-objects/ModelGraph/
 ├── ModelGraph.hpp                  nodes / outputs
 ├── ModelGraphFingerprint.{hpp,cpp} 正規化文字列は v2(nodes と接続を含む)
 ├── PortShape.hpp                   形状(C, H, W)
+├── NodeSpec.hpp                    ノードの仕様の variant(Layers/ と Nodes/ の型を並べる)
 ├── DAG/
 │   ├── GraphNode.hpp               PortRef / NodeInput / GraphNode
 │   ├── GraphValidation.{hpp,cpp}   GraphValidationError / ValidatedModelGraph
 │   ├── GraphShapeInference.{hpp,cpp} 形状推論(validateGraphShapes)
 │   ├── ModelGraphBuilder.hpp       層を足していって ModelGraph を組み立てる(検証はしない)
 │   └── NodeChecker.hpp             ノード ID の文字種の確認
-└── Layers/
-    ├── LayersConfig.hpp / LayersParams.hpp / LayersParamsFields.hpp
-    ├── LayersPort.hpp / PortKinds.hpp / LayerShapeRules.hpp
-    └── 各層の *Params.hpp、ActivationConfig / ActivationType、PoolingType
+├── Layers/                         学習機能のパラメータを持つ層
+│   ├── NodeSpecFields.hpp
+│   ├── LayersPort.hpp / PortKinds.hpp / LayerShapeRules.hpp
+│   └── 各層の *Spec.hpp、ActivationType、PoolingType
+└── Nodes/                          汎用のノード
+    └── AddSpec.hpp                 (まだ variant には入れていない)
 ```
 
 ## 残りのタスク
@@ -181,12 +184,12 @@ proto の定義は完了している。残りは C++ 側の対応。
   - 検証のエラーは `INVALID_ARGUMENT` に変換する
 - [x] `training_proto_mapper_test`: 正常な DAG、未接続ポート、閉路、存在しない参照先のケースを足す
 - [x] `model_graph.proto` のコメントに契約を書く(ノード ID の文字種、`outputs` は当面 1 つ、`source.node_id` が空ならグラフ入力)。見出し `// ----Merge----` を中身に合う名前にする
-- [ ] grpcurl で SegNet 相当の DAG を送り、学習が完了まで進むことを確認する。送った JSON を `configs/segnet_dag.json` に置く(Rust と GUI を作るときの見本)
+- [x] grpcurl で SegNet 相当の DAG を送り、学習が完了まで進むことを確認する。送った JSON を `configs/segnet_dag.json` に置く(Rust と GUI を作るときの見本)
 - [ ] Rust: `api/crates/adapters/build.rs` のリストに `model_graph.proto` を足し、`cargo build` が通ることを確認する
 
 ### E. 層の追加
 
-層ごとに: `Layers/*Params.hpp`、`LayersParams.hpp` の include、`LayersConfig.hpp` の variant、`LayersParamsFields.hpp`(`LayerKind` は末尾に追加、`layerKindOf`、`visitLayerFields`)、形状の規則、`Torch*Layer`、`TorchLayerBuilder`、proto の `LayerConfig`、mapper、テスト。ポートの定義は `LayersPort.hpp` に書いてある。`ModelGraphArchive` の `static_assert` の要素数も更新する。
+層ごとに: `Layers/*Spec.hpp`(学習機能のパラメータを持つ層)または `Nodes/*Spec.hpp`(Add などの汎用ノード)、`ModelGraph/NodeSpec.hpp` の include と variant(末尾に追加)、`Layers/NodeSpecFields.hpp`(`LayerKind` は末尾に追加、`layerKindOf`、`visitLayerFields`)、形状の規則、`Torch*Layer`、`TorchLayerBuilder`、proto の `NodeSpec`、mapper、テスト。ポートの定義は `LayersPort.hpp` に書いてある。`ModelGraphArchive` の `static_assert` の要素数も更新する。
 
 - [ ] **第 1 段(分岐と合流を動かす)**: Add、Concat、Upsample
   - `ModelArchitectureType` に `UNetSmall` を追加し(encoder 3 段 + decoder 3 段、concat の skip connection)、CLI と grpcurl の両方で学習できることを確認する

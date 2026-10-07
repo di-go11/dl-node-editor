@@ -95,7 +95,7 @@ optimizer はコンストラクタで「更新対象パラメータ」を受け�
 
 | ファイル | 層 | 役割 |
 |---|---|---|
-| `entities/domain-objects/ModelGraph/Layers/LayersParamsFields.hpp` | entities | 層パラメータのフィールド定義を集約（`LayerKind` / `visitLayerFields`）。ハッシュ・書き出し・読み込みの唯一の源（§5.6） |
+| `entities/domain-objects/ModelGraph/Layers/NodeSpecFields.hpp` | entities | 層パラメータのフィールド定義を集約（`LayerKind` / `visitLayerFields`）。ハッシュ・書き出し・読み込みの唯一の源（§5.6） |
 | `infrastructure/torchModel/ModelGraphArchive.{hpp,cpp}` | infrastructure | `ModelGraph` ⇄ torch archive。`format_version` |
 | `adapters/interfaces/IModelFactory.hpp` | adapters | `ModelGraph` → `IModel` のポート |
 | `adapters/interfaces/IOptimizerFactory.hpp` | adapters | `(parameters, OptimizerConfig)` → `IOptimizer` のポート |
@@ -196,7 +196,7 @@ struct AdamOptimizerConfig : OptimizerConfig { double beta1, beta2, eps; };
 スライシングが起き、`beta1` / `momentum` は factory に届かないまま捨てられていた。
 しかも `OptimizerConfig` に仮想関数が無いので `dynamic_cast` で拾い直すこともできない。
 
-→ 同じリポジトリ内で既に使われている `LayersParams`（層パラメータ）と同じ
+→ 同じリポジトリ内で既に使われている `NodeSpec`（層パラメータ）と同じ
 `std::variant` 方式に揃えた。
 
 ```cpp
@@ -218,13 +218,13 @@ using OptimizerConfig = std::variant<AdamOptimizerConfig, AdamWOptimizerConfig, 
 層のパラメータを 1 つ増やすと **3 か所**（ハッシュ・write・read）を直す必要があり、
 片方の更新漏れが起きやすい。
 
-→ entities に `LayersParamsFields.hpp` を置き、フィールド定義を 1 回だけ書く。
+→ entities に `NodeSpecFields.hpp` を置き、フィールド定義を 1 回だけ書く。
 
 ```cpp
 template <class Params, class F>
 void visitLayerFields(Params &p, F &&f)   // const / 非 const の両方で使える
 {
-    if constexpr (std::is_same_v<T, Conv2DParams>) {
+    if constexpr (std::is_same_v<T, Conv2DSpec>) {
         f("in_channels", p.inChannels);
         ...
     }
@@ -321,7 +321,7 @@ layer_0_out_channels, layer_0_kernel_size, layer_0_stride, layer_0_padding}`）�
 | ケース | 内容 |
 |---|---|
 | 全 5 層種のラウンドトリップ | Conv2D / BatchNorm / Activation / Pooling / Linear を含む `ModelGraph` を書き → 読み戻して fingerprint 一致 |
-| 個別フィールド検証 | `Conv2DParams` の各値、`BatchNormParams` の double、enum（`ActivationType` / `PoolingType`）、`LinearParams::bias` |
+| 個別フィールド検証 | `Conv2DSpec` の各値、`BatchNormSpec` の double、enum（`ActivationType` / `PoolingType`）、`LinearSpec::bias` |
 | 空グラフ | `layer_count = 0` のラウンドトリップ |
 | フォーマット固定 | `Conv2D` 1 層の archive キー集合が既知の値と一致（レイアウト非破壊） |
 | 異常系 | 現行より新しい `format_version` で `runtime_error` |
