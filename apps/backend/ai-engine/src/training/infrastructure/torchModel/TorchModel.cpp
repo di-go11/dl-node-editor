@@ -5,7 +5,7 @@
 #include "training/adapters/interfaces/ILoss.hpp"
 #include "training/adapters/interfaces/IOptimizer.hpp"
 #include "training/entities/domain-objects/ModelGraph/DAG/GraphValidation.hpp"
-#include "training/entities/domain-objects/ModelGraph/Layers/LayersPort.hpp"
+#include "training/entities/domain-objects/ModelGraph/NodePorts.hpp"
 #include "training/infrastructure/torchModel/TorchCheckpointArchive.hpp"
 #include "training/infrastructure/torchFunc/DeviceToTorch.hpp"
 
@@ -54,7 +54,7 @@ TorchModel::TorchModel(const ValidatedModelGraph &graph, ILayerBuilder &builder,
             return source;
         }
         source.node = indexOf.at(ref.nodeId);
-        source.port = portIndexOf(layerPortsOf(g.nodes[source.node].spec).outputPorts, ref.port, ref.nodeId);
+        source.port = portIndexOf(nodePortsOf(g.nodes[source.node].spec).outputPorts, ref.port, ref.nodeId);
         return source;
     };
 
@@ -70,7 +70,7 @@ TorchModel::TorchModel(const ValidatedModelGraph &graph, ILayerBuilder &builder,
         // 層の forward に渡す順(入力ポートの順)に、接続元を並べる。
         // 同じポートに複数つながる場合(Add / Concat)は、つないだ順に並ぶ。
         std::vector<InputSource> sources;
-        for (const InputPortSpec &port : layerPortsOf(node.spec).inputPorts)
+        for (const InputPortSpec &port : nodePortsOf(node.spec).inputPorts)
         {
             for (const NodeInput &input : node.inputs)
             {

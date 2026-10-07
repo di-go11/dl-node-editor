@@ -2,7 +2,7 @@
 
 #include <torch/serialize.h>
 
-#include "training/entities/domain-objects/ModelGraph/Layers/NodeSpecFields.hpp"
+#include "training/entities/domain-objects/ModelGraph/NodeSpecFields.hpp"
 #include "training/entities/domain-objects/ModelGraph/ModelGraph.hpp"
 
 // ModelGraph(モデル構造の内部表現)を libtorch の archive に書き出す / 読み戻す。
@@ -12,7 +12,7 @@
 // 「重み + optimizer 状態 + 構造」を 1 ファイルに閉じ込められる。
 //
 // どのフィールドを書くかは entities の NodeSpecFields.hpp に一元化してあり
-// (LayerKind もそちらで定義)、ここは「訪問された値を archive の型に載せ替える」
+// (NodeKind もそちらで定義)、ここは「訪問された値を archive の型に載せ替える」
 // だけを担当する。libtorch 依存はこの infrastructure 層に閉じる。
 
 // このフォーマットのバージョン。*Spec にフィールドを足す等で

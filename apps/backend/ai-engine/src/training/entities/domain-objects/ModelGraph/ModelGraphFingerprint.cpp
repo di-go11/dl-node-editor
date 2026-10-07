@@ -1,6 +1,6 @@
 #include "training/entities/domain-objects/ModelGraph/ModelGraphFingerprint.hpp"
 
-#include "training/entities/domain-objects/ModelGraph/Layers/NodeSpecFields.hpp"
+#include "training/entities/domain-objects/ModelGraph/NodeSpecFields.hpp"
 
 #include <cstdint>
 #include <sstream>
@@ -58,8 +58,8 @@ namespace
             std::visit(
                 [&os](const auto &p)
                 {
-                    os << layerKindTag(layerKindOf(p));
-                    visitLayerFields(p,
+                    os << nodeKindTag(nodeKindOf(p));
+                    visitSpecFields(p,
                                      [&os](const char * /*name*/, const auto &value)
                                      {
                                          os << '|';

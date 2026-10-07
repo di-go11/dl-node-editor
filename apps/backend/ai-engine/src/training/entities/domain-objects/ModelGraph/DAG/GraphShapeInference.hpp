@@ -9,7 +9,7 @@
 // 形状推論の結果。
 struct GraphShapes
 {
-    // nodeOutputs[i] = graph.nodes[i] の出力ポートの形状(layerPortsOf の outputPorts と同じ順)。
+    // nodeOutputs[i] = graph.nodes[i] の出力ポートの形状(nodePortsOf の outputPorts と同じ順)。
     // 形状が合わず推論できなかったノードと、そこから先のノードは空のまま。
     std::vector<std::vector<PortShape>> nodeOutputs;
 
@@ -18,7 +18,7 @@ struct GraphShapes
 };
 
 // グラフ入力(画像。バッチ N を除いた C / H / W)から、各ノードの出力形状を実行順に求める。
-// 層ごとの規則は Layers/LayerShapeRules.hpp にある。
+// 層ごとの規則は NodeShapeRules.hpp にある。
 // 入力に ValidatedModelGraph を取るので、構造・ポートの検証と実行順は済んでいることが型で保証される。
 GraphShapes inferGraphShapes(const ValidatedModelGraph &graph, const FeatureMapShape &input);
 

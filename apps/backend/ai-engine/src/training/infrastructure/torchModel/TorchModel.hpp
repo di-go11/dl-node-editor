@@ -41,12 +41,12 @@ private:
     {
         bool fromGraphInput = false;
         std::size_t node = 0; // 接続元のノードの添字(graph.nodes の添字)
-        std::size_t port = 0; // 接続元の出力ポートの番号(layerPortsOf の出力ポートの順)
+        std::size_t port = 0; // 接続元の出力ポートの番号(nodePortsOf の出力ポートの順)
     };
 
     // _layers[i] / _inputs[i] は graph.nodes[i] に対応する(nodes の並び順で作る。parameters() の順番になる)。
     std::vector<std::shared_ptr<ILayer>> _layers;
-    std::vector<std::vector<InputSource>> _inputs; // 層の forward に渡す順(layerPortsOf の入力ポートの順)
+    std::vector<std::vector<InputSource>> _inputs; // 層の forward に渡す順(nodePortsOf の入力ポートの順)
     std::vector<std::size_t> _order;               // 実行順(トポロジカル順)
     InputSource _output;                           // モデルの出力が指す、ノードと出力ポート
 };

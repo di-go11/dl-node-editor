@@ -16,6 +16,6 @@
 // 置き場所は分けているが、どちらも同じ 1 つの variant に並べる(検証・形状推論・モデルの組み立ては、
 // どの型が入っているかだけで分岐する)。
 //
-// 種類を足すときは、必ず末尾に足す。並び順は NodeSpecFields.hpp の LayerKind と対応していて、
-// LayerKind の数値は checkpoint に保存される。
+// 種類を足すときは、必ず末尾に足す。並び順は NodeSpecFields.hpp の NodeKind と対応していて、
+// NodeKind の数値は checkpoint に保存される。
 using NodeSpec = std::variant<Conv2DSpec, PoolingSpec, BatchNormSpec, LinearSpec, ActivationSpec, IndexedPoolingSpec, UnpoolingSpec>;

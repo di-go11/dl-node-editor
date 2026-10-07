@@ -11,10 +11,10 @@
 
 // 各層の形状規則。「この層に、この形状が入ったら、何が出るか」を返す。
 //
-// inputs は、その層の入力ポート(layerPortsOf の inputPorts)と同じ順に並べた形状。
+// inputs は、その層の入力ポート(nodePortsOf の inputPorts)と同じ順に並べた形状。
 // 可変長ポートは使わない層だけを対象にしている(Add / Concat は層を実装するときに足す)。
 // 入力の本数が合っていることは、ポートの検証(GraphValidation)が先に保証する。
-// outputs は、layerPortsOf の outputPorts と同じ順に並べて返す。
+// outputs は、nodePortsOf の outputPorts と同じ順に並べて返す。
 //
 // グラフ全体をたどる処理(GraphShapeInference)は、この規則を std::visit で引くだけにする。
 // 層を足すときは、ここに規則を足すだけで済む。

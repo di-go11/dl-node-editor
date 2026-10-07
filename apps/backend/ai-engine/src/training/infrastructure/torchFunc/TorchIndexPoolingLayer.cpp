@@ -14,7 +14,7 @@ TorchIndexPoolingLayer::TorchIndexPoolingLayer(const IndexedPoolingSpec &params)
 {
 }
 
-// 出力は layerPortsOf(IndexedPoolingSpec) の出力ポートの順: {y, indices}。
+// 出力は nodePortsOf(IndexedPoolingSpec) の出力ポートの順: {y, indices}。
 std::vector<at::Tensor> TorchIndexPoolingLayer::forward(const std::vector<at::Tensor> &inputs)
 {
     auto [pooled, indices] = _module->forward_with_indices(inputs[0]);

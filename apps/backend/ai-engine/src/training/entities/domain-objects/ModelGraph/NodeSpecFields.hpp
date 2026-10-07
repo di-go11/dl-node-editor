@@ -20,7 +20,7 @@
 // 層種のタグ。
 // 数値は archive に、文字列は fingerprint に永続化されるため、
 // 既存の値・綴りは変更しないこと(過去の .pt が読めなくなる)。追加は末尾に。
-enum class LayerKind : std::int64_t
+enum class NodeKind : std::int64_t
 {
     Conv2D = 0,
     Pooling = 1,
@@ -31,36 +31,36 @@ enum class LayerKind : std::int64_t
     Unpooling = 6
 };
 
-inline LayerKind layerKindOf(const Conv2DSpec &) { return LayerKind::Conv2D; }
-inline LayerKind layerKindOf(const PoolingSpec &) { return LayerKind::Pooling; }
-inline LayerKind layerKindOf(const BatchNormSpec &) { return LayerKind::BatchNorm; }
-inline LayerKind layerKindOf(const LinearSpec &) { return LayerKind::Linear; }
-inline LayerKind layerKindOf(const ActivationSpec &) { return LayerKind::Activation; }
-inline LayerKind layerKindOf(const IndexedPoolingSpec &) { return LayerKind::IndexedPooling; }
-inline LayerKind layerKindOf(const UnpoolingSpec &) { return LayerKind::Unpooling; }
+inline NodeKind nodeKindOf(const Conv2DSpec &) { return NodeKind::Conv2D; }
+inline NodeKind nodeKindOf(const PoolingSpec &) { return NodeKind::Pooling; }
+inline NodeKind nodeKindOf(const BatchNormSpec &) { return NodeKind::BatchNorm; }
+inline NodeKind nodeKindOf(const LinearSpec &) { return NodeKind::Linear; }
+inline NodeKind nodeKindOf(const ActivationSpec &) { return NodeKind::Activation; }
+inline NodeKind nodeKindOf(const IndexedPoolingSpec &) { return NodeKind::IndexedPooling; }
+inline NodeKind nodeKindOf(const UnpoolingSpec &) { return NodeKind::Unpooling; }
 
 // fingerprint の正規化文字列に使う層種名。
-inline std::string layerKindTag(LayerKind kind)
+inline std::string nodeKindTag(NodeKind kind)
 {
     switch (kind)
     {
-    case LayerKind::Conv2D:
+    case NodeKind::Conv2D:
         return "conv2d";
-    case LayerKind::Pooling:
+    case NodeKind::Pooling:
         return "pool";
-    case LayerKind::BatchNorm:
+    case NodeKind::BatchNorm:
         return "batchnorm";
-    case LayerKind::Linear:
+    case NodeKind::Linear:
         return "linear";
-    case LayerKind::Activation:
+    case NodeKind::Activation:
         return "activation";
-    case LayerKind::IndexedPooling:
+    case NodeKind::IndexedPooling:
         return "indexed";
-    case LayerKind::Unpooling:
+    case NodeKind::Unpooling:
         return "unpool";
     }
 
-    throw std::runtime_error("layerKindTag: 未知の LayerKind (" +
+    throw std::runtime_error("nodeKindTag: 未知の NodeKind (" +
                              std::to_string(static_cast<std::int64_t>(kind)) + ")");
 }
 
@@ -72,7 +72,7 @@ inline std::string layerKindTag(LayerKind kind)
 // フィールドの並び順は fingerprint の文字列にも反映されるため、
 // 既存フィールドの順序は変更しないこと。追加は各ブロックの末尾に。
 template <class Spec, class F>
-void visitLayerFields(Spec &p, F &&f)
+void visitSpecFields(Spec &p, F &&f)
 {
     using T = std::remove_const_t<Spec>;
 

@@ -14,7 +14,7 @@ TorchUnpoolingLayer::TorchUnpoolingLayer(const UnpoolingSpec &params) : _module(
 {
 }
 
-// 入力は layerPortsOf(UnpoolingSpec) の入力ポートの順: {x, indices}。
+// 入力は nodePortsOf(UnpoolingSpec) の入力ポートの順: {x, indices}。
 std::vector<at::Tensor> TorchUnpoolingLayer::forward(const std::vector<at::Tensor> &inputs)
 {
     return {_module->forward(inputs[0], inputs[1])};

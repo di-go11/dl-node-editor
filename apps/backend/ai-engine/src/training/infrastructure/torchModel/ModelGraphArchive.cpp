@@ -11,7 +11,7 @@
 namespace
 {
 // NodeSpec の alternative が増減したらここで気付けるようにする。
-// 増やした場合は NodeSpecFields.hpp(LayerKind・フィールド列挙)の更新と、
+// 増やした場合は NodeSpecFields.hpp(NodeKind・フィールド列挙)の更新と、
 // 下の readLayer の分岐追加、kModelGraphArchiveVersion のインクリメントが必要。
 static_assert(std::variant_size_v<NodeSpec> == 7,
               "NodeSpec の要素数が変わりました。ModelGraphArchive の対応を更新してください。");
@@ -87,11 +87,11 @@ void writeLayer(torch::serialize::OutputArchive &out, std::size_t index, const N
     std::visit(
         [&w](const auto &p)
         {
-            w.i64("kind", static_cast<int64_t>(layerKindOf(p)));
+            w.i64("kind", static_cast<int64_t>(nodeKindOf(p)));
 
-            // フィールドの列挙は entities 側(visitLayerFields)に任せ、
+            // フィールドの列挙は entities 側(visitSpecFields)に任せ、
             // ここは値の型ごとの載せ替えだけを行う。
-            visitLayerFields(p,
+            visitSpecFields(p,
                              [&w](const char *name, const auto &value)
                              {
                                  using V = std::decay_t<decltype(value)>;
@@ -117,13 +117,13 @@ void writeLayer(torch::serialize::OutputArchive &out, std::size_t index, const N
 }
 
 // 同じフィールド列挙を「代入する側」から使う。
-// visitLayerFields に非 const の Spec を渡すとメンバへの可変参照が来るため、
+// visitSpecFields に非 const の Spec を渡すとメンバへの可変参照が来るため、
 // そこへ archive から読んだ値を書き込む。
 template <class Spec>
 Spec readSpec(const Reader &r)
 {
     Spec p;
-    visitLayerFields(p,
+    visitSpecFields(p,
                      [&r](const char *name, auto &value)
                      {
                          using V = std::decay_t<decltype(value)>;
@@ -147,28 +147,28 @@ Spec readSpec(const Reader &r)
 NodeSpec readLayer(torch::serialize::InputArchive &in, std::size_t index)
 {
     const Reader r{in, nodePrefix(index)};
-    const auto kind = static_cast<LayerKind>(r.i64("kind"));
+    const auto kind = static_cast<NodeKind>(r.i64("kind"));
 
     switch (kind)
     {
-    case LayerKind::Conv2D:
+    case NodeKind::Conv2D:
         return NodeSpec{readSpec<Conv2DSpec>(r)};
-    case LayerKind::Pooling:
+    case NodeKind::Pooling:
         return NodeSpec{readSpec<PoolingSpec>(r)};
-    case LayerKind::BatchNorm:
+    case NodeKind::BatchNorm:
         return NodeSpec{readSpec<BatchNormSpec>(r)};
-    case LayerKind::Linear:
+    case NodeKind::Linear:
         return NodeSpec{readSpec<LinearSpec>(r)};
-    case LayerKind::Activation:
+    case NodeKind::Activation:
         return NodeSpec{readSpec<ActivationSpec>(r)};
-    case LayerKind::IndexedPooling:
+    case NodeKind::IndexedPooling:
         return NodeSpec{readSpec<IndexedPoolingSpec>(r)};
-    case LayerKind::Unpooling:
+    case NodeKind::Unpooling:
         return NodeSpec{readSpec<UnpoolingSpec>(r)};
     }
 
     throw std::runtime_error(
-        "readModelGraph: 未知の LayerKind (" +
+        "readModelGraph: 未知の NodeKind (" +
         std::to_string(static_cast<int64_t>(kind)) + ") layer_" + std::to_string(index));
 }
 } // namespace

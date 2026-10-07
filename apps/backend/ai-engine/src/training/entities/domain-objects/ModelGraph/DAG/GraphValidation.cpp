@@ -1,7 +1,7 @@
 #include "GraphValidation.hpp"
 
 #include "NodeChecker.hpp"
-#include "training/entities/domain-objects/ModelGraph/Layers/LayersPort.hpp"
+#include "training/entities/domain-objects/ModelGraph/NodePorts.hpp"
 
 #include <optional>
 #include <set>
@@ -27,7 +27,7 @@ namespace
 
     constexpr std::size_t kNoPort = static_cast<std::size_t>(-1);
 
-    // ポート名から、その層の仕様(layerPortsOf)の中での添字を引く。無ければ kNoPort。
+    // ポート名から、その層の仕様(nodePortsOf)の中での添字を引く。無ければ kNoPort。
     template <typename PortSpecs>
     std::size_t findPort(const PortSpecs &ports, const std::string &name)
     {
@@ -63,7 +63,7 @@ namespace
         return "不明";
     }
 
-    // ポートの検証。layerPortsOf と突き合わせて、つなぎ方が層の仕様に合っているか確認する。
+    // ポートの検証。nodePortsOf と突き合わせて、つなぎ方が層の仕様に合っているか確認する。
     //   - 入力ポート名が、その層にある
     //   - 参照先の出力ポート名が、参照先の層にある
     //   - 出力の種類と入力の種類が合う(PortKind)
@@ -77,7 +77,7 @@ namespace
         for (std::size_t i = 0; i < graph.nodes.size(); ++i)
         {
             const GraphNode &node = graph.nodes[i];
-            const LayerPortSpec spec = layerPortsOf(node.spec);
+            const NodePortSpec spec = nodePortsOf(node.spec);
             std::vector<std::size_t> connectionCount(spec.inputPorts.size(), 0);
 
             for (std::size_t j = 0; j < node.inputs.size(); ++j)
@@ -100,7 +100,7 @@ namespace
                     {
                         continue; // 参照先が存在しない問題は、上で報告済み
                     }
-                    const LayerPortSpec sourceSpec = layerPortsOf(graph.nodes[source->second].spec);
+                    const NodePortSpec sourceSpec = nodePortsOf(graph.nodes[source->second].spec);
                     const std::size_t outputIndex = findPort(sourceSpec.outputPorts, input.source.port);
                     if (outputIndex == kNoPort)
                     {
@@ -164,7 +164,7 @@ namespace
             {
                 continue; // 参照先が存在しない問題は、上で報告済み
             }
-            const LayerPortSpec sourceSpec = layerPortsOf(graph.nodes[source->second].spec);
+            const NodePortSpec sourceSpec = nodePortsOf(graph.nodes[source->second].spec);
             if (findPort(sourceSpec.outputPorts, output.port) == kNoPort)
             {
                 errors.push_back({output.nodeId, output.port,

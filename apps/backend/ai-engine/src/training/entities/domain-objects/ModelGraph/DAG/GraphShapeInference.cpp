@@ -1,7 +1,7 @@
 #include "GraphShapeInference.hpp"
 
-#include "training/entities/domain-objects/ModelGraph/Layers/LayerShapeRules.hpp"
-#include "training/entities/domain-objects/ModelGraph/Layers/LayersPort.hpp"
+#include "training/entities/domain-objects/ModelGraph/NodeShapeRules.hpp"
+#include "training/entities/domain-objects/ModelGraph/NodePorts.hpp"
 
 #include <string>
 #include <unordered_map>
@@ -40,7 +40,7 @@ namespace
         }
 
         const std::size_t nodeIndex = indexOf.at(source.nodeId);
-        const LayerPortSpec sourceSpec = layerPortsOf(graph.nodes[nodeIndex].spec);
+        const NodePortSpec sourceSpec = nodePortsOf(graph.nodes[nodeIndex].spec);
         const std::size_t outputIndex = findPort(sourceSpec.outputPorts, source.port);
 
         const auto &outputs = nodeOutputs[nodeIndex];
@@ -69,7 +69,7 @@ GraphShapes inferGraphShapes(const ValidatedModelGraph &validated, const Feature
     for (const std::size_t nodeIndex : validated.getOrder())
     {
         const GraphNode &node = graph.nodes[nodeIndex];
-        const LayerPortSpec spec = layerPortsOf(node.spec);
+        const NodePortSpec spec = nodePortsOf(node.spec);
 
         // 入力ポートの順に、流れてくる形状を集める(層の規則はこの順で受け取る)。
         std::vector<PortShape> inputs;
@@ -138,7 +138,7 @@ std::vector<GraphValidationError> validateGraphShapes(const ValidatedModelGraph 
         indexOf[graph.nodes[i].id] = i;
     }
     const std::size_t nodeIndex = indexOf.at(outputRef.nodeId);
-    const LayerPortSpec spec = layerPortsOf(graph.nodes[nodeIndex].spec);
+    const NodePortSpec spec = nodePortsOf(graph.nodes[nodeIndex].spec);
     const std::size_t outputIndex = findPort(spec.outputPorts, outputRef.port);
     const PortShape &outputShape = shapes.nodeOutputs[nodeIndex].at(outputIndex);
 
