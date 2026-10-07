@@ -168,6 +168,27 @@ inline ShapeResult inferOutputShapes(const UnpoolingSpec &p, const std::vector<P
     return ShapeResult::success({PortShape{out}});
 }
 
+// Upsample: xとinputsの形状が一致すること. 出力は
+inline ShapeResult inferOutputShapes(const UpsampleSpec &p, const std::vector<PortShape> &inputs)
+{
+    const auto *x = std::get_if<FeatureMapShape>(&inputs.at(0));
+    if (!x)
+    {
+        return shape_rules_detail::notFeatureMap("Upsample", inputs.at(0));
+    }
+
+    if (p.scaleFactor < 1)
+    {
+        return ShapeResult::failure("Upsampleのscale_factor(" + std::to_string(p.scaleFactor) + ")は1以上にしてください。");
+    }
+
+    FeatureMapShape out;
+    out.channels = x->channels;
+    out.height = x->height;
+    out.width = x->width;
+    return ShapeResult::success({PortShape{out}});
+}
+
 // BatchNorm: num_features == C。形状は変わらない。
 inline ShapeResult inferOutputShapes(const BatchNormSpec &p, const std::vector<PortShape> &inputs)
 {

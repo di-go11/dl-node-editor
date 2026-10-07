@@ -28,7 +28,8 @@ enum class NodeKind : std::int64_t
     Linear = 3,
     Activation = 4,
     IndexedPooling = 5,
-    Unpooling = 6
+    Unpooling = 6,
+    Upsample = 7
 };
 
 inline NodeKind nodeKindOf(const Conv2DSpec &) { return NodeKind::Conv2D; }
@@ -38,6 +39,7 @@ inline NodeKind nodeKindOf(const LinearSpec &) { return NodeKind::Linear; }
 inline NodeKind nodeKindOf(const ActivationSpec &) { return NodeKind::Activation; }
 inline NodeKind nodeKindOf(const IndexedPoolingSpec &) { return NodeKind::IndexedPooling; }
 inline NodeKind nodeKindOf(const UnpoolingSpec &) { return NodeKind::Unpooling; }
+inline NodeKind nodekindOf(const UpsampleSpec &) { return NodeKind::Upsample; }
 
 // fingerprint の正規化文字列に使う層種名。
 inline std::string nodeKindTag(NodeKind kind)
@@ -58,6 +60,8 @@ inline std::string nodeKindTag(NodeKind kind)
         return "indexed";
     case NodeKind::Unpooling:
         return "unpool";
+    case NodeKind::Upsample:
+        return "upsample";
     }
 
     throw std::runtime_error("nodeKindTag: 未知の NodeKind (" +
@@ -120,6 +124,11 @@ void visitSpecFields(Spec &p, F &&f)
         f("kernel_size", p.kernelSize);
         f("stride", p.stride);
         f("padding", p.padding);
+    }
+    else if constexpr (std::is_same_v<T, UpsampleSpec>)
+    {
+        f("scale_factor", p.scaleFactor);
+        f("mode", p.upsampleMode);
     }
     else
     {

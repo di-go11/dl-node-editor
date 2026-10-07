@@ -1,0 +1,52 @@
+{
+"model_name" : "test_segnet",
+"model_graph": {
+  "nodes": [
+    { "id": "conv1", "spec": { "conv2d": { "in_channels": 3, "out_channels": 64, "kernel_size": 3, "stride": 1, "padding": 1, "dilation": 1 } },
+      "inputs": [ { "port": "x", "source": {} } ] },
+    { "id": "relu1", "spec": { "activation": { "activation_type": "ACTIVATION_TYPE_RELU", "dim": 1 } },
+      "inputs": [ { "port": "x", "source": { "node_id": "conv1", "port": "y" } } ] },
+    { "id": "bn1", "spec": { "batch_norm": { "num_features": 64, "eps": 1e-5, "momentum": 0.5 } },
+      "inputs": [ { "port": "x", "source": { "node_id": "relu1", "port": "y" } } ] },
+    { "id": "pool1", "spec": { "indexed_pooling": { "kernel_size": 2, "stride": 2, "padding": 0 } },
+      "inputs": [ { "port": "x", "source": { "node_id": "bn1", "port": "y" } } ] },
+    { "id": "unpool1", "spec": { "unpooling": { "kernel_size": 2, "stride": 2, "padding": 0 } },
+      "inputs": [
+        { "port": "x",       "source": { "node_id": "pool1", "port": "y" } },
+        { "port": "indices", "source": { "node_id": "pool1", "port": "indices" } }
+      ] },
+    { "id": "out_conv", "spec": { "conv2d": { "in_channels": 64, "out_channels": 3, "kernel_size": 3, "stride": 1, "padding": 1, "dilation": 1 } },
+      "inputs": [ { "port": "x", "source": { "node_id": "unpool1", "port": "y" } } ] }
+  ],
+  "outputs": [ { "node_id": "out_conv", "port": "y" } ]
+},
+"optimizer" : {
+    "adam":{
+      "learning_rate":0.001,
+      "weight_decay":0.0,
+      "beta1":0.9,
+      "beta2":0.999,
+      "eps":1e-8
+  }
+},
+"loss": {
+  "cross_entropy":{}
+},
+"epoch":1,
+"batch":6,
+"dataset_path":"/workspaces/apps/backend/ai-engine/TrainingDataset/",
+"device":"cuda:0",
+"data_spec":{
+  "image":{
+    "annotation":{"pascal_voc":{"include_difficult":false}},
+    "input_width":256,
+    "input_height":256,
+    "task_specs": {"segmentation":{"ignore_index":255}}
+  }
+},
+"save_last_every":0,
+"resume_from":"",
+"seed":{
+  "value":0
+}
+}
