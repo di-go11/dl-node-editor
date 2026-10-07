@@ -80,7 +80,7 @@ optimizer はコンストラクタで「更新対象パラメータ」を受け�
 |---|---|
 | `format_version` | int64。キー名・構成が変わったら上げる。読み側は「現行超 = 読めない / 現行未満 = version 別に読み分け（現在 v1 のみ）」で分岐（§5.10） |
 | `layer_count` | int64 |
-| `layer_{i}_kind` | int64。`LayerKind`（0=Conv2D, 1=Pooling, 2=BatchNorm, 3=Linear, 4=Activation） |
+| `layer_{i}_kind` | int64。`NodeKind`（0=Conv2D, 1=Pooling, 2=BatchNorm, 3=Linear, 4=Activation） |
 | `layer_{i}_<field>` | 各 `*Params` のフィールド。int64 / float64 のスカラーテンソル |
 
 **JSON などの外部フォーマットは使っていない。** 追加の設定ファイル・依存ライブラリは不要。
@@ -95,7 +95,7 @@ optimizer はコンストラクタで「更新対象パラメータ」を受け�
 
 | ファイル | 層 | 役割 |
 |---|---|---|
-| `entities/domain-objects/ModelGraph/Layers/NodeSpecFields.hpp` | entities | 層パラメータのフィールド定義を集約（`LayerKind` / `visitLayerFields`）。ハッシュ・書き出し・読み込みの唯一の源（§5.6） |
+| `entities/domain-objects/ModelGraph/NodeSpecFields.hpp` | entities | 層パラメータのフィールド定義を集約（`NodeKind` / `visitSpecFields`）。ハッシュ・書き出し・読み込みの唯一の源（§5.6） |
 | `infrastructure/torchModel/ModelGraphArchive.{hpp,cpp}` | infrastructure | `ModelGraph` ⇄ torch archive。`format_version` |
 | `adapters/interfaces/IModelFactory.hpp` | adapters | `ModelGraph` → `IModel` のポート |
 | `adapters/interfaces/IOptimizerFactory.hpp` | adapters | `(parameters, OptimizerConfig)` → `IOptimizer` のポート |
@@ -115,7 +115,7 @@ optimizer はコンストラクタで「更新対象パラメータ」を受け�
 | `entities/domain-objects/OptimizerTypeName.hpp` | 新規。`optimizerTypeName()` | 種別の永続化・表示用の名前 |
 | `entities/domain-objects/OptimizerConfig.hpp` | 継承 → `std::variant` へ | スライシングで `beta1` / `momentum` が factory に届かなかった（§5.5） |
 | `infrastructure/readConfig/ConfigReader.cpp` | optimizer 設定を全行読了後に組み立て。`beta1` / `beta2` / `eps` / `momentum` / `nesterov` キーを追加 | 行順に依存せず variant を作るため |
-| `entities/domain-objects/ModelGraph/ModelGraphFingerprint.cpp` | フィールド列挙を `visitLayerFields` に委譲 | 3 か所の重複を解消（§5.6） |
+| `entities/domain-objects/ModelGraph/ModelGraphFingerprint.cpp` | フィールド列挙を `visitSpecFields` に委譲 | 3 か所の重複を解消（§5.6） |
 | `infrastructure/torchModel/CheckpointArchiveIO.{hpp,cpp}` | `rng_state_cpu` の読み書き、`restoreCpuRngStateIfPresent()` | 学習再開の再現性（§5.9） |
 | `infrastructure/torchModel/CheckpointModelLoader.{hpp,cpp}` | `RestoredCheckpoint::rngStateRestored`、load の最後で RNG 復元 | 再開経路でのみ乱数状態を戻す（§5.9） |
 | `infrastructure/torchModel/ModelGraphArchive.cpp` | `format_version` を新旧で分岐 | 移行ポリシーの明示（§5.10） |
@@ -222,7 +222,7 @@ using OptimizerConfig = std::variant<AdamOptimizerConfig, AdamWOptimizerConfig, 
 
 ```cpp
 template <class Params, class F>
-void visitLayerFields(Params &p, F &&f)   // const / 非 const の両方で使える
+void visitSpecFields(Params &p, F &&f)   // const / 非 const の両方で使える
 {
     if constexpr (std::is_same_v<T, Conv2DSpec>) {
         f("in_channels", p.inChannels);
@@ -235,7 +235,7 @@ void visitLayerFields(Params &p, F &&f)   // const / 非 const の両方で使�
 - **write**: 訪問して `layer_{i}_<name>` のテンソルへ書く
 - **read**: 「非 const の `Params`」を訪問し、来た可変参照へ archive の値を代入する
 
-`LayerKind` と層種タグ（`"conv2d"` 等）も同ファイルへ移し、
+`NodeKind` と層種タグ（`"conv2d"` 等）も同ファイルへ移し、
 「どんな層があるか」の定義も 1 か所にした。
 
 **後方互換**: フィールドの並び順・区切り文字を保ったため、fingerprint の文字列は
