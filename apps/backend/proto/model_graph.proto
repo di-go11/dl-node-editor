@@ -64,6 +64,7 @@ message NodeSpec {
         ActivationSpec activation = 5;
         IndexedPoolingSpec indexed_pooling = 6;
         UnpoolingSpec unpooling = 7;
+        UpsampleSpec upsample = 8;
     }
 }
 
@@ -98,3 +99,9 @@ enum ActivationType {
 }
 message IndexedPoolingSpec {int64 kernel_size = 1; int64 stride = 2; int64 padding = 3;}
 message UnpoolingSpec {int64 kernel_size = 1; int64 stride = 2; int64 padding = 3;}
+
+enum UpsampleMode {UPSAMPLE_MODE_UNSPECIFIED = 0; UPSAMPLE_MODE_NEAREST = 1; UPSAMPLE_MODE_BILINEAR = 2;}
+message UpsampleSpec {
+    UpsampleMode upsample_mode = 1;
+    int64 scale_factor = 2;
+}
