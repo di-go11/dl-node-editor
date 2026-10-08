@@ -1,6 +1,6 @@
 // ModelGraphArchive(writeModelGraph / readModelGraph)のラウンドトリップテスト。
 //
-//   - 全 5 種の層を含む ModelGraph を archive に書き → 読み戻して構造が一致すること
+//   - 全 7 種の層を含む ModelGraph を archive に書き → 読み戻して構造が一致すること
 //   - format_version が不一致の archive は std::runtime_error になること
 //
 // libtorch の serialize を実際に通すが .pt ファイルは作らず、メモリ上の
@@ -36,56 +36,67 @@
 
 namespace
 {
-int failureCount = 0;
+    int failureCount = 0;
 
-void check(bool condition, const std::string &message)
-{
-    std::cout << (condition ? "[PASS] " : "[FAIL] ") << message << std::endl;
-    if (!condition)
+    void check(bool condition, const std::string &message)
     {
-        ++failureCount;
+        std::cout << (condition ? "[PASS] " : "[FAIL] ") << message << std::endl;
+        if (!condition)
+        {
+            ++failureCount;
+        }
     }
-}
 
-ModelGraph makeFullGraph()
-{
-    ModelGraphBuilder graph;
+    ModelGraph makeFullGraph()
+    {
+        ModelGraphBuilder graph;
 
-    Conv2DSpec conv;
-    conv.inChannels = 3;
-    conv.outChannels = 16;
-    conv.kernelSize = 5;
-    conv.stride = 2;
-    conv.padding = 1;
-    conv.dilation = 2;
-    graph.add(NodeSpec{conv});
+        Conv2DSpec conv;
+        conv.inChannels = 3;
+        conv.outChannels = 16;
+        conv.kernelSize = 5;
+        conv.stride = 2;
+        conv.padding = 1;
+        conv.dilation = 2;
+        graph.add(NodeSpec{conv});
 
-    BatchNormSpec bn;
-    bn.numFeatures = 16;
-    bn.eps = 1e-4;
-    bn.momentum = 0.05;
-    graph.add(NodeSpec{bn});
+        BatchNormSpec bn;
+        bn.numFeatures = 16;
+        bn.eps = 1e-4;
+        bn.momentum = 0.05;
+        graph.add(NodeSpec{bn});
 
-    ActivationSpec act;
-    act.activationType = ActivationType::Softmax;
-    act.dim = 2;
-    graph.add(NodeSpec{act});
+        ActivationSpec act;
+        act.activationType = ActivationType::Softmax;
+        act.dim = 2;
+        graph.add(NodeSpec{act});
 
-    PoolingSpec pool;
-    pool.type = PoolingType::Average;
-    pool.kernelSize = 3;
-    pool.stride = 3;
-    pool.padding = 0;
-    graph.add(NodeSpec{pool});
+        PoolingSpec pool;
+        pool.type = PoolingType::Average;
+        pool.kernelSize = 3;
+        pool.stride = 3;
+        pool.padding = 0;
+        graph.add(NodeSpec{pool});
 
-    LinearSpec lin;
-    lin.inFeatures = 128;
-    lin.outFeatures = 10;
-    lin.bias = false;
-    graph.add(NodeSpec{lin});
+        LinearSpec lin;
+        lin.inFeatures = 128;
+        lin.outFeatures = 10;
+        lin.bias = false;
+        graph.add(NodeSpec{lin});
 
-    return graph.build();
-}
+        UnpoolingSpec unp;
+        unp.kernelSize = 3;
+        unp.stride = 3;
+        unp.padding = 1;
+        graph.add(NodeSpec{unp}, {NodeInput{"x", graph.lastOutput()}, NodeInput{"indices", PortRef{"n3", "indices"}}});
+
+        UpsampleSpec ups;
+        ups.scaleFactor = 4;
+        ups.upsampleMode = UpsampleMode::Nearest;
+        graph.add(NodeSpec{ups});
+
+        return graph.build();
+    }
 } // namespace
 
 int main()
@@ -138,21 +149,26 @@ int main()
 
     // DAG の構造(ID・入力の接続・outputs)の明示チェック。直列のグラフなので、
     // 先頭はグラフ入力(ノード ID もポート名も空)を x につなぎ、以降は直前のノードの y につなぐ。
-    check(restored.nodes.size() == 5 && restored.nodes[0].id == "n0" && restored.nodes[4].id == "n4",
+    check(restored.nodes.size() == 7 && restored.nodes[0].id == "n0" && restored.nodes[6].id == "n6",
           "ノード ID が復元される");
-    check(restored.nodes.size() == 5 &&
+    check(restored.nodes.size() == 7 &&
               restored.nodes[0].inputs.size() == 1 && restored.nodes[0].inputs[0].port == "x" &&
               restored.nodes[0].inputs[0].source.nodeId.empty() && restored.nodes[0].inputs[0].source.port.empty(),
           "グラフ入力につなぐ接続(ノード ID もポート名も空)が復元される");
-    check(restored.nodes.size() == 5 &&
+    check(restored.nodes.size() == 7 &&
               restored.nodes[3].inputs.size() == 1 &&
               restored.nodes[3].inputs[0].source.nodeId == "n2" && restored.nodes[3].inputs[0].source.port == "y",
           "ノード間の接続が復元される");
-    check(restored.outputs.size() == 1 && restored.outputs[0].nodeId == "n4" && restored.outputs[0].port == "y",
+    check(restored.outputs.size() == 1 && restored.outputs[0].nodeId == "n6" && restored.outputs[0].port == "y",
           "outputs が復元される");
+    check(restored.nodes.size() == 7 &&
+              restored.nodes[5].inputs.size() == 2 &&
+              restored.nodes[5].inputs[1].port == "indices" &&
+              restored.nodes[5].inputs[1].source.nodeId == "n3" && restored.nodes[5].inputs[1].source.port == "indices",
+          "入力が 2 本あるノードの接続(離れたノードへの線)が復元される");
 
     // 代表フィールドの明示チェック(fingerprint 任せにしない)
-    if (restored.nodes.size() == 5)
+    if (restored.nodes.size() == 7)
     {
         const auto &conv = std::get<Conv2DSpec>(restored.nodes[0].spec);
         check(conv.outChannels == 16 && conv.kernelSize == 5 && conv.stride == 2,
@@ -168,6 +184,10 @@ int main()
         check(pool.type == PoolingType::Average, "PoolingSpec の enum が復元される");
         const auto &lin = std::get<LinearSpec>(restored.nodes[4].spec);
         check(lin.bias == false && lin.inFeatures == 128, "LinearSpec の bias が復元される");
+        const auto &unp = std::get<UnpoolingSpec>(restored.nodes[5].spec);
+        check(unp.kernelSize == 3 && unp.padding == 1 && unp.stride == 3, "UnpoolingのkernelSize,padding,strideが復元される");
+        const auto &ups = std::get<UpsampleSpec>(restored.nodes[6].spec);
+        check(ups.scaleFactor == 4 && ups.upsampleMode == UpsampleMode::Nearest, "UpsampleSpecのscaleFactor/enumが復元される");
     }
     else
     {
