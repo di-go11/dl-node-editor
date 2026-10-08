@@ -176,6 +176,25 @@ namespace
             requireNonNegative(unpool.padding, at + ".unpooling.padding");
             return NodeSpec{unpool};
         }
+        case model::v1::NodeSpec::kUpsample:
+        {
+            const auto &p = layer.upsample();
+            UpsampleSpec upsample;
+            switch (p.upsample_mode())
+            {
+            case model::v1::UPSAMPLE_MODE_NEAREST:
+                upsample.upsampleMode = UpsampleMode::Nearest;
+                break;
+            case model::v1::UPSAMPLE_MODE_BILINEAR:
+                upsample.upsampleMode = UpsampleMode::Bilinear;
+                break;
+            default:
+                invalid(at + ".upsample.upsample_mode が指定されていません");
+            }
+            upsample.scaleFactor = p.scale_factor();
+            requirePositive(upsample.scaleFactor, at + ".upsample.scale_factor");
+            return NodeSpec{upsample};
+        }
         case model::v1::NodeSpec::PARAMS_NOT_SET:
             break;
         }

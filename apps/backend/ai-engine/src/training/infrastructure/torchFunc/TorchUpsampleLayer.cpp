@@ -12,13 +12,38 @@ namespace
         switch (specs.upsampleMode)
         {
         case UpsampleMode::Bilinear:
-            options.mode(torch::kBilinear);
+            options.mode(torch::kBilinear).align_corners(false);
             break;
 
         case UpsampleMode::Nearest:
             options.mode(torch::kNearest);
             break;
-        default:
-                }
+        }
+        return torch::nn::Upsample(options);
     }
+}
+
+TorchUpsampleLayer::TorchUpsampleLayer(const UpsampleSpec &specs) : _module(makeModule(specs))
+{
+}
+
+std::vector<at::Tensor> TorchUpsampleLayer::forward(const std::vector<at::Tensor> &inputs)
+{
+    return {_module->forward(inputs[0])};
+}
+
+std::vector<at::Tensor> TorchUpsampleLayer::parameters() const
+{
+    return _module->parameters();
+}
+
+void TorchUpsampleLayer::setTrain(bool trainingMode)
+{
+    _module->train(trainingMode);
+}
+
+void TorchUpsampleLayer::to(const ComputeDevice &device)
+{
+    const torch::Device torchDevice = training::infrastructure::torchFunc::deviceToTorch(device);
+    _module->to(torchDevice);
 }

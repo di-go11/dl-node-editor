@@ -4,6 +4,7 @@
 #include "training/adapters/interfaces/ILayer.hpp"
 
 #include <torch/nn/modules/upsampling.h>
+#include <vector>
 
 class TorchUpsampleLayer : public ILayer
 {

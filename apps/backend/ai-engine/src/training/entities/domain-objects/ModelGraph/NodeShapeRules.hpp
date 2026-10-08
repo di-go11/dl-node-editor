@@ -184,8 +184,9 @@ inline ShapeResult inferOutputShapes(const UpsampleSpec &p, const std::vector<Po
 
     FeatureMapShape out;
     out.channels = x->channels;
-    out.height = x->height;
-    out.width = x->width;
+    // 縦横に倍率をかける。
+    out.height = x->height * p.scaleFactor;
+    out.width = x->width * p.scaleFactor;
     return ShapeResult::success({PortShape{out}});
 }
 

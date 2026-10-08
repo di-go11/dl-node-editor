@@ -39,7 +39,7 @@ inline NodeKind nodeKindOf(const LinearSpec &) { return NodeKind::Linear; }
 inline NodeKind nodeKindOf(const ActivationSpec &) { return NodeKind::Activation; }
 inline NodeKind nodeKindOf(const IndexedPoolingSpec &) { return NodeKind::IndexedPooling; }
 inline NodeKind nodeKindOf(const UnpoolingSpec &) { return NodeKind::Unpooling; }
-inline NodeKind nodekindOf(const UpsampleSpec &) { return NodeKind::Upsample; }
+inline NodeKind nodeKindOf(const UpsampleSpec &) { return NodeKind::Upsample; }
 
 // fingerprint の正規化文字列に使う層種名。
 inline std::string nodeKindTag(NodeKind kind)
