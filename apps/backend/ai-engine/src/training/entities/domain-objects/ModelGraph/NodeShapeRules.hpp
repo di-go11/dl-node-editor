@@ -168,7 +168,7 @@ inline ShapeResult inferOutputShapes(const UnpoolingSpec &p, const std::vector<P
     return ShapeResult::success({PortShape{out}});
 }
 
-// Upsample: xとinputsの形状が一致すること. 出力は
+// Upsample: xとinputsの形状が一致すること. upsampleに入って来る要素は1つ。
 inline ShapeResult inferOutputShapes(const UpsampleSpec &p, const std::vector<PortShape> &inputs)
 {
     const auto *x = std::get_if<FeatureMapShape>(&inputs.at(0));
@@ -188,6 +188,30 @@ inline ShapeResult inferOutputShapes(const UpsampleSpec &p, const std::vector<Po
     out.height = x->height * p.scaleFactor;
     out.width = x->width * p.scaleFactor;
     return ShapeResult::success({PortShape{out}});
+}
+
+// Add: inputsの要素は2つ以上。
+inline ShapeResult inferOutputShapes(const AddSpec &, const std::vector<PortShape> &inputs)
+{
+    const auto *x = std::get_if<FeatureMapShape>(&inputs.at(0));
+    if (!x)
+    {
+        return shape_rules_detail::notFeatureMap("Add", inputs.at(0));
+    }
+    for (std::size_t i = 1; i < inputs.size(); ++i)
+    {
+        const auto *y = std::get_if<FeatureMapShape>(&inputs.at(i));
+        if (!y)
+        {
+            return shape_rules_detail::notFeatureMap("Add", inputs.at(i));
+        }
+        if (!(*x == *y))
+        {
+            return ShapeResult::failure("Add の入力の形が一致しません(入力0: " + toString(*x) +
+                                        ", 入力" + std::to_string(i) + ": " + toString(*y) + ")");
+        }
+    }
+    return ShapeResult::success({inputs.at(0)});
 }
 
 // BatchNorm: num_features == C。形状は変わらない。

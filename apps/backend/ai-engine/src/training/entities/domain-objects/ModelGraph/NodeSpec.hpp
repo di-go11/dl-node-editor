@@ -8,15 +8,13 @@
 #include "training/entities/domain-objects/ModelGraph/Layers/IndexedPoolingSpec.hpp"
 #include "training/entities/domain-objects/ModelGraph/Layers/UnpoolingSpec.hpp"
 #include "training/entities/domain-objects/ModelGraph/Layers/UpsampleSpec.hpp"
-#include "training/entities/domain-objects/ModelGraph/Nodes/AddSpec.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/AddSpec.hpp"
 
 #include <variant>
 
 // ノードの仕様(そのノードが何をするか)。GraphNode::spec に入る。
-//   Layers/ : 学習機能のパラメータを持つ層(Conv2D など)
-//   Nodes/  : 汎用のノード(Add など)
-// 置き場所は分けているが、どちらも同じ 1 つの variant に並べる(検証・形状推論・モデルの組み立ては、
-// どの型が入っているかだけで分岐する)。
+//   Layers/ : すべてのノードの *Spec(Conv2D、Add、Concat など。パラメータを持たないものも含む)
+// 検証・形状推論・モデルの組み立ては、variant にどの型が入っているかだけで分岐する。
 //
 // 種類を足すときは、必ず末尾に足す。並び順は NodeSpecFields.hpp の NodeKind と対応していて、
 // NodeKind の数値は checkpoint に保存される。

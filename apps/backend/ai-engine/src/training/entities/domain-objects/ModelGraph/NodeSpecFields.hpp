@@ -136,6 +136,7 @@ void visitSpecFields(Spec &p, F &&f)
     }
     else if constexpr (std::is_same_v<T, AddSpec>)
     {
+        f("alpha", p.alpha);
     }
     else
     {

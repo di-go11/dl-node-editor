@@ -1,32 +1,30 @@
 #include "TorchAddLayer.hpp"
 
-TorchAddLayer::TorchAddLayer(float alpha) : _alpha(alpha)
+TorchAddLayer::TorchAddLayer(const AddSpec &params) : _alpha(params.alpha)
 {
 }
 
 std::vector<at::Tensor> TorchAddLayer::forward(const std::vector<at::Tensor> &inputs)
 {
-    at::Tensor tempAddedTensor = inputs[0];
-    std::vector<at::Tensor> result;
+    at::Tensor sum = inputs[0];
 
-    for (int i = 1; i < inputs.size(); i++)
+    for (std::size_t i = 1; i < inputs.size(); ++i)
     {
-        tempAddedTensor = torch::add(tempAddedTensor, inputs[i], _alpha);
+        sum = torch::add(sum, inputs[i], _alpha);
     }
 
-    result.push_back(tempAddedTensor);
-
-    return result;
+    return {sum};
 }
 
 std::vector<at::Tensor> TorchAddLayer::parameters() const
 {
+    return {};
 }
 
-void TorchAddLayer::setTrain(bool trainingMode)
+void TorchAddLayer::setTrain(bool)
 {
 }
 
-void TorchAddLayer::to(const ComputeDevice &device)
+void TorchAddLayer::to(const ComputeDevice &)
 {
 }

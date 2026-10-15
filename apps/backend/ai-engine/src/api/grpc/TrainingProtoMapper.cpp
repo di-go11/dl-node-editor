@@ -3,6 +3,7 @@
 #include "training/entities/domain-objects/ModelGraph/DAG/GraphValidation.hpp"
 #include "training/entities/utils/Overloaded.hpp"
 
+#include <cmath>
 #include <cctype>
 #include <cstddef>
 #include <stdexcept>
@@ -194,6 +195,21 @@ namespace
             upsample.scaleFactor = p.scale_factor();
             requirePositive(upsample.scaleFactor, at + ".upsample.scale_factor");
             return NodeSpec{upsample};
+        }
+        case model::v1::NodeSpec::kAdd:
+        {
+            const auto &p = layer.add();
+            AddSpec add;
+            // proto3 の数値は未指定だと 0 になる。alpha = 0 は「足さない」で意味がないので、0 は未指定として既定の 1.0 にする。
+            if (p.alpha() != 0.0)
+            {
+                add.alpha = p.alpha();
+            }
+            if (!std::isfinite(add.alpha))
+            {
+                invalid(at + ".add.alpha は有限の数値にしてください");
+            }
+            return NodeSpec{add};
         }
         case model::v1::NodeSpec::PARAMS_NOT_SET:
             break;

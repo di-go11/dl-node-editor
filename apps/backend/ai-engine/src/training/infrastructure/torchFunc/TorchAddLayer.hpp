@@ -1,9 +1,10 @@
-// 2つ以上のノードの出力(テンソル)を設定に合わせて結合する層。
+// 2つ以上のノードの出力(テンソル)を要素ごとに足し合わせる層(形は変わらない)。
 // 戻り値は必ず、テンソル一つのベクター
-// alpha: 加算するテンソルの値を係数
+// alpha: 2番目以降の入力にかける係数(sum = x0 + alpha * x1 + alpha * x2 ...)
 
 #pragma once
 
+#include "training/entities/domain-objects/ModelGraph/Layers/AddSpec.hpp"
 #include "training/adapters/interfaces/ILayer.hpp"
 
 #include <torch/torch.h>
@@ -12,7 +13,7 @@
 class TorchAddLayer : public ILayer
 {
 public:
-    explicit TorchAddLayer(float alpha);
+    explicit TorchAddLayer(const AddSpec &params);
     std::vector<at::Tensor> forward(const std::vector<at::Tensor> &inputs) override;
     std::vector<at::Tensor> parameters() const override;
 
@@ -21,5 +22,5 @@ public:
     void to(const ComputeDevice &device) override;
 
 private:
-    float _alpha;
+    double _alpha;
 };

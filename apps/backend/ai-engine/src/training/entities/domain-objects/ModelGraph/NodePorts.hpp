@@ -89,7 +89,7 @@ inline NodePortSpec nodePortsOf(const ActivationSpec &)
 // ---- これから追加する層 ----
 //
 // *Spec の型はまだ定義していないので、名前だけを前方宣言している。
-// 層を実装するときは、Layers/ か Nodes/ に *Spec.hpp を作って NodeSpec.hpp から include し、
+// 層を実装するときは、Layers/ に *Spec.hpp を作って NodeSpec.hpp から include し、
 // NodeSpec(variant)に追加する。ここのポートの定義はそのまま使える。
 
 struct AddSpec;

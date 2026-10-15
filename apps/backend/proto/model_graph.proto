@@ -65,6 +65,7 @@ message NodeSpec {
         IndexedPoolingSpec indexed_pooling = 6;
         UnpoolingSpec unpooling = 7;
         UpsampleSpec upsample = 8;
+        AddSpec add = 9;
     }
 }
 
@@ -104,4 +105,9 @@ enum UpsampleMode {UPSAMPLE_MODE_UNSPECIFIED = 0; UPSAMPLE_MODE_NEAREST = 1; UPS
 message UpsampleSpec {
     UpsampleMode upsample_mode = 1;
     int64 scale_factor = 2;
+}
+
+message AddSpec {
+    // 2 番目以降の入力にかける係数。0(未指定)は 1.0 として扱う。
+    double alpha = 1;
 }

@@ -69,7 +69,7 @@ src/training/entities/domain-objects/ModelGraph/
 ├── ModelGraph.hpp                  nodes / outputs
 ├── ModelGraphFingerprint.{hpp,cpp} 正規化文字列は v2(nodes と接続を含む)
 ├── PortShape.hpp                   形状(C, H, W)
-├── NodeSpec.hpp                    ノードの仕様の variant(Layers/ と Nodes/ の型を並べる)
+├── NodeSpec.hpp                    ノードの仕様の variant(Layers/ の型を並べる)
 ├── NodeSpecFields.hpp              NodeKind と、各 *Spec のフィールドの列挙
 ├── NodePorts.hpp / PortKinds.hpp    ノードの種類ごとのポートの定義
 ├── NodeShapeRules.hpp              ノードの種類ごとの形状の規則
@@ -79,10 +79,8 @@ src/training/entities/domain-objects/ModelGraph/
 │   ├── GraphShapeInference.{hpp,cpp} 形状推論(validateGraphShapes)
 │   ├── ModelGraphBuilder.hpp       層を足していって ModelGraph を組み立てる(検証はしない)
 │   └── NodeChecker.hpp             ノード ID の文字種の確認
-├── Layers/                         学習機能のパラメータを持つ層
-│   └── 各層の *Spec.hpp、ActivationType、PoolingType
-└── Nodes/                          汎用のノード
-    └── AddSpec.hpp                 (まだ variant には入れていない)
+└── Layers/                         各ノードの *Spec(Add / Concat などパラメータのないものも含む)
+    └── 各ノードの *Spec.hpp、ActivationType、PoolingType、UpsampleMode
 ```
 
 ## 残りのタスク
@@ -190,7 +188,7 @@ proto の定義は完了している。残りは C++ 側の対応。
 
 ### E. 層の追加
 
-層ごとに: `Layers/*Spec.hpp`(学習機能のパラメータを持つ層)または `Nodes/*Spec.hpp`(Add などの汎用ノード)、`ModelGraph/NodeSpec.hpp` の include と variant(末尾に追加)、`ModelGraph/NodeSpecFields.hpp`(`NodeKind` は末尾に追加、`nodeKindOf`、`visitSpecFields`)、形状の規則、`Torch*Layer`、`TorchLayerBuilder`、proto の `NodeSpec`、mapper、テスト。ポートの定義は `NodePorts.hpp` に書いてある。`ModelGraphArchive` の `static_assert` の要素数も更新する。
+層ごとに: `Layers/*Spec.hpp`、`ModelGraph/NodeSpec.hpp` の include と variant(末尾に追加)、`ModelGraph/NodeSpecFields.hpp`(`NodeKind` は末尾に追加、`nodeKindOf`、`visitSpecFields`)、形状の規則、`Torch*Layer`、`TorchLayerBuilder`、proto の `NodeSpec`、mapper、テスト。ポートの定義は `NodePorts.hpp` に書いてある。`ModelGraphArchive` の `static_assert` の要素数も更新する。
 
 - [ ] **第 1 段(分岐と合流を動かす)**: Add、Concat、Upsample
   - `ModelArchitectureType` に `UNetSmall` を追加し(encoder 3 段 + decoder 3 段、concat の skip connection)、CLI と grpcurl の両方で学習できることを確認する

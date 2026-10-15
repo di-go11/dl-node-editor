@@ -13,7 +13,7 @@ namespace
     // NodeSpec の alternative が増減したらここで気付けるようにする。
     // 増やした場合は NodeSpecFields.hpp(NodeKind・フィールド列挙)の更新と、
     // 下の readLayer の分岐追加、kModelGraphArchiveVersion のインクリメントが必要。
-    static_assert(std::variant_size_v<NodeSpec> == 8,
+    static_assert(std::variant_size_v<NodeSpec> == 9,
                   "NodeSpec の要素数が変わりました。ModelGraphArchive の対応を更新してください。");
 
     // archive への読み書きヘルパ。スカラーは 1 要素テンソルとして保存する
@@ -167,6 +167,8 @@ namespace
             return NodeSpec{readSpec<UnpoolingSpec>(r)};
         case NodeKind::Upsample:
             return NodeSpec{readSpec<UpsampleSpec>(r)};
+        case NodeKind::Add:
+            return NodeSpec{readSpec<AddSpec>(r)};
         }
 
         throw std::runtime_error(
