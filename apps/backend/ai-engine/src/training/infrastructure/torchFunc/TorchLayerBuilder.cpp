@@ -10,6 +10,7 @@
 #include "training/infrastructure/torchFunc/TorchIndexPoolingLayer.hpp"
 #include "training/infrastructure/torchFunc/TorchUnpoolingLayer.hpp"
 #include "training/infrastructure/torchFunc/TorchUpsampleLayer.hpp"
+#include "training/infrastructure/torchFunc/TorchAddLayer.hpp"
 
 #include "training/entities/utils/Overloaded.hpp"
 
@@ -52,6 +53,10 @@ std::shared_ptr<ILayer> TorchLayerBuilder::build(const NodeSpec &config)
             [](const UpsampleSpec &p) -> std::shared_ptr<ILayer>
             {
                 return std::make_shared<TorchUpsampleLayer>(p);
+            },
+            [](const AddSpec &p) -> std::shared_ptr<ILayer>
+            {
+                return std::make_shared<TorchAddLayer>(p);
             }},
         config);
 }
