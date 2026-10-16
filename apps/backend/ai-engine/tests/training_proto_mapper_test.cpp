@@ -215,9 +215,9 @@ int main()
 
     model::v1::Node *upsample = graph->add_nodes();
     upsample->set_id("upsample");
-    upsample->mutable_spec()->mutable_upsample()->set_upsample_mode(model::v1::UpsampleSpec::NEAREST); // 最近傍補間
-    upsample->mutable_spec()->mutable_upsample()->set_scale_factor(4); // 4倍のアップサンプリング
-    connect(upsample, "x", "pool", "y"); // upsample.x ← pool.y
+    upsample->mutable_spec()->mutable_upsample()->set_upsample_mode(model::v1::UpsampleMode::UPSAMPLE_MODE_NEAREST); // 最近傍補間
+    upsample->mutable_spec()->mutable_upsample()->set_scale_factor(4);                                               // 4倍のアップサンプリング
+    connect(upsample, "x", "pool", "y");                                                                             // upsample.x ← pool.y
 
     model::v1::Node *pool = graph->add_nodes();
     pool->set_id("pool");
