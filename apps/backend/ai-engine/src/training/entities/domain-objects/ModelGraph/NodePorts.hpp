@@ -86,21 +86,6 @@ inline NodePortSpec nodePortsOf(const ActivationSpec &)
         {OutputPortSpec{"y", PortKind::Any}}};
 }
 
-// ---- これから追加する層 ----
-//
-// *Spec の型はまだ定義していないので、名前だけを前方宣言している。
-// 層を実装するときは、Layers/ に *Spec.hpp を作って NodeSpec.hpp から include し、
-// NodeSpec(variant)に追加する。ここのポートの定義はそのまま使える。
-
-struct AddSpec;
-struct ConcatSpec;
-struct UpsampleSpec;
-struct ConvTranspose2DSpec;
-struct AdaptiveAvgPoolSpec;
-struct DropoutSpec;
-struct FlattenSpec;
-struct GroupNormSpec;
-
 // Add(要素ごとの足し算。ResNet の残差接続、FPN)は入力2つ以上(x、可変長)と出力1つ(y)
 // 入力はすべて同じ形状・同じ種類であること(Feature どうし、または Tokens どうし)。
 inline NodePortSpec nodePortsOf(const AddSpec &)
@@ -127,6 +112,19 @@ inline NodePortSpec nodePortsOf(const UpsampleSpec &)
         {InputPortSpec{"x"}},
         {OutputPortSpec{"y"}}};
 }
+
+// ---- これから追加する層 ----
+//
+// *Spec の型はまだ定義していないので、名前だけを前方宣言している。
+// 層を実装するときは、Layers/ に *Spec.hpp を作って NodeSpec.hpp から include し、
+// NodeSpec(variant)に追加する。ここのポートの定義はそのまま使える。
+
+struct UpsampleSpec;
+struct ConvTranspose2DSpec;
+struct AdaptiveAvgPoolSpec;
+struct DropoutSpec;
+struct FlattenSpec;
+struct GroupNormSpec;
 
 // ConvTranspose2D(転置畳み込みによる拡大)は入力1つ(x)と出力1つ(y)
 inline NodePortSpec nodePortsOf(const ConvTranspose2DSpec &)

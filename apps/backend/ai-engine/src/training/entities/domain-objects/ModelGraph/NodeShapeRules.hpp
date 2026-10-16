@@ -214,6 +214,33 @@ inline ShapeResult inferOutputShapes(const AddSpec &, const std::vector<PortShap
     return ShapeResult::success({inputs.at(0)});
 }
 
+// Concat: inputsの要素は2つ以上。チャンネル方向に結合するので、HとWはすべて同じであること。
+// 出力のチャンネル数は入力のチャンネル数の合計になる。
+inline ShapeResult inferOutputShapes(const ConcatSpec &, const std::vector<PortShape> &inputs)
+{
+    const auto *x = std::get_if<FeatureMapShape>(&inputs.at(0));
+    if (!x)
+    {
+        return shape_rules_detail::notFeatureMap("Concat", inputs.at(0));
+    }
+    FeatureMapShape out = *x;
+    for (std::size_t i = 1; i < inputs.size(); ++i)
+    {
+        const auto *y = std::get_if<FeatureMapShape>(&inputs.at(i));
+        if (!y)
+        {
+            return shape_rules_detail::notFeatureMap("Concat", inputs.at(i));
+        }
+        if (x->height != y->height || x->width != y->width)
+        {
+            return ShapeResult::failure("Concat の入力の H/W が一致しません(入力0: " + toString(*x) +
+                                        ", 入力" + std::to_string(i) + ": " + toString(*y) + ")");
+        }
+        out.channels += y->channels;
+    }
+    return ShapeResult::success({PortShape{out}});
+}
+
 // BatchNorm: num_features == C。形状は変わらない。
 inline ShapeResult inferOutputShapes(const BatchNormSpec &p, const std::vector<PortShape> &inputs)
 {

@@ -2,7 +2,6 @@
 
 #include <torch/serialize.h>
 
-#include "training/entities/domain-objects/ModelGraph/NodeSpecFields.hpp"
 #include "training/entities/domain-objects/ModelGraph/ModelGraph.hpp"
 
 // ModelGraph(モデル構造の内部表現)を libtorch の archive に書き出す / 読み戻す。

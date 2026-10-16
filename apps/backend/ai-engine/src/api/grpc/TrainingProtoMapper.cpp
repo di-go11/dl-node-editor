@@ -211,6 +211,8 @@ namespace
             }
             return NodeSpec{add};
         }
+        case model::v1::NodeSpec::kConcat:
+            return NodeSpec{ConcatSpec{}};
         case model::v1::NodeSpec::PARAMS_NOT_SET:
             break;
         }

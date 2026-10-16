@@ -9,6 +9,7 @@
 #include "training/entities/domain-objects/ModelGraph/Layers/UnpoolingSpec.hpp"
 #include "training/entities/domain-objects/ModelGraph/Layers/UpsampleSpec.hpp"
 #include "training/entities/domain-objects/ModelGraph/Layers/AddSpec.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/ConcatSpec.hpp"
 
 #include <variant>
 
@@ -18,4 +19,4 @@
 //
 // 種類を足すときは、必ず末尾に足す。並び順は NodeSpecFields.hpp の NodeKind と対応していて、
 // NodeKind の数値は checkpoint に保存される。
-using NodeSpec = std::variant<Conv2DSpec, PoolingSpec, BatchNormSpec, LinearSpec, ActivationSpec, IndexedPoolingSpec, UnpoolingSpec, UpsampleSpec, AddSpec>;
+using NodeSpec = std::variant<Conv2DSpec, PoolingSpec, BatchNormSpec, LinearSpec, ActivationSpec, IndexedPoolingSpec, UnpoolingSpec, UpsampleSpec, AddSpec, ConcatSpec>;

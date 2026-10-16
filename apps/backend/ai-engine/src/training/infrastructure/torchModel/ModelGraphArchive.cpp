@@ -1,4 +1,5 @@
 #include "training/infrastructure/torchModel/ModelGraphArchive.hpp"
+#include "training/entities/domain-objects/ModelGraph/NodeSpecFields.hpp"
 
 #include <torch/torch.h>
 
@@ -13,7 +14,7 @@ namespace
     // NodeSpec の alternative が増減したらここで気付けるようにする。
     // 増やした場合は NodeSpecFields.hpp(NodeKind・フィールド列挙)の更新と、
     // 下の readLayer の分岐追加、kModelGraphArchiveVersion のインクリメントが必要。
-    static_assert(std::variant_size_v<NodeSpec> == 9,
+    static_assert(std::variant_size_v<NodeSpec> == 10,
                   "NodeSpec の要素数が変わりました。ModelGraphArchive の対応を更新してください。");
 
     // archive への読み書きヘルパ。スカラーは 1 要素テンソルとして保存する
@@ -169,6 +170,8 @@ namespace
             return NodeSpec{readSpec<UpsampleSpec>(r)};
         case NodeKind::Add:
             return NodeSpec{readSpec<AddSpec>(r)};
+        case NodeKind::Concat:
+            return NodeSpec{readSpec<ConcatSpec>(r)};
         }
 
         throw std::runtime_error(

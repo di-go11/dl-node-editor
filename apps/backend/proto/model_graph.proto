@@ -66,6 +66,7 @@ message NodeSpec {
         UnpoolingSpec unpooling = 7;
         UpsampleSpec upsample = 8;
         AddSpec add = 9;
+        ConcatSpec concat = 10;
     }
 }
 
@@ -110,4 +111,8 @@ message UpsampleSpec {
 message AddSpec {
     // 2 番目以降の入力にかける係数。0(未指定)は 1.0 として扱う。
     double alpha = 1;
+}
+
+// 入力をチャンネル方向に結合する。結合する次元は固定なので、パラメータはない。
+message ConcatSpec {
 }

@@ -30,7 +30,8 @@ enum class NodeKind : std::int64_t
     IndexedPooling = 5,
     Unpooling = 6,
     Upsample = 7,
-    Add = 8
+    Add = 8,
+    Concat = 9
 };
 
 inline NodeKind nodeKindOf(const Conv2DSpec &) { return NodeKind::Conv2D; }
@@ -42,6 +43,7 @@ inline NodeKind nodeKindOf(const IndexedPoolingSpec &) { return NodeKind::Indexe
 inline NodeKind nodeKindOf(const UnpoolingSpec &) { return NodeKind::Unpooling; }
 inline NodeKind nodeKindOf(const UpsampleSpec &) { return NodeKind::Upsample; }
 inline NodeKind nodeKindOf(const AddSpec &) { return NodeKind::Add; }
+inline NodeKind nodeKindOf(const ConcatSpec &) { return NodeKind::Concat; }
 
 // fingerprint の正規化文字列に使う層種名。
 inline std::string nodeKindTag(NodeKind kind)
@@ -66,6 +68,8 @@ inline std::string nodeKindTag(NodeKind kind)
         return "upsample";
     case NodeKind::Add:
         return "add";
+    case NodeKind::Concat:
+        return "concat";
     }
 
     throw std::runtime_error("nodeKindTag: 未知の NodeKind (" +
@@ -137,6 +141,10 @@ void visitSpecFields(Spec &p, F &&f)
     else if constexpr (std::is_same_v<T, AddSpec>)
     {
         f("alpha", p.alpha);
+    }
+    else if constexpr (std::is_same_v<T, ConcatSpec>)
+    {
+        // パラメータなし
     }
     else
     {

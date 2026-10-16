@@ -23,6 +23,8 @@
 #include "training/entities/domain-objects/ModelGraph/Layers/PoolingSpec.hpp"
 #include "training/entities/domain-objects/ModelGraph/Layers/UnpoolingSpec.hpp"
 #include "training/entities/domain-objects/ModelGraph/Layers/UpsampleSpec.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/AddSpec.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/ConcatSpec.hpp"
 #include "training/entities/domain-objects/ModelGraph/ModelGraph.hpp"
 
 namespace
@@ -129,6 +131,17 @@ namespace
         const std::string d1 = addConvReluBn(graph, "d1", 4, kNumClasses, connect("x", "us1", "y"));
 
         graph.outputs.push_back(PortRef{d1, "y"});
+        return graph;
+    }
+
+    ModelGraph makeAddTestGraph()
+    {
+        ModelGraph graph;
+        const std::string e1 = addConvReluBn(graph, "e1", 3, 4, fromGraphInput("x"));
+        const std::string e2 = addConvReluBn(graph, "e2", 3, 4, fromGraphInput("x"));
+        graph.nodes.push_back({"add",
+                               NodeSpec{AddSpec{}},
+                               {connect("x", e1, "y"), connect("x", e2, "y")}});
         return graph;
     }
 
