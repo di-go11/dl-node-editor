@@ -400,6 +400,28 @@ target_include_directories(model_graph_golden_test PRIVATE
 target_link_libraries(model_graph_golden_test PRIVATE ai_engine_lib "${TORCH_LIBRARIES}")
 target_link_options(model_graph_golden_test PRIVATE "-Wl,--allow-shlib-undefined")
 set_property(TARGET model_graph_golden_test PROPERTY CXX_STANDARD 17)
+
+## 4. TorchAddLayer の forward と、Add の形状の規則が一致することの確認
+add_executable(torch_add_test tests/torch_add_test.cpp)
+target_include_directories(torch_add_test PRIVATE
+	${CMAKE_CURRENT_SOURCE_DIR}/src
+	${CMAKE_CURRENT_SOURCE_DIR}
+	${TORCH_INCLUDE_DIRS}
+)
+target_link_libraries(torch_add_test PRIVATE ai_engine_lib "${TORCH_LIBRARIES}")
+target_link_options(torch_add_test PRIVATE "-Wl,--allow-shlib-undefined")
+set_property(TARGET torch_add_test PROPERTY CXX_STANDARD 17)
+
+## 5. TorchConcatLayer の forward と、Concat の形状の規則が一致することの確認
+add_executable(torch_concat_test tests/torch_concat_test.cpp)
+target_include_directories(torch_concat_test PRIVATE
+	${CMAKE_CURRENT_SOURCE_DIR}/src
+	${CMAKE_CURRENT_SOURCE_DIR}
+	${TORCH_INCLUDE_DIRS}
+)
+target_link_libraries(torch_concat_test PRIVATE ai_engine_lib "${TORCH_LIBRARIES}")
+target_link_options(torch_concat_test PRIVATE "-Wl,--allow-shlib-undefined")
+set_property(TARGET torch_concat_test PROPERTY CXX_STANDARD 17)
 # =====CIテスト用の設定=====
 enable_testing()
 
@@ -421,6 +443,8 @@ add_test(NAME training_smoke_test COMMAND training_smoke_test)
 add_test(NAME device_config_test COMMAND device_config_test)
 add_test(NAME device_parity_test COMMAND device_parity_test)
 add_test(NAME loss_function_test COMMAND loss_function_test)
+add_test(NAME torch_add_test COMMAND torch_add_test)
+add_test(NAME torch_concat_test COMMAND torch_concat_test)
 
 set_tests_properties(torch_loss_factory_test PROPERTIES LABELS "cpu")
 set_tests_properties(image_pipeline_test PROPERTIES LABELS "cpu")
@@ -441,6 +465,8 @@ set_tests_properties(device_config_test PROPERTIES LABELS "cpu")
 # device_parity_test は、CUDA が無い環境では CPU 側だけを実行する(CUDA との比較は省かれる)。
 set_tests_properties(device_parity_test PROPERTIES LABELS "cpu")
 set_tests_properties(loss_function_test PROPERTIES LABELS "cpu")
+set_tests_properties(torch_add_test PROPERTIES LABELS "cpu")
+set_tests_properties(torch_concat_test PROPERTIES LABELS "cpu")
 
 # training_smoke_test は、実データ(TrainingDataset/train。リポジトリには含めていない)が無いと
 # 何も確認せずに終了コード 0 で終わる。Passed と区別できるよう、ctest の表示を Skipped にする。
