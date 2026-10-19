@@ -207,47 +207,47 @@ int main()
                   "変換(DAG): outputs");
         }
     }
-    // 分岐のある DAG: conv1 → pool →(通常のAveragePoolingで"y"一本の出力)→ Upsample → モデルの出力。
-    // nodes は実行順と逆に並べて送る(並び順のまま保持され、実行順は別に求まる)。
-    training::v1::StartTrainingRequest r = makeValidRequest();
-    model::v1::ModelGraph *graph = r.mutable_model_graph(); // 書き込み用ポインタを生成して擬似的にグラフを作成する。
-    graph->Clear();
-
-    model::v1::Node *upsample = graph->add_nodes();
-    upsample->set_id("upsample");
-    upsample->mutable_spec()->mutable_upsample()->set_upsample_mode(model::v1::UpsampleMode::UPSAMPLE_MODE_NEAREST); // 最近傍補間
-    upsample->mutable_spec()->mutable_upsample()->set_scale_factor(4);                                               // 4倍のアップサンプリング
-    connect(upsample, "x", "pool", "y");                                                                             // upsample.x ← pool.y
-
-    model::v1::Node *pool = graph->add_nodes();
-    pool->set_id("pool");
-    pool->mutable_spec()->mutable_indexed_pooling()->set_kernel_size(2);
-    pool->mutable_spec()->mutable_indexed_pooling()->set_stride(2);
-    connect(pool, "x", "conv1", "y");
-
-    connect(addConvNode(r, "conv1"), "x", "", "");
-    addOutput(r, "unpool", "y");
-
-    const StartTrainingCommand c = toStartTrainingCommand(r);
-    check(c.modelGraph.has_value(), "変換(DAG): 分岐のあるグラフが検証を通る");
-    if (c.modelGraph.has_value())
     {
-        const ModelGraph &g = c.modelGraph->getGraph();
-        check(g.nodes.size() == 3 && g.nodes[0].id == "unpool" && g.nodes[1].id == "pool" && g.nodes[2].id == "conv1",
-              "変換(DAG): nodes は送った並び順のまま");
-        check(g.nodes.size() == 3 && std::holds_alternative<UnpoolingSpec>(g.nodes[0].spec) &&
-                  std::holds_alternative<IndexedPoolingSpec>(g.nodes[1].spec),
-              "変換(DAG): 層の種類(Unpooling / IndexedPooling)");
-        check(g.nodes.size() == 3 && g.nodes[0].inputs.size() == 2 &&
-                  g.nodes[0].inputs[0].port == "x" && g.nodes[0].inputs[0].source.nodeId == "pool" &&
-                  g.nodes[0].inputs[0].source.port == "y" &&
-                  g.nodes[0].inputs[1].port == "indices" && g.nodes[0].inputs[1].source.nodeId == "pool" &&
-                  g.nodes[0].inputs[1].source.port == "indices",
-              "変換(DAG): 同じノードから 2 本の接続(y と indices)");
-        check(c.modelGraph->getOrder() == std::vector<std::size_t>{2, 1, 0},
-              "変換(DAG): 実行順は conv1 → pool → unpool");
-        check(g.outputs.size() == 1 && g.outputs[0].nodeId == "unpool" && g.outputs[0].port == "y",
-              "変換(DAG): outputs");
+        // 分岐のある DAG: conv1 → pool →(IndexedPooling の y だけの出力)→ Upsample → モデルの出力。
+        // nodes は実行順と逆に並べて送る(並び順のまま保持され、実行順は別に求まる)。
+        training::v1::StartTrainingRequest r = makeValidRequest();
+        model::v1::ModelGraph *graph = r.mutable_model_graph(); // 書き込み用ポインタを生成して擬似的にグラフを作成する。
+        graph->Clear();
+
+        model::v1::Node *upsample = graph->add_nodes();
+        upsample->set_id("upsample");
+        upsample->mutable_spec()->mutable_upsample()->set_upsample_mode(model::v1::UpsampleMode::UPSAMPLE_MODE_NEAREST); // 最近傍補間
+        upsample->mutable_spec()->mutable_upsample()->set_scale_factor(4);                                               // 4倍のアップサンプリング
+        connect(upsample, "x", "pool", "y");                                                                             // upsample.x ← pool.y
+
+        model::v1::Node *pool = graph->add_nodes();
+        pool->set_id("pool");
+        pool->mutable_spec()->mutable_indexed_pooling()->set_kernel_size(2);
+        pool->mutable_spec()->mutable_indexed_pooling()->set_stride(2);
+        connect(pool, "x", "conv1", "y");
+
+        connect(addConvNode(r, "conv1"), "x", "", "");
+        addOutput(r, "upsample", "y");
+
+        const StartTrainingCommand c = toStartTrainingCommand(r);
+        check(c.modelGraph.has_value(), "変換(Upsample): conv1 → pool → upsample のグラフが検証を通る");
+        if (c.modelGraph.has_value())
+        {
+            const ModelGraph &g = c.modelGraph->getGraph();
+            check(g.nodes.size() == 3 && g.nodes[0].id == "upsample" && g.nodes[1].id == "pool" && g.nodes[2].id == "conv1",
+                  "変換(Upsample): nodes は送った並び順のまま");
+            check(g.nodes.size() == 3 && std::holds_alternative<UpsampleSpec>(g.nodes[0].spec) &&
+                      std::holds_alternative<IndexedPoolingSpec>(g.nodes[1].spec),
+                  "変換(Upsample): 層の種類(Upsample / IndexedPooling)");
+            check(g.nodes.size() == 3 && g.nodes[0].inputs.size() == 1 &&
+                      g.nodes[0].inputs[0].port == "x" && g.nodes[0].inputs[0].source.nodeId == "pool" &&
+                      g.nodes[0].inputs[0].source.port == "y",
+                  "変換(Upsample): pool の y だけを x につなぐ(indices は使わない)");
+            check(c.modelGraph->getOrder() == std::vector<std::size_t>{2, 1, 0},
+                  "変換(Upsample): 実行順は conv1 → pool → upsample");
+            check(g.outputs.size() == 1 && g.outputs[0].nodeId == "upsample" && g.outputs[0].port == "y",
+                  "変換(Upsample): outputs");
+        }
     }
     {
         // seed: 未指定は nullopt、0 を含む指定値はそのまま渡る
