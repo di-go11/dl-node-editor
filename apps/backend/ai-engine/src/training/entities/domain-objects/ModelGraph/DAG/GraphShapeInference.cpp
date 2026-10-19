@@ -72,29 +72,29 @@ GraphShapes inferGraphShapes(const ValidatedModelGraph &validated, const Feature
         const NodePortSpec spec = nodePortsOf(node.spec);
 
         // 入力ポートの順に、流れてくる形状を集める(層の規則はこの順で受け取る)。
+        // 可変長のポート(Add / Concat の x)は、つないだ本数ぶんを、つないだ順に並べる。
         std::vector<PortShape> inputs;
         bool resolved = true;
         for (const InputPortSpec &port : spec.inputPorts)
         {
-            const NodeInput *connection = nullptr;
-            for (const NodeInput &candidate : node.inputs)
+            for (const NodeInput &connection : node.inputs)
             {
-                if (candidate.port == port.name)
+                if (connection.port != port.name)
                 {
-                    connection = &candidate;
+                    continue;
+                }
+                const PortShape *shape = resolveSource(graph, indexOf, result.nodeOutputs, inputShape, connection.source);
+                if (shape == nullptr)
+                {
+                    resolved = false; // 前のノードで報告済みの問題の続き。重ねて報告しない
                     break;
                 }
+                inputs.push_back(*shape);
             }
-
-            const PortShape *shape = connection
-                                         ? resolveSource(graph, indexOf, result.nodeOutputs, inputShape, connection->source)
-                                         : nullptr;
-            if (shape == nullptr)
+            if (!resolved)
             {
-                resolved = false; // 前のノードで報告済みの問題の続き。重ねて報告しない
                 break;
             }
-            inputs.push_back(*shape);
         }
         if (!resolved)
         {
