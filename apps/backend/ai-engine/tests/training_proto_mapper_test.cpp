@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <functional>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <variant>
@@ -86,6 +87,21 @@ namespace
         image->set_input_height(96);
         image->mutable_task_specs()->mutable_segmentation()->set_ignore_index(255);
         return r;
+    }
+
+    // model_graph を「conv1, conv2(どちらもグラフ入力から)→ id → モデルの出力」に置き換え、合流するノードを返す。
+    // nodes は実行順と逆に並べる(id、conv1、conv2 の順)。層の種類(add / concat)は呼び出し側で設定する。
+    model::v1::Node *replaceWithMergeGraph(training::v1::StartTrainingRequest &r, const std::string &id)
+    {
+        r.mutable_model_graph()->Clear();
+        model::v1::Node *merge = r.mutable_model_graph()->add_nodes();
+        merge->set_id(id);
+        connect(merge, "x", "conv1", "y");
+        connect(merge, "x", "conv2", "y");
+        connect(addConvNode(r, "conv1"), "x", "", "");
+        connect(addConvNode(r, "conv2"), "x", "", "");
+        addOutput(r, id, "y");
+        return merge;
     }
 
     // modify で壊したリクエストが invalid_argument で拒否されるか。
@@ -216,8 +232,9 @@ int main()
 
         model::v1::Node *upsample = graph->add_nodes();
         upsample->set_id("upsample");
-        upsample->mutable_spec()->mutable_upsample()->set_upsample_mode(model::v1::UpsampleMode::UPSAMPLE_MODE_NEAREST); // 最近傍補間
-        upsample->mutable_spec()->mutable_upsample()->set_scale_factor(4);                                               // 4倍のアップサンプリング
+        // 値が渡ったことを区別できるよう、どちらも既定値(Nearest、2 倍)と違う値で送る
+        upsample->mutable_spec()->mutable_upsample()->set_upsample_mode(model::v1::UpsampleMode::UPSAMPLE_MODE_BILINEAR); // 双線形補間
+        upsample->mutable_spec()->mutable_upsample()->set_scale_factor(4);                                                // 4倍のアップサンプリング
         connect(upsample, "x", "pool", "y");                                                                             // upsample.x ← pool.y
 
         model::v1::Node *pool = graph->add_nodes();
@@ -239,6 +256,10 @@ int main()
             check(g.nodes.size() == 3 && std::holds_alternative<UpsampleSpec>(g.nodes[0].spec) &&
                       std::holds_alternative<IndexedPoolingSpec>(g.nodes[1].spec),
                   "変換(Upsample): 層の種類(Upsample / IndexedPooling)");
+            check(g.nodes.size() == 3 && std::holds_alternative<UpsampleSpec>(g.nodes[0].spec) &&
+                      std::get<UpsampleSpec>(g.nodes[0].spec).scaleFactor == 4 &&
+                      std::get<UpsampleSpec>(g.nodes[0].spec).upsampleMode == UpsampleMode::Bilinear,
+                  "変換(Upsample): scale_factor(4)と upsample_mode(BILINEAR)が渡る");
             check(g.nodes.size() == 3 && g.nodes[0].inputs.size() == 1 &&
                       g.nodes[0].inputs[0].port == "x" && g.nodes[0].inputs[0].source.nodeId == "pool" &&
                       g.nodes[0].inputs[0].source.port == "y",
@@ -283,6 +304,37 @@ int main()
         }
     }
     {
+        // Add の alpha 未指定: proto3 では 0 と区別できないので、0 は既定の 1.0(単純な和)として扱う
+        training::v1::StartTrainingRequest r = makeValidRequest();
+        replaceWithMergeGraph(r, "add")->mutable_spec()->mutable_add(); // alpha は設定しない
+        const StartTrainingCommand c = toStartTrainingCommand(r);
+        check(c.modelGraph.has_value() && std::holds_alternative<AddSpec>(c.modelGraph->getGraph().nodes[0].spec) &&
+                  std::get<AddSpec>(c.modelGraph->getGraph().nodes[0].spec).alpha == 1.0,
+              "変換(Add): alpha 未指定(0)は 1.0 として扱う");
+    }
+    {
+        // 合流のある DAG: conv1, conv2 → concat → モデルの出力。つないだ順にチャンネルが並ぶので、順番が保たれることを確かめる。
+        training::v1::StartTrainingRequest r = makeValidRequest();
+        replaceWithMergeGraph(r, "concat")->mutable_spec()->mutable_concat();
+
+        const StartTrainingCommand c = toStartTrainingCommand(r);
+        check(c.modelGraph.has_value(), "変換(Concat): 合流のあるグラフが検証を通る");
+        if (c.modelGraph.has_value())
+        {
+            const ModelGraph &g = c.modelGraph->getGraph();
+            check(g.nodes.size() == 3 && std::holds_alternative<ConcatSpec>(g.nodes[0].spec),
+                  "変換(Concat): ConcatSpec として渡る");
+            check(g.nodes.size() == 3 && g.nodes[0].inputs.size() == 2 &&
+                      g.nodes[0].inputs[0].port == "x" && g.nodes[0].inputs[0].source.nodeId == "conv1" &&
+                      g.nodes[0].inputs[1].port == "x" && g.nodes[0].inputs[1].source.nodeId == "conv2",
+                  "変換(Concat): 可変長ポート x への 2 本の接続が、送った順のまま渡る");
+            check(!c.modelGraph->getOrder().empty() && c.modelGraph->getOrder().back() == 0,
+                  "変換(Concat): concat は最後に実行される");
+            check(g.outputs.size() == 1 && g.outputs[0].nodeId == "concat" && g.outputs[0].port == "y",
+                  "変換(Concat): outputs");
+        }
+    }
+    {
         // seed: 未指定は nullopt、0 を含む指定値はそのまま渡る
         training::v1::StartTrainingRequest r = makeValidRequest();
         check(!toStartTrainingCommand(r).seed.has_value(), "変換: seed 未指定は nullopt");
@@ -320,6 +372,17 @@ int main()
                       node->set_id("pool");
                       node->mutable_spec()->mutable_pooling2d()->set_kernel_size(2); },
                   "pooling_type が UNSPECIFIED");
+    // Add の alpha は有限の数値に限る(理由まで確かめるため、メッセージで判定する)
+    check(contains(rejectionMessage([](auto &r)
+                                    { replaceWithMergeGraph(r, "add")->mutable_spec()->mutable_add()->set_alpha(
+                                          std::numeric_limits<double>::infinity()); }),
+                   "add.alpha は有限の数値にしてください"),
+          "拒否: Add の alpha が無限大");
+    check(contains(rejectionMessage([](auto &r)
+                                    { replaceWithMergeGraph(r, "add")->mutable_spec()->mutable_add()->set_alpha(
+                                          std::numeric_limits<double>::quiet_NaN()); }),
+                   "add.alpha は有限の数値にしてください"),
+          "拒否: Add の alpha が NaN");
 
     // グラフの検証(ValidatedModelGraph::create)で見つかる問題も、invalid_argument になる
     checkRejected([](auto &r)
