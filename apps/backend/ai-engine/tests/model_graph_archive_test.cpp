@@ -1,6 +1,6 @@
 // ModelGraphArchive(writeModelGraph / readModelGraph)のラウンドトリップテスト。
 //
-//   - 全 7 種の層を含む ModelGraph を archive に書き → 読み戻して構造が一致すること
+//   - 全 9 種の層を含む ModelGraph を archive に書き → 読み戻して構造が一致すること
 //   - format_version が不一致の archive は std::runtime_error になること
 //
 // libtorch の serialize を実際に通すが .pt ファイルは作らず、メモリ上の
@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include <torch/torch.h>
@@ -37,6 +38,9 @@
 namespace
 {
     int failureCount = 0;
+
+    // makeFullGraph が作るノードの数。ID は追加した順に n0 〜 n8 と付く(n6 = Upsample、n7 = Add、n8 = Concat)。
+    constexpr std::size_t kNodeCount = 9;
 
     void check(bool condition, const std::string &message)
     {
@@ -93,7 +97,14 @@ namespace
         UpsampleSpec ups;
         ups.scaleFactor = 4;
         ups.upsampleMode = UpsampleMode::Nearest;
-        graph.add(NodeSpec{ups});
+        graph.add(NodeSpec{ups}); //"n6"
+
+        AddSpec add;
+        add.alpha = 0.5;
+        graph.add(NodeSpec{add}, {NodeInput{"x", graph.lastOutput()}, NodeInput{"x", PortRef{"n6", "y"}}}); // "n7 = n6 + n6"
+
+        ConcatSpec cat;
+        graph.add(NodeSpec{cat}, {NodeInput{"x", graph.lastOutput()}, NodeInput{"x", PortRef{"n6", "y"}}}); //"n8 = n7 + n6"
 
         return graph.build();
     }
@@ -147,28 +158,37 @@ int main()
     check(modelGraphFingerprint(restored) == modelGraphFingerprint(original),
           "全フィールドが一致する (fingerprint が一致)");
 
-    // DAG の構造(ID・入力の接続・outputs)の明示チェック。直列のグラフなので、
-    // 先頭はグラフ入力(ノード ID もポート名も空)を x につなぎ、以降は直前のノードの y につなぐ。
-    check(restored.nodes.size() == 7 && restored.nodes[0].id == "n0" && restored.nodes[6].id == "n6",
+    // DAG の構造(ID・入力の接続・outputs)の明示チェック。
+    // 先頭はグラフ入力(ノード ID もポート名も空)を x につなぐ。Unpooling / Add / Concat 以外は直前のノードの y につなぎ、
+    // この 3 つは離れたノードからの線も持つ。
+    check(restored.nodes.size() == kNodeCount && restored.nodes[0].id == "n0" && restored.nodes[8].id == "n8",
           "ノード ID が復元される");
-    check(restored.nodes.size() == 7 &&
+    check(restored.nodes.size() == kNodeCount &&
               restored.nodes[0].inputs.size() == 1 && restored.nodes[0].inputs[0].port == "x" &&
               restored.nodes[0].inputs[0].source.nodeId.empty() && restored.nodes[0].inputs[0].source.port.empty(),
           "グラフ入力につなぐ接続(ノード ID もポート名も空)が復元される");
-    check(restored.nodes.size() == 7 &&
+    check(restored.nodes.size() == kNodeCount &&
               restored.nodes[3].inputs.size() == 1 &&
               restored.nodes[3].inputs[0].source.nodeId == "n2" && restored.nodes[3].inputs[0].source.port == "y",
           "ノード間の接続が復元される");
-    check(restored.outputs.size() == 1 && restored.outputs[0].nodeId == "n6" && restored.outputs[0].port == "y",
+    check(restored.outputs.size() == 1 && restored.outputs[0].nodeId == "n8" && restored.outputs[0].port == "y",
           "outputs が復元される");
-    check(restored.nodes.size() == 7 &&
+    check(restored.nodes.size() == kNodeCount &&
               restored.nodes[5].inputs.size() == 2 &&
               restored.nodes[5].inputs[1].port == "indices" &&
               restored.nodes[5].inputs[1].source.nodeId == "n3" && restored.nodes[5].inputs[1].source.port == "indices",
           "入力が 2 本あるノードの接続(離れたノードへの線)が復元される");
 
+    // nodes[8] を読む前にノード数を確かめる(&& の短絡評価で、範囲外アクセスを防ぐ)
+    check(restored.nodes.size() == kNodeCount && restored.nodes[8].inputs.size() == 2 &&
+              restored.nodes[8].inputs[0].port == "x" && restored.nodes[8].inputs[0].source.nodeId == "n7" && // 1本目: Add(n7)の y
+              restored.nodes[8].inputs[1].port == "x" && restored.nodes[8].inputs[1].source.nodeId == "n6" && // 2本目: Upsample(n6)の y
+              restored.nodes[8].inputs[1].source.port == "y",
+          "可変長ポート x への 2 本の接続が、つないだ順のまま復元される");
+
     // 代表フィールドの明示チェック(fingerprint 任せにしない)
-    if (restored.nodes.size() == 7)
+    // Concat はフィールドを持たないので、層の種類(NodeKind)が復元されることだけを確かめる。
+    if (restored.nodes.size() == kNodeCount)
     {
         const auto &conv = std::get<Conv2DSpec>(restored.nodes[0].spec);
         check(conv.outChannels == 16 && conv.kernelSize == 5 && conv.stride == 2,
@@ -188,10 +208,13 @@ int main()
         check(unp.kernelSize == 3 && unp.padding == 1 && unp.stride == 3, "UnpoolingのkernelSize,padding,strideが復元される");
         const auto &ups = std::get<UpsampleSpec>(restored.nodes[6].spec);
         check(ups.scaleFactor == 4 && ups.upsampleMode == UpsampleMode::Nearest, "UpsampleSpecのscaleFactor/enumが復元される");
+        const auto &add = std::get<AddSpec>(restored.nodes[7].spec);
+        check(add.alpha == 0.5, "AddSpec の alpha が復元される");
+        check(std::holds_alternative<ConcatSpec>(restored.nodes[8].spec), "ConcatSpec として復元される");
     }
     else
     {
-        check(false, "ノード数が 5 でないため個別フィールド検証をスキップ");
+        check(false, "ノード数が " + std::to_string(kNodeCount) + " でないため個別フィールド検証をスキップ");
     }
 
     // ---- 空グラフ ----
