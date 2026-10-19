@@ -250,6 +250,39 @@ int main()
         }
     }
     {
+        // 合流のある DAG: conv1, conv2(どちらもグラフ入力から)→ add → モデルの出力。
+        // nodes は実行順と逆に並べて送る。
+
+        training::v1::StartTrainingRequest r = makeValidRequest();
+        r.mutable_model_graph()->Clear();
+
+        model::v1::Node *add = r.mutable_model_graph()->add_nodes();
+        add->set_id("add");
+        add->mutable_spec()->mutable_add()->set_alpha(0.5);
+        connect(addConvNode(r, "conv1"), "x", "", "");
+        connect(addConvNode(r, "conv2"), "x", "", "");
+        connect(add, "x", "conv1", "y");
+        connect(add, "x", "conv2", "y");
+
+        addOutput(r, "add", "y");
+
+        const StartTrainingCommand c = toStartTrainingCommand(r);
+        check(c.modelGraph.has_value(), "変換(Add): 合流のあるグラフが検証を通る");
+        if (c.modelGraph.has_value())
+        {
+            const ModelGraph &g = c.modelGraph->getGraph();
+            check(g.nodes.size() == 3 && std::holds_alternative<AddSpec>(g.nodes[0].spec) &&
+                      std::get<AddSpec>(g.nodes[0].spec).alpha == 0.5,
+                  "変換(Add): AddSpec と alpha が渡る");
+            check(g.nodes.size() == 3 && g.nodes[0].inputs.size() == 2 &&
+                      g.nodes[0].inputs[0].port == "x" && g.nodes[0].inputs[0].source.nodeId == "conv1" &&
+                      g.nodes[0].inputs[1].port == "x" && g.nodes[0].inputs[1].source.nodeId == "conv2",
+                  "変換(Add): 可変長ポート x への 2 本の接続が、送った順のまま渡る");
+            check(!c.modelGraph->getOrder().empty() && c.modelGraph->getOrder().back() == 0,
+                  "変換(Add): add は最後に実行される");
+        }
+    }
+    {
         // seed: 未指定は nullopt、0 を含む指定値はそのまま渡る
         training::v1::StartTrainingRequest r = makeValidRequest();
         check(!toStartTrainingCommand(r).seed.has_value(), "変換: seed 未指定は nullopt");
