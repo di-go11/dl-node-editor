@@ -1,5 +1,16 @@
 #include "ModelGraphPresets.hpp"
 
+#include "training/entities/domain-objects/ModelGraph/Layers/ActivationSpec.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/BatchNormSpec.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/ConcatSpec.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/Conv2DSpec.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/IndexedPoolingSpec.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/PoolingSpec.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/UnpoolingSpec.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/UpsampleSpec.hpp"
+
+#include <string>
+
 using namespace std;
 
 namespace

@@ -570,21 +570,13 @@ TrainingConfigFile ConfigReader::readAll(const std::string &filePath)
             }
             else if (key == "model_architecture")
             {
-                if (value == "Sample")
-                {
-                    result.architecture = ModelArchitectureType::Sample;
-                }
-                else if (value == "SegNet")
+                if (value == "SegNet")
                 {
                     result.architecture = ModelArchitectureType::SegNet;
                 }
-                else if (value == "SegNetDilated")
+                else if (value == "Unet")
                 {
-                    result.architecture = ModelArchitectureType::SegNetDilated;
-                }
-                else if (value == "SegNetFullDilated")
-                {
-                    result.architecture = ModelArchitectureType::SegNetFullDilated;
+                    result.architecture = ModelArchitectureType::Unet;
                 }
                 else
                 {

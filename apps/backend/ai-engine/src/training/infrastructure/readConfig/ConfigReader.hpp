@@ -11,7 +11,7 @@ struct TrainingConfigFile
     // modelGraph は空のまま。CLI では architecture とクラス数から組み立てる(TrainingApp)。
     StartTrainingCommand command;
     // CLI 専用。GUI(gRPC)からは ModelGraph そのものが届くため使わない。
-    ModelArchitectureType architecture = ModelArchitectureType::Sample;
+    ModelArchitectureType architecture = ModelArchitectureType::SegNet;
 };
 
 class ConfigReader
