@@ -1,7 +1,9 @@
+// gRPCのproto定義から生成された型をドメインの型に変換するためのTryFrom実装群
+
 use crate::pb::capabilities::v1 as pb;
 use entities::capabilities::{Capabilities, Device, DeviceType};
 
-use crate::ConversionError;
+use super::error::ConversionError;
 
 impl TryFrom<pb::DeviceType> for DeviceType {
     type Error = ConversionError;

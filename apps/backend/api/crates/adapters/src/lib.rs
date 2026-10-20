@@ -1,7 +1,7 @@
 pub mod capabilities;
-mod error;
+pub mod training;
 
-pub use error::ConversionError;
+pub use training::GrpcTrainingProcessProvider;
 
 pub mod pb {
     pub mod capabilities {

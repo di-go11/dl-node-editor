@@ -3,8 +3,7 @@ use std::future::Future;
 use entities::capabilities::Capabilities;
 use thiserror::Error;
 
-/// ユースケースが外部に求める機能
-/// 実装はadaptersに置く
+// 使用するデバイスの種類を送る
 pub trait CapabilityProvider {
     fn fetch(&self) -> impl Future<Output = Result<Capabilities, ProviderError>> + Send;
 }

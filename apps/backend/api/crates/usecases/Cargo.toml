@@ -6,6 +6,8 @@ edition = "2024"
 [dependencies]
 entities = { version = "0.1.0", path = "../entities" }
 thiserror = "2.0.21"
+futures-core = "0.3"
 
 [dev-dependencies]
 tokio = { version = "1.53.1", features = ["macros", "rt"] }
+futures-util = "0.3"

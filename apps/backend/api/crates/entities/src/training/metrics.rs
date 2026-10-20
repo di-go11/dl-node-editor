@@ -1,10 +1,10 @@
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Metrics {
     Segmentation(SegmentationMetrics),
     Classification(ClassificationMetrics),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct SegmentationMetrics {
     pub pixel_accuracy: f64,
     pub miou: f64,
@@ -12,7 +12,7 @@ pub struct SegmentationMetrics {
     pub mean_class_accuracy: f64,
     pub per_class_accuracy: Vec<f64>,
 }
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct ClassificationMetrics {
     pub accuracy: f64,
     pub macro_f1: f64,
