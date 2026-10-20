@@ -1,6 +1,6 @@
-use adapters::GrpcCapabilityProvider;
+use adapters::capabilities::GrpcCapabilityProvider;
 use tonic::transport::Channel;
-use usecases::GetCapabilities;
+use usecases::capabilities::GetCapabilities;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

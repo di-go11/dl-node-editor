@@ -1,14 +1,19 @@
+pub mod capabilities;
 mod error;
-mod grpc_capability_provider;
-mod try_from;
 
 pub use error::ConversionError;
-pub use grpc_capability_provider::GrpcCapabilityProvider;
 
 pub mod pb {
     pub mod capabilities {
         pub mod v1 {
             tonic::include_proto!("capabilities.v1");
+        }
+    }
+    // モジュールの入れ子は proto の package(model.v1 / training.v1)と同じにする。
+    // 生成された training.v1 のコードは、ModelGraph を super::super::model::v1 という相対パスで参照するため。
+    pub mod model {
+        pub mod v1 {
+            tonic::include_proto!("model.v1");
         }
     }
     pub mod training {

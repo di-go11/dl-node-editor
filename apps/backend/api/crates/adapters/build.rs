@@ -6,6 +6,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .compile_protos(
             &[
                 format!("{proto_dir}/capabilities.proto"),
+                // training.proto が import する(StartTrainingRequest.model_graph)。
+                // 明示しておくと、model_graph.proto だけを変えたときも再ビルドされる。
+                format!("{proto_dir}/model_graph.proto"),
                 format!("{proto_dir}/training.proto"),
             ],
             &[proto_dir.to_string()],
