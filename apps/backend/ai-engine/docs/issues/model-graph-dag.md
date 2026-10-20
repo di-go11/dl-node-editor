@@ -342,7 +342,7 @@ GUI で自由に組んだグラフの間違いを、学習を始める前に見�
 
 - 各層ごとに: entities の `*Params`、`LayerKind`(末尾に 7, 8, 9 を追加)、`LayersParamsFields`、`LayerPorts`、形状の規則、`Torch*Layer`、`TorchLayerBuilder`、proto の `LayerConfig`、mapper、テスト
 - `ModelGraphArchive` の `static_assert` の要素数を更新する。format は v3 のまま(層の種類が増えるだけで、レイアウトは変わらないため)
-- `ModelArchitectureType` に `UNetSmall` を追加する(`.config` の `model_architecture` で選べる)。encoder 3 段 + decoder 3 段で、concat の skip connection を使う小さい構成
+- `ModelArchitectureType` に `Unet` を追加する(`.config` の `model_architecture` で選べる)。encoder 3 段 + decoder 3 段で、concat の skip connection を使う小さい構成
 - 確認: CPU で U-Net を 1 エポック学習し、checkpoint の保存と再開ができること。GPU サーバーでも 1 回動かす
 
 **完了条件**: U-Net が CLI と grpcurl の両方で学習できる。
@@ -351,7 +351,7 @@ GUI で自由に組んだグラフの間違いを、学習を始める前に見�
 
 - `model-config-and-training-rpc.md`: 「config スキーマの表現方針」の節を、この ADR への参照に置き換える
 - `start-training-request-contract.md`: 「層のつながり」「Pooling / Unpooling の対応」「入力サイズ」の確認項目を、3 の形状推論で完了済みにする。Rust 側の構造チェックの項目を追加する
-- `.config` の `model_architecture` のコメントに、`SegNetDilated` / `SegNetFullDilated` / `UNetSmall` を追記する
+- `.config` の `model_architecture` のコメントを、残したプリセット(`SegNet` / `Unet`)に合わせる(`Sample` / `SegNetDilated` / `SegNetFullDilated` は削除した)
 - `開発ロードマップ.md` の「model config のグラフ表現」を更新する
 
 ### 7〜9. このブランチの後(別の issue)

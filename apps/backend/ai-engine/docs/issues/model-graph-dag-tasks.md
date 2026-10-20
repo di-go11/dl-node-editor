@@ -191,7 +191,7 @@ proto の定義は完了している。残りは C++ 側の対応。
 層ごとに: `Layers/*Spec.hpp`、`ModelGraph/NodeSpec.hpp` の include と variant(末尾に追加)、`ModelGraph/NodeSpecFields.hpp`(`NodeKind` は末尾に追加、`nodeKindOf`、`visitSpecFields`)、形状の規則、`Torch*Layer`、`TorchLayerBuilder`、proto の `NodeSpec`、mapper、テスト。ポートの定義は `NodePorts.hpp` に書いてある。`ModelGraphArchive` の `static_assert` の要素数も更新する。
 
 - [ ] **第 1 段(分岐と合流を動かす)**: Add、Concat、Upsample
-  - `ModelArchitectureType` に `UNetSmall` を追加し(encoder 3 段 + decoder 3 段、concat の skip connection)、CLI と grpcurl の両方で学習できることを確認する
+  - `ModelArchitectureType` に `Unet` を追加し(encoder 3 段 + decoder 3 段、concat の skip connection)、CLI と grpcurl の両方で学習できることを確認する
 - [ ] 第 2 段(必要になったら): ConvTranspose2D、AdaptiveAvgPool、Dropout、Flatten、GroupNorm
 - [ ] 第 3 段(Self-Attention / Transformer): PatchEmbedding、TokensToFeatureMap、PositionalEncoding、LayerNorm、SelfAttention、MultiHeadAttention、TransformerEncoderLayer、TransformerDecoderLayer
   - 前提: 形状推論でトークン列 `(L, D)` を扱えること、`PortKind::Tokens` による接続の確認
@@ -203,7 +203,7 @@ proto の定義は完了している。残りは C++ 側の対応。
 - [ ] `model-graph-dag.md`: 置き場所とブランチ名を実際の構成に合わせる(上の「ADR から変わった点」)
 - [ ] `model-config-and-training-rpc.md`: 「config スキーマの表現方針」の節を ADR への参照に置き換える
 - [ ] `start-training-request-contract.md`: 「層のつながり」「Pooling / Unpooling の対応」「入力サイズ」の確認項目を、C の形状推論で完了済みにする。proto の例を `model.v1` と `nodes` の形に直す
-- [ ] `.config` の `model_architecture` のコメントに `SegNetDilated` / `SegNetFullDilated` / `UNetSmall` を追記する
+- [x] `.config` の `model_architecture` のコメントを、残したプリセット(`SegNet` / `Unet`)に合わせる(`Sample` / `SegNetDilated` / `SegNetFullDilated` は削除した)
 - [ ] `開発ロードマップ.md` の「model config のグラフ表現」を更新する
 - [ ] `add-ml-component` スキルの手順に、`NodePorts.hpp` への追加を足す
 
