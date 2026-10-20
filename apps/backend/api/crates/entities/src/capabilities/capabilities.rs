@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use thiserror::Error;
 
-use crate::{Device, DeviceType};
+use super::{Device, DeviceType};
 
 #[derive(Debug, PartialEq, Eq, Error)]
 pub enum CapabilitiesError {

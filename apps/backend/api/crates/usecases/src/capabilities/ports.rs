@@ -1,6 +1,6 @@
 use std::future::Future;
 
-use entities::Capabilities;
+use entities::capabilities::Capabilities;
 use thiserror::Error;
 
 /// ユースケースが外部に求める機能

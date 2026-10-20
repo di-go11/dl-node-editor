@@ -1,6 +1,6 @@
-use entities::Capabilities;
+use entities::capabilities::Capabilities;
 
-use crate::{CapabilityProvider, ProviderError};
+use super::{CapabilityProvider, ProviderError};
 
 pub struct GetCapabilities<P: CapabilityProvider> {
     provider: P,
@@ -18,7 +18,7 @@ impl<P: CapabilityProvider> GetCapabilities<P> {
 
 #[cfg(test)]
 mod tests {
-    use entities::{Device, DeviceType};
+    use entities::capabilities::{Device, DeviceType};
 
     use super::*;
 

@@ -1,6 +1,6 @@
-use entities::Capabilities;
+use entities::capabilities::Capabilities;
 use tonic::transport::Channel;
-use usecases::{CapabilityProvider, ProviderError};
+use usecases::capabilities::{CapabilityProvider, ProviderError};
 
 use crate::pb::capabilities::v1::capabilities_client::CapabilitiesClient;
 

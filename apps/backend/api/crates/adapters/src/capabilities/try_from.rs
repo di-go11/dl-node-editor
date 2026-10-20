@@ -1,5 +1,5 @@
 use crate::pb::capabilities::v1 as pb;
-use entities::{Capabilities, Device, DeviceType};
+use entities::capabilities::{Capabilities, Device, DeviceType};
 
 use crate::ConversionError;
 
@@ -112,7 +112,7 @@ mod deviceinfo_to_device_tests {
 #[cfg(test)]
 mod capabilities_response_to_capabilities_tests {
     use super::*;
-    use entities::CapabilitiesError;
+    use entities::capabilities::CapabilitiesError;
 
     fn device_info(device_type: pb::DeviceType, index: u32) -> pb::DeviceInfo {
         pb::DeviceInfo {
