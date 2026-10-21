@@ -33,7 +33,8 @@ mod tests {
 
     impl TrainingProcessProvider for FakeProvider {
         async fn fetch(&self) -> Result<TrainingProcess, TrainingProcessProviderError> {
-            self.result.clone()
+            self.result.clone() // resultは参照値. 戻り値では実値を求めているが、参照のままでは返せない。そのため、clone()をつかってコピーをかける。
+            // 必須事項. TrainingProcessとTrainingProcessProviderErrorにCloneのアトリビュートを付ける。
         }
     }
     fn running_status() -> TrainingProcess {

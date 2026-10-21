@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use super::{Metrics, TrainingJobStatus};
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct TrainingProcess {
     pub epoch: u32,
     pub train_loss: f64,
