@@ -25,7 +25,7 @@ mod tests {
         JobId, Metrics, SegmentationMetrics, TrainingJobStatus, TrainingProcess,
     };
     use futures_util::StreamExt;
-    use std::time::Duration;
+    use std::{assert_eq, time::Duration};
 
     use super::*;
 
@@ -63,7 +63,7 @@ mod tests {
                 miou: 0.7,
                 fw_iou: 0.8,
                 mean_class_accuracy: 0.75,
-                per_class_accuracy: vec![0.95, 0.6, 0.7],
+                per_class_iou: vec![0.95, 0.6, 0.7],
             })),
             epoch_elapsed_time: Duration::from_secs(10),
             total_elapsed_time: Duration::from_secs(10),
@@ -73,6 +73,24 @@ mod tests {
     fn server_unavailable() -> TrainingProcessProviderError {
         let errormessage: String = "TimeOut".to_string();
         TrainingProcessProviderError::Unavailable(errormessage)
+    }
+
+    fn running_status_epoch2() -> TrainingProcess {
+        TrainingProcess {
+            epoch: 2,
+            train_loss: 0.2,
+            val_loss: 0.3,
+            status: TrainingJobStatus::Running,
+            metrics: Some(Metrics::Segmentation(SegmentationMetrics {
+                pixel_accuracy: 0.9,
+                miou: 0.7,
+                fw_iou: 0.8,
+                mean_class_accuracy: 0.75,
+                per_class_iou: vec![0.95, 0.6, 0.7],
+            })),
+            epoch_elapsed_time: Duration::from_secs(10),
+            total_elapsed_time: Duration::from_secs(10),
+        }
     }
     #[tokio::test] //tokioが1つのランタイムを作り,中の.awaitを実行する。
 
@@ -92,5 +110,26 @@ mod tests {
         });
         let result = usecase.execute(&job_id()).await;
         assert_eq!(result.err(), Some(server_unavailable()));
+    }
+
+    #[tokio::test]
+    async fn passes_through_error_in_the_middle_of_stream() {
+        let usecase = GetTrainingProcess::new(FakeProvider {
+            result: Ok(vec![
+                Ok(running_status_good()),
+                Ok(running_status_epoch2()),
+                Err(server_unavailable()),
+            ]),
+        });
+        let stream = usecase.execute(&job_id()).await.unwrap();
+        let items: Vec<_> = stream.collect().await;
+        assert_eq!(
+            items,
+            vec![
+                Ok(running_status_good()),
+                Ok(running_status_epoch2()),
+                Err(server_unavailable()),
+            ]
+        );
     }
 }
