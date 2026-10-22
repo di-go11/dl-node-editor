@@ -409,7 +409,7 @@ type Issue = {
 
 | フェーズ | 内容 | 完了条件 |
 |---|---|---|
-| 0. 環境構築 | Node.js の開発用コンテナを追加する(下の注記を参照)。`apps/frontend/` に Vite + React + TS を用意し、ESLint、Prettier、Vitest、MSW、dependency-cruiser を設定する。6章の内容を `openapi.yaml` に書き起こし、型生成を npm スクリプトにする | コンテナ内で `npm run dev` の画面がホストのブラウザで開き、`npm test`、`npm run lint`、`npm run gen:api`(型生成)が通る |
+| 0. 環境構築 | `.devcontainer/` の構成に合わせて、フロント用の Dockerfile、devcontainer.json、compose サービスを作る。ユーザーにコンテナを生成してもらい、そのコンテナの中で作業する(下の注記を参照)。`apps/frontend/` に Vite + React + TS を用意し、ESLint、Prettier、Vitest、MSW、dependency-cruiser を設定する。6章の内容を `openapi.yaml` に書き起こし、型生成を npm スクリプトにする | コンテナ内で `npm run dev` の画面がホストのブラウザで開き、`npm test`、`npm run lint`、`npm run gen:api`(型生成)が通る |
 | 1. ドメイン層 | モデルグラフの型、ノードカタログ(MVP の10種類 + Input / Output)、整合性チェック(フロント側)、保存ファイルの型と変換を作る | 単体テストが通る。`test_segnet_dag.json` の `model_graph` を読み込んで保存し直すと、同じ内容になる(往復テスト) |
 | 2. エディタ画面の骨格 | ヘッダ、サイドバー、キャンバス、ログの配置。ドラッグ&ドロップでノードを置く。ポートの色分けと接続判定。右側のプロパティパネルでのパラメータ編集(カタログの定義からフォームを自動で組み立てる) | 手で SegNet と同等のグラフを組み立てられる |
 | 3. 条件の切り替え | データ形式と手法によるサイドバーの絞り込み。合わないノードの赤色表示、⚠ マーク、ログへの警告 | 2D から 1D へ切り替えると、置いたノードが赤色になり、ログに警告が出る |
@@ -419,7 +419,53 @@ type Issue = {
 
 **フェーズ0の注記:フロント用コンテナ**
 
-今の開発コンテナ(`.devcontainer/docker-compose.yml`)には Node.js がない。そこで、既存の `ai-engine-dev` / `api-dev` と同じ形でフロント用のサービスを追加する。これは既存の構成ファイルの変更と、新しいファイルの作成を伴う。**設計提示の段階で、必ずユーザーの承認を得ること。**
+今の開発コンテナには Node.js がない。そこで、**既存の `.devcontainer/` の構成と同じ形で**フロント用のコンテナを追加する。これは既存の構成ファイルの変更と、新しいファイルの作成を伴う。**設計提示の段階で、必ずユーザーの承認を得ること。**
+
+#### 既存の構成(この形にそろえる)
+
+```
+.devcontainer/
+├── Dockerfile               # ai-engine-dev 用
+├── Dockerfile.rust          # api-dev 用
+├── docker-compose.yml       # 全サービスの定義(ローカル開発)
+├── docker-compose.server.yml
+├── ai-engine/devcontainer.json   # サービスごとの VS Code Dev Container 設定
+└── api/devcontainer.json
+```
+
+#### 追加・変更するもの
+
+```
+.devcontainer/
+├── Dockerfile.web           # 新規:web-dev 用
+├── docker-compose.yml       # 変更:web-dev サービスを追加
+└── web/devcontainer.json    # 新規:web-dev 用の Dev Container 設定
+```
+
+**作業の順序(厳守)**
+
+1. 上の3ファイルの内容を提示し、ユーザーの承認を得る。
+2. ファイルを作成・編集する。
+3. **コンテナの生成はユーザーが行う。** VS Code の「Dev Containers: Reopen in Container」で `web` を選んでもらう。今のコンテナの中からはコンテナを生成できないためである。手順をユーザーに案内し、生成できたことを確認してから次へ進む。
+4. 生成された `web-dev` コンテナの中で、`apps/frontend/` の雛形の作成(`npm create vite` など)を行う。**Node.js がないコンテナで、雛形の作成を先に行ってはならない。**
+
+`docker-compose.server.yml` にも web-dev を追加するかどうかは、ユーザーに確認すること。
+
+**`web/devcontainer.json` の内容**:既存の `api/devcontainer.json` の形と、コメントの書き方(各設定の横に理由を書く)にそろえる。
+
+| 項目 | 値 |
+|---|---|
+| name | `Web Frontend Dev` |
+| dockerComposeFile / service | `../docker-compose.yml` / `web-dev` |
+| runServices | `["web-dev"]`(このサービスだけを起動する) |
+| shutdownAction | `none`(ウィンドウを閉じても、ほかのサービスを止めない) |
+| workspaceFolder | `/workspaces/apps/frontend` |
+| forwardPorts | `[5173]`(Vite の開発サーバー) |
+| 拡張機能 | `dbaeumer.vscode-eslint`、`esbenp.prettier-vscode`、`vitest.explorer`、`redhat.vscode-yaml`(openapi.yaml の編集用)、`mhutchie.git-graph`、`anthropic.claude-code` |
+| settings | 保存時に Prettier で整形する。TypeScript はワークスペースの版を使う |
+| remoteUser | `root` |
+
+**`web-dev` サービスと `Dockerfile.web` の内容**:
 
 | 項目 | 内容 | 理由 |
 |---|---|---|
