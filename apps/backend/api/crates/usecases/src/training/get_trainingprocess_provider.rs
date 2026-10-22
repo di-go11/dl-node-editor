@@ -1,4 +1,4 @@
-use entities::training::TrainingProcess;
+use entities::training::JobId;
 
 use super::{TrainingProcessProvider, TrainingProcessProviderError};
 
@@ -11,31 +11,46 @@ impl<P: TrainingProcessProvider> GetTrainingProcess<P> {
         Self { provider }
     }
 
-    pub async fn execute(&self) -> Result<TrainingProcess, TrainingProcessProviderError> {
-        self.provider.fetch().await
+    pub async fn execute(
+        &self,
+        job_id: &JobId,
+    ) -> Result<P::ProgressStream, TrainingProcessProviderError> {
+        self.provider.stream_progress(job_id).await
     }
 }
 
 #[cfg(test)]
-
 mod tests {
+    use entities::training::{
+        JobId, Metrics, SegmentationMetrics, TrainingJobStatus, TrainingProcess,
+    };
+    use futures_util::StreamExt;
     use std::time::Duration;
-
-    use entities::training::{Metrics, SegmentationMetrics, TrainingJobStatus};
 
     use super::*;
 
     // テスト用の偽Provider。 c++サーバーを必要としない。
     // TrainingPRocessProviderを実装した偽物
     struct FakeProvider {
-        result: Result<TrainingProcess, TrainingProcessProviderError>,
+        result: Result<
+            Vec<Result<TrainingProcess, TrainingProcessProviderError>>,
+            TrainingProcessProviderError,
+        >,
     }
 
     impl TrainingProcessProvider for FakeProvider {
-        async fn fetch(&self) -> Result<TrainingProcess, TrainingProcessProviderError> {
-            self.result.clone() // resultは参照値. 戻り値では実値を求めているが、参照のままでは返せない。そのため、clone()をつかってコピーをかける。
-            // 必須事項. TrainingProcessとTrainingProcessProviderErrorにCloneのアトリビュートを付ける。
+        type ProgressStream = futures_util::stream::Iter<
+            std::vec::IntoIter<Result<TrainingProcess, TrainingProcessProviderError>>,
+        >;
+        async fn stream_progress(
+            &self,
+            _job_id: &JobId,
+        ) -> Result<Self::ProgressStream, TrainingProcessProviderError> {
+            self.result.clone().map(futures_util::stream::iter)
         }
+    }
+    fn job_id() -> JobId {
+        JobId::new("1").unwrap()
     }
     fn running_status_good() -> TrainingProcess {
         TrainingProcess {
@@ -61,20 +76,21 @@ mod tests {
     }
     #[tokio::test] //tokioが1つのランタイムを作り,中の.awaitを実行する。
 
-    async fn returns_trainingprocess_from_provider_o() {
+    async fn returns_trainingprocess_from_provider() {
         let usecase = GetTrainingProcess::new(FakeProvider {
-            result: Ok(running_status_good()),
+            result: Ok(vec![Ok(running_status_good())]),
         });
-        let result = usecase.execute().await;
-        assert_eq!(result, Ok(running_status_good()));
+        let stream = usecase.execute(&job_id()).await.unwrap(); // 外側にあるResultを展開して中のストリームを取り出す。
+        let items: Vec<_> = stream.collect().await;
+        assert_eq!(items, vec![Ok(running_status_good())]);
     }
 
     #[tokio::test]
-    async fn returns_trainingprocess_from_provider_e() {
+    async fn return_error_when_provider_is_unavailable() {
         let usecase = GetTrainingProcess::new(FakeProvider {
             result: Err(server_unavailable()),
         });
-        let result = usecase.execute().await;
-        assert_eq!(result, Err(server_unavailable()));
+        let result = usecase.execute(&job_id()).await;
+        assert_eq!(result.err(), Some(server_unavailable()));
     }
 }

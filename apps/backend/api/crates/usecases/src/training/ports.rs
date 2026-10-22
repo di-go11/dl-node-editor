@@ -1,14 +1,16 @@
-use std::future::Future;
+use futures_core::Stream;
 
-use entities::training::TrainingProcess;
+use entities::training::{JobId, TrainingProcess};
 use thiserror::Error;
 
-//
-
 pub trait TrainingProcessProvider {
-    fn fetch(
+    type ProgressStream: Stream<Item = Result<TrainingProcess, TrainingProcessProviderError>> + Send; // c++から何度も届く通信(Stream) ItemはStreamが持つ関連型で通信で届く1件ごとの型をvariantなどで決めることができる今回のように。
+    // Sendはその値を別スレッドに移しても安全であるということを示す。c++では原則スレッド内のものを移すことは禁止だったがこっちではOK
+    // typeはエイリアスみたいなもの. このtraitを実装しているものでその型が定義される、
+    fn stream_progress(
         &self,
-    ) -> impl Future<Output = Result<TrainingProcess, TrainingProcessProviderError>> + Send;
+        job_id: &JobId,
+    ) -> impl Future<Output = Result<Self::ProgressStream, TrainingProcessProviderError>> + Send; // C++サーバーとのストリームを開くための関数(一回の通信だからFuture) OutputはFutureによる何らかのアクションで届く値こっちもvariantで動的に決めることができる。
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]

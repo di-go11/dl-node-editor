@@ -880,7 +880,7 @@ fn main() {
 }
 ```
 
-### ライブラリ
+### 内部クレート
 
 #### future
 
@@ -903,6 +903,23 @@ Rustの非同期処理の基盤ライブラリ。`Future`トレイトや`Stream`
 
 - `StreamExt`トレイトを提供する。`.next().await`、`.map()`、`.filter()`、`.collect()`などStreamを実際に消費、加工するための道具
 - `Iteraotr`に対する`map`や`Collect`に相当するもの。
+
+### 外部クレート
+
+#### tokio
+
+Rustの`async`や`await`を実際に動かすための非同期ランタイム。Rust本体と標準クレートに搭載されているのは、`async fn`と`Future`という「非同期処理の書き方」のみ。実行機能はない。tokioはスケジューラを担う。
+
+##### 機能
+
+|機能|例|用途|
+|---|---|---|
+|ランタイム起動|`#[tokio::main]`|`main`をasyncにする|
+|テスト|`#[tokio:test]`|asyncなテスト関数を書く|
+|タスク生成|`tokio::spawn(async {...})`|軽量な並行タスクを起動する|
+|時間|`tokio::time::sleep`,`timeout`|非同期の待機やタイムアウト|
+|同期|`tokio::sync::{Mutex,mpsc,broadcast}`|タスク間の通信やロック|
+|I/O|`tokio::net::TcpListener`|ブロックしないネットワークI/O|
 
 ## Cargo
 
