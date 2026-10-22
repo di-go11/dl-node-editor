@@ -24,7 +24,7 @@ impl From<pb::SegmentationMetrics> for SegmentationMetrics {
             miou: value.miou,
             fw_iou: value.fw_iou,
             mean_class_accuracy: value.mean_class_accuracy,
-            per_class_accuracy: value.per_class_iou,
+            per_class_iou: value.per_class_iou,
         }
     }
 }
@@ -34,7 +34,7 @@ impl From<pb::ClassificationMetrics> for ClassificationMetrics {
         Self {
             accuracy: value.accuracy,
             macro_f1: value.macro_f1,
-            per_class_f1: value.per_class_accuracy,
+            per_class_accuracy: value.per_class_accuracy,
         }
     }
 }
@@ -232,8 +232,7 @@ mod metrics_tests {
                 miou: 0.7,
                 fw_iou: 0.8,
                 mean_class_accuracy: 0.75,
-                // 現状の対応付け(proto の per_class_iou → per_class_accuracy)。指標名の不一致は要検討
-                per_class_accuracy: vec![0.6, 0.8],
+                per_class_iou: vec![0.6, 0.8],
             })),
         );
     }
@@ -249,8 +248,7 @@ mod metrics_tests {
             Some(Metrics::Classification(ClassificationMetrics {
                 accuracy: 0.95,
                 macro_f1: 0.85,
-                // 現状の対応付け(proto の per_class_accuracy → per_class_f1)。指標名の不一致は要検討
-                per_class_f1: vec![0.9, 1.0],
+                per_class_accuracy: vec![0.9, 1.0],
             })),
         );
     }
