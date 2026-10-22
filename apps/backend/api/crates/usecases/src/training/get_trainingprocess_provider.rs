@@ -37,7 +37,7 @@ mod tests {
             // 必須事項. TrainingProcessとTrainingProcessProviderErrorにCloneのアトリビュートを付ける。
         }
     }
-    fn running_status() -> TrainingProcess {
+    fn running_status_good() -> TrainingProcess {
         TrainingProcess {
             epoch: 1,
             train_loss: 0.2,
@@ -54,11 +54,27 @@ mod tests {
             total_elapsed_time: Duration::from_secs(10),
         }
     }
-    #[tokio::test]
 
-    async fn returns_trainingprocess_from_provider() {
+    fn server_unavailable() -> TrainingProcessProviderError {
+        let errormessage: String = "TimeOut".to_string();
+        TrainingProcessProviderError::Unavailable(errormessage)
+    }
+    #[tokio::test] //tokioが1つのランタイムを作り,中の.awaitを実行する。
+
+    async fn returns_trainingprocess_from_provider_o() {
         let usecase = GetTrainingProcess::new(FakeProvider {
-            result: Ok(running_status()),
+            result: Ok(running_status_good()),
         });
+        let result = usecase.execute().await;
+        assert_eq!(result, Ok(running_status_good()));
+    }
+
+    #[tokio::test]
+    async fn returns_trainingprocess_from_provider_e() {
+        let usecase = GetTrainingProcess::new(FakeProvider {
+            result: Err(server_unavailable()),
+        });
+        let result = usecase.execute().await;
+        assert_eq!(result, Err(server_unavailable()));
     }
 }
