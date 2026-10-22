@@ -2,7 +2,10 @@
 
 // training_config
 #[derive(Debug, PartialEq, Clone)]
+use super::data_spec::DataSpec;
+
 pub struct TrainingConfig {
+    pub model_name: String,
     pub epoch: u64,
     pub batch: u64,
     pub device: String,
@@ -11,6 +14,8 @@ pub struct TrainingConfig {
     pub loss: Loss,
     pub resume_from: Option<String>,
     pub seed: Option<u64>,
+    pub data_spec: DataSpec,
+    pub save_last_every: u32,
 }
 
 // Optimizer

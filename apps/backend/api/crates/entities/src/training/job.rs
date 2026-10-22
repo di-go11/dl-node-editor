@@ -11,7 +11,7 @@ pub struct JobId(String);
 
 impl JobId {
     pub fn new(value: impl Into<String>) -> Result<Self, JobIdError> {
-        let value = value.into();
+        let value = value.into(); // valueの型推論みたいな感じ。
         if value.is_empty() {
             return Err(JobIdError::Empty);
         }
