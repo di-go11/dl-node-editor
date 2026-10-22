@@ -1,0 +1,28 @@
+{
+  "name": "Web Frontend Dev",
+  "dockerComposeFile": "../docker-compose.yml",
+  "service": "web-dev",
+  "runServices": ["web-dev"], // このサービスだけ起動する(未指定だと compose の全サービスが起動する)
+  "shutdownAction": "none", // ウィンドウを閉じても compose 全体を止めない(既定の stopCompose だと ai-engine-dev / api-dev まで止まる)
+  "workspaceFolder": "/workspaces/apps/frontend",
+  "forwardPorts": [5173], // Vite の開発サーバー。compose の ports 公開に加え、VS Code 側でも転送を明示する
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint", // ESLint の診断をエディタ上にインライン表示する
+        "esbenp.prettier-vscode", // Prettier による整形。保存時整形(下の settings)で使う
+        "vitest.explorer", // テストをエディタのサイドバーから個別に実行・デバッグできる
+        "redhat.vscode-yaml", // openapi.yaml の編集用。OpenAPI のスキーマで補完と検証が効く
+        "mhutchie.git-graph",
+        "anthropic.claude-code"
+      ],
+      "settings": {
+        "editor.formatOnSave": true, // 保存時に自動整形する(既存の api/devcontainer.json と同じ方針)
+        "editor.defaultFormatter": "esbenp.prettier-vscode", // 整形は Prettier に任せ、ESLint は規則違反の検出に専念させる(責務の分離)
+        "typescript.tsdk": "node_modules/typescript/lib", // VS Code 同梱の TS ではなく、package.json が依存している版を使う(エディタとビルドでコンパイラをそろえる)
+        "typescript.enablePromptUseWorkspaceTsdk": true // 上の tsdk を使うかを VS Code に確認させる
+      }
+    }
+  },
+  "remoteUser": "root"
+}

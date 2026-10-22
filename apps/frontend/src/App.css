@@ -1,0 +1,28 @@
+/* 仮置きのスタイル。フェーズ2で画面を作るときに置き換える。 */
+.placeholder {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 3rem 1.5rem;
+  line-height: 1.7;
+}
+
+.placeholder h1 {
+  font-size: 1.5rem;
+  margin: 0 0 0.75rem;
+}
+
+.placeholder dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.25rem 1rem;
+  margin-top: 2rem;
+  font-size: 0.875rem;
+}
+
+.placeholder dt {
+  font-weight: 600;
+}
+
+.placeholder dd {
+  margin: 0;
+}

@@ -1,0 +1,1028 @@
+openapi: 3.1.0
+
+info:
+  title: Model Editor Backend API
+  version: 0.1.0
+  description: |
+    ノードエディタ(React)と Rust の HTTP API の間の契約。**このファイルが契約の正本である。**
+
+    - フロントの型は `openapi-typescript` でこのファイルから生成する(`npm run gen:api`)。
+      生成物(`apps/frontend/src/api/schema.d.ts`)を手で編集してはならない。
+    - Rust 側も、このファイルに従って実装する。
+    - 変更するときはフロント・Rust の双方に影響するため、必ず合意の上で行う。
+
+    ## JSON の表記規則(重要)
+
+    Rust は受け取った JSON を protobuf のメッセージに変換して C++ へ gRPC で渡す。
+    そのため JSON の表記は `apps/backend/ai-engine/modelconfigs/test_segnet_dag.json` にそろえる。
+
+    1. フィールド名は proto の名前のまま snake_case(`in_channels` など)。
+    2. enum は proto の名前の文字列(`"ACTIVATION_TYPE_RELU"` など)。数値は使わない。
+    3. protobuf の oneof は、選んだフィールド名をキーに持つオブジェクト 1 つとして表す。
+       例: `"optimizer": { "adam": { "learning_rate": 0.001 } }`
+       このスキーマでは minProperties / maxProperties を 1 にし additionalProperties を false にして
+       「既知のキーのうちちょうど 1 つだけを持つ」と表現している。
+       OpenAPI の oneOf キーワードは「複数のスキーマのどれか 1 つに適合する」という検証の意味で、
+       protobuf の oneof(どのフィールドが入っているかというデータの形)とは別の概念なので使わない。
+    4. 数値は JSON の数値として書く(proto の int64 を文字列にする protobuf 標準の JSON 表記は使わない)。
+       test_segnet_dag.json がそうなっているためである。
+    5. 送る側は、既定値と同じ値になる項目も省略せずに埋める(`"padding": 0` など)。
+       省略を許すと受け取り側の既定値に依存して解釈が揺れるためである。
+       例外は、未指定と 0 を区別する必要がある seed だけ。
+
+    ## 対応する proto
+
+    | このファイルのスキーマ | proto |
+    |---|---|
+    | ModelGraph ほか | `apps/backend/proto/model_graph.proto` |
+    | StartTrainingRequest ほか | `apps/backend/proto/training.proto` |
+    | CapabilitiesResponse ほか | `apps/backend/proto/capabilities.proto` |
+
+servers:
+  - url: /api/v1
+    description: フロントからは同一オリジンの相対パスで呼ぶ(開発時は Vite の proxy、本番は同一ホスト)
+
+tags:
+  - name: capabilities
+    description: 実行環境(使えるデバイス)の取得
+  - name: model-graphs
+    description: モデル構造の検証
+  - name: trainings
+    description: 学習の開始・進捗・停止
+
+paths:
+  /capabilities:
+    get:
+      tags: [capabilities]
+      operationId: getCapabilities
+      summary: 使えるデバイスの一覧を取得する
+      description: |
+        C++ の Capabilities.GetCapabilities をそのまま中継する。
+        学習設定画面の device の選択肢と、エディタ画面ヘッダのデバイス表示に使う。
+      responses:
+        '200':
+          description: 取得できた
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CapabilitiesResponse'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+
+  /model-graphs/validate:
+    post:
+      tags: [model-graphs]
+      operationId: validateModelGraph
+      summary: モデル構造をサーバー側で検証する
+      description: |
+        C++ 側の検証を呼び、見つかった問題をすべて位置付きで返す
+        (model_graph.proto 冒頭のコメントを参照)。
+
+        フロント側でも entity 層の純粋関数で同じ検証を行うが、本当に実行できるかを
+        知っているのは C++ 側なので、実行前にここで確認する。
+
+        ok が false でも HTTP は 200 を返す。「検証が正常に行われ、その結果が NG だった」
+        という業務上の結果であり、HTTP としての失敗ではないためである。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ValidateModelGraphRequest'
+      responses:
+        '200':
+          description: 検証を実行した(ok が false でもこのステータス)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidateModelGraphResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+
+  /trainings:
+    post:
+      tags: [trainings]
+      operationId: startTraining
+      summary: 学習を開始する
+      description: |
+        training.proto の StartTrainingRequest と同じ形の JSON を送る。
+        実例は apps/backend/ai-engine/modelconfigs/test_segnet_dag.json。
+        受理されると job_id が返り、進捗は /trainings/{job_id}/progress で購読する。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartTrainingRequest'
+      responses:
+        '202':
+          description: |
+            受理した。学習は非同期に始まるので 200 ではなく 202 Accepted を返す
+            (この応答の時点ではまだ完了していない)。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StartTrainingResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+
+  /trainings/{job_id}/progress:
+    get:
+      tags: [trainings]
+      operationId: streamProgress
+      summary: 学習の進捗を購読する(Server-Sent Events)
+      description: |
+        gRPC のサーバーストリーミング StreamProgress を SSE に写したもの。
+        進捗はサーバーからクライアントへの一方向の連続通知なので、双方向を扱える
+        WebSocket は使わない。
+
+        - 各イベントの data は StreamProgressResponse の JSON 1 件(1 行)である。
+        - イベント名(event: 行)は付けない。クライアントは既定の message を受け取る。
+        - status が TRAINING_STATUS_COMPLETED / FAILED / STOPPED のイベントを送ったら、
+          サーバーは接続を閉じる。クライアントも EventSource.close() を呼ぶ。
+        - openapi-fetch は SSE を扱えないため、フロントは EventSource を使い、
+          受け取った data をこのスキーマから生成した型として解釈する。
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: ストリームを開始した
+          content:
+            text/event-stream:
+              schema:
+                $ref: '#/components/schemas/StreamProgressResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /trainings/{job_id}/stop:
+    post:
+      tags: [trainings]
+      operationId: stopTraining
+      summary: 学習を停止する
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: 停止要求を受け付けた
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StopTrainingResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+
+components:
+  parameters:
+    JobId:
+      name: job_id
+      in: path
+      required: true
+      description: /trainings の応答で返る学習ジョブの識別子
+      schema:
+        type: string
+        minLength: 1
+
+  responses:
+    BadRequest:
+      description: リクエストの内容が不正
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: 指定した job_id が見つからない
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    UpstreamError:
+      description: 学習エンジン(C++ / gRPC)との通信に失敗した
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    # ------------------------------------------------------------
+    # 共通
+    # ------------------------------------------------------------
+
+    Issue:
+      type: object
+      description: |
+        検証で見つかった 1 件の問題。node_id と port は、ログの行をクリックしたときに
+        該当ノードを選択してフォーカスするために使う。
+      required: [severity, message]
+      properties:
+        severity:
+          type: string
+          enum: [error, warning]
+          description: error は実行を止める。warning は実行を止めない
+        node_id:
+          type: string
+          description: 該当するノードの ID(グラフ全体の問題なら省略)
+        port:
+          type: string
+          description: 該当するポート名(ポートに紐づかない問題なら省略)
+        message:
+          type: string
+          description: 人間が読む説明
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: 機械が分岐するための識別子(例 INVALID_ARGUMENT, UPSTREAM_UNAVAILABLE)
+            message:
+              type: string
+            issues:
+              type: array
+              description: 位置の分かる問題が複数ある場合に入る
+              items:
+                $ref: '#/components/schemas/Issue'
+
+    # ------------------------------------------------------------
+    # capabilities.proto
+    # ------------------------------------------------------------
+
+    DeviceType:
+      type: string
+      enum:
+        - DEVICE_TYPE_UNSPECIFIED
+        - DEVICE_TYPE_CPU
+        - DEVICE_TYPE_CUDA
+
+    DeviceInfo:
+      type: object
+      required: [device_name, device_index, device_type]
+      properties:
+        device_name:
+          type: string
+          description: 表示用の名前(例 NVIDIA GeForce RTX 4070)
+        device_index:
+          type: integer
+          format: int32
+          minimum: 0
+          description: 同種デバイスの通し番号。cuda:0 の 0 に対応する
+        device_type:
+          $ref: '#/components/schemas/DeviceType'
+
+    CapabilitiesResponse:
+      type: object
+      required: [cuda_available, devices]
+      properties:
+        cuda_available:
+          type: boolean
+        devices:
+          type: array
+          items:
+            $ref: '#/components/schemas/DeviceInfo'
+
+    # ------------------------------------------------------------
+    # model_graph.proto
+    # ------------------------------------------------------------
+
+    PortRef:
+      type: object
+      description: |
+        出力ポート 1 つを指す。両方のキーを省いた {} はグラフ入力(画像)を意味する。
+        ModelGraph.outputs ではグラフ入力を指定できないため、node_id を空にしてはならない。
+      properties:
+        node_id:
+          type: string
+          description: 参照先のノードの ID。省略または空文字ならグラフ入力
+        port:
+          type: string
+          description: 参照先の出力ポート名(例 y, indices)
+
+    NodeInput:
+      type: object
+      description: このノードの入力ポート port に、source が指す出力をつなぐ
+      required: [port, source]
+      properties:
+        port:
+          type: string
+          minLength: 1
+          description: このノードの入力ポート名(例 x, indices)
+        source:
+          $ref: '#/components/schemas/PortRef'
+
+    Node:
+      type: object
+      required: [id, spec, inputs]
+      properties:
+        id:
+          type: string
+          minLength: 1
+          pattern: '^[A-Za-z0-9_-]+$'
+          description: グラフ内で重複しない。英数字と - _ のみ
+        spec:
+          $ref: '#/components/schemas/NodeSpec'
+        inputs:
+          type: array
+          description: |
+            入力ポートへの接続。入力ポートには必要な本数だけつなぐ
+            (通常 1 本。Add / Concat の x は 2 本以上で、並び順に意味がある)。
+          items:
+            $ref: '#/components/schemas/NodeInput'
+
+    ModelGraph:
+      type: object
+      required: [nodes, outputs]
+      properties:
+        nodes:
+          type: array
+          minItems: 1
+          description: |
+            並び順に意味がある。重みの初期化と checkpoint の重みの対応はこの並び順で決まるため、
+            同じ構造でも並び順が違えば別のモデルとして扱われる。
+            実行順は接続から決まるので、実行順に並べる必要はない。
+          items:
+            $ref: '#/components/schemas/Node'
+        outputs:
+          type: array
+          minItems: 1
+          maxItems: 1
+          description: モデルの出力。当面 1 つだけ。node_id を空にはできない
+          items:
+            $ref: '#/components/schemas/PortRef'
+
+    NodeSpec:
+      type: object
+      description: |
+        層の種類とパラメータ。proto の oneof なので、下記のキーのうちちょうど 1 つを持つ。
+        キー名は model_graph.proto の NodeSpec の oneof フィールド名と一致させる。
+        Input / Output はエディタ専用のノードであり、ここには含まれない。
+      minProperties: 1
+      maxProperties: 1
+      additionalProperties: false
+      properties:
+        conv2d:
+          $ref: '#/components/schemas/Conv2DSpec'
+        pooling2d:
+          $ref: '#/components/schemas/Pooling2DSpec'
+        batch_norm:
+          $ref: '#/components/schemas/BatchNormSpec'
+        linear:
+          $ref: '#/components/schemas/LinearSpec'
+        activation:
+          $ref: '#/components/schemas/ActivationSpec'
+        indexed_pooling:
+          $ref: '#/components/schemas/IndexedPoolingSpec'
+        unpooling:
+          $ref: '#/components/schemas/UnpoolingSpec'
+        upsample:
+          $ref: '#/components/schemas/UpsampleSpec'
+        add:
+          $ref: '#/components/schemas/AddSpec'
+        concat:
+          $ref: '#/components/schemas/ConcatSpec'
+
+    Conv2DSpec:
+      type: object
+      required: [in_channels, out_channels, kernel_size, stride, padding, dilation]
+      properties:
+        in_channels:
+          type: integer
+          format: int64
+          minimum: 1
+        out_channels:
+          type: integer
+          format: int64
+          minimum: 1
+        kernel_size:
+          type: integer
+          format: int64
+          minimum: 1
+        stride:
+          type: integer
+          format: int64
+          minimum: 1
+        padding:
+          type: integer
+          format: int64
+          minimum: 0
+        dilation:
+          type: integer
+          format: int64
+          minimum: 1
+
+    PoolingType:
+      type: string
+      enum:
+        - POOLING_TYPE_UNSPECIFIED
+        - POOLING_TYPE_MAX
+        - POOLING_TYPE_AVERAGE
+
+    Pooling2DSpec:
+      type: object
+      required: [pooling_type, kernel_size, stride, padding]
+      properties:
+        pooling_type:
+          $ref: '#/components/schemas/PoolingType'
+        kernel_size:
+          type: integer
+          format: int64
+          minimum: 1
+        stride:
+          type: integer
+          format: int64
+          minimum: 1
+        padding:
+          type: integer
+          format: int64
+          minimum: 0
+
+    BatchNormSpec:
+      type: object
+      required: [num_features, eps, momentum]
+      properties:
+        num_features:
+          type: integer
+          format: int64
+          minimum: 1
+          description: 入力のチャンネル数と一致させる
+        eps:
+          type: number
+          format: double
+          exclusiveMinimum: 0
+          description: 0 除算を避けるための微小値(慣例は 1e-5)
+        momentum:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          description: 移動平均の更新率
+
+    LinearSpec:
+      type: object
+      required: [in_features, out_features, bias]
+      properties:
+        in_features:
+          type: integer
+          format: int64
+          minimum: 1
+        out_features:
+          type: integer
+          format: int64
+          minimum: 1
+        bias:
+          type: boolean
+
+    ActivationType:
+      type: string
+      enum:
+        - ACTIVATION_TYPE_UNSPECIFIED
+        - ACTIVATION_TYPE_RELU
+        - ACTIVATION_TYPE_SIGMOID
+        - ACTIVATION_TYPE_SOFTMAX
+        - ACTIVATION_TYPE_TANH
+
+    ActivationSpec:
+      type: object
+      required: [activation_type, dim]
+      properties:
+        activation_type:
+          $ref: '#/components/schemas/ActivationType'
+        dim:
+          type: integer
+          format: int32
+          description: Softmax を取る次元(チャンネル方向なら 1)。他の活性化では使われない
+
+    IndexedPoolingSpec:
+      type: object
+      description: 最大値の位置(indices)も出力する Max Pooling。Unpooling と対で使う
+      required: [kernel_size, stride, padding]
+      properties:
+        kernel_size:
+          type: integer
+          format: int64
+          minimum: 1
+        stride:
+          type: integer
+          format: int64
+          minimum: 1
+        padding:
+          type: integer
+          format: int64
+          minimum: 0
+
+    UnpoolingSpec:
+      type: object
+      description: IndexedPooling の indices を使って元の位置に戻す拡大
+      required: [kernel_size, stride, padding]
+      properties:
+        kernel_size:
+          type: integer
+          format: int64
+          minimum: 1
+        stride:
+          type: integer
+          format: int64
+          minimum: 1
+        padding:
+          type: integer
+          format: int64
+          minimum: 0
+
+    UpsampleMode:
+      type: string
+      enum:
+        - UPSAMPLE_MODE_UNSPECIFIED
+        - UPSAMPLE_MODE_NEAREST
+        - UPSAMPLE_MODE_BILINEAR
+
+    UpsampleSpec:
+      type: object
+      required: [upsample_mode, scale_factor]
+      properties:
+        upsample_mode:
+          $ref: '#/components/schemas/UpsampleMode'
+        scale_factor:
+          type: integer
+          format: int64
+          minimum: 2
+
+    AddSpec:
+      type: object
+      required: [alpha]
+      properties:
+        alpha:
+          type: number
+          format: double
+          description: |
+            2 番目以降の入力にかける係数。proto 側では 0(未指定)を 1.0 として扱うが、
+            この契約では送る側が必ず値を埋める。
+
+    ConcatSpec:
+      type: object
+      description: 入力をチャンネル方向に結合する。結合する次元は固定なのでパラメータはない
+      additionalProperties: false
+      properties: {}
+
+    # ------------------------------------------------------------
+    # training.proto - optimizer
+    # ------------------------------------------------------------
+
+    AdamConfig:
+      type: object
+      required: [learning_rate, weight_decay, beta1, beta2, eps]
+      properties:
+        learning_rate:
+          type: number
+          format: double
+          exclusiveMinimum: 0
+        weight_decay:
+          type: number
+          format: double
+          minimum: 0
+        beta1:
+          type: number
+          format: double
+          minimum: 0
+          exclusiveMaximum: 1
+        beta2:
+          type: number
+          format: double
+          minimum: 0
+          exclusiveMaximum: 1
+        eps:
+          type: number
+          format: double
+          exclusiveMinimum: 0
+
+    AdamWConfig:
+      type: object
+      required: [learning_rate, weight_decay, beta1, beta2]
+      properties:
+        learning_rate:
+          type: number
+          format: double
+          exclusiveMinimum: 0
+        weight_decay:
+          type: number
+          format: double
+          minimum: 0
+        beta1:
+          type: number
+          format: double
+          minimum: 0
+          exclusiveMaximum: 1
+        beta2:
+          type: number
+          format: double
+          minimum: 0
+          exclusiveMaximum: 1
+
+    SGDConfig:
+      type: object
+      required: [learning_rate, weight_decay, momentum, nesterov]
+      properties:
+        learning_rate:
+          type: number
+          format: double
+          exclusiveMinimum: 0
+        weight_decay:
+          type: number
+          format: double
+          minimum: 0
+        momentum:
+          type: number
+          format: double
+          minimum: 0
+        nesterov:
+          type: boolean
+
+    OptimizerConfig:
+      type: object
+      description: proto の oneof。adam / adam_w / sgd のうちちょうど 1 つを持つ
+      minProperties: 1
+      maxProperties: 1
+      additionalProperties: false
+      properties:
+        adam:
+          $ref: '#/components/schemas/AdamConfig'
+        adam_w:
+          $ref: '#/components/schemas/AdamWConfig'
+        sgd:
+          $ref: '#/components/schemas/SGDConfig'
+
+    # ------------------------------------------------------------
+    # training.proto - loss
+    # ------------------------------------------------------------
+
+    CrossEntropyConfig:
+      type: object
+      additionalProperties: false
+      properties: {}
+
+    MseLossConfig:
+      type: object
+      additionalProperties: false
+      properties: {}
+
+    DiceLossConfig:
+      type: object
+      additionalProperties: false
+      properties: {}
+
+    FocalLossConfig:
+      type: object
+      required: [gamma, alpha]
+      properties:
+        gamma:
+          type: number
+          format: double
+          minimum: 0
+          description: 易しい例の重みを下げる強さ(慣例は 2.0)
+        alpha:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          description: クラス不均衡を補正する重み
+
+    ComboLossConfig:
+      type: object
+      required: [alpha]
+      properties:
+        alpha:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          description: |
+            Cross Entropy 項の重み。(1-alpha) が Dice 項の重みになる。
+            proto 側に既定値はないので、送る側が必ず値を埋める。
+
+    BoundaryLossConfig:
+      type: object
+      additionalProperties: false
+      properties: {}
+
+    LossConfig:
+      type: object
+      description: |
+        proto の oneof。cross_entropy / mse / dice / focal / combo / boundary のうち
+        ちょうど 1 つを持つ。num_classes と ignore_index はデータセット由来なのでここには持たない。
+      minProperties: 1
+      maxProperties: 1
+      additionalProperties: false
+      properties:
+        cross_entropy:
+          $ref: '#/components/schemas/CrossEntropyConfig'
+        mse:
+          $ref: '#/components/schemas/MseLossConfig'
+        dice:
+          $ref: '#/components/schemas/DiceLossConfig'
+        focal:
+          $ref: '#/components/schemas/FocalLossConfig'
+        combo:
+          $ref: '#/components/schemas/ComboLossConfig'
+        boundary:
+          $ref: '#/components/schemas/BoundaryLossConfig'
+
+    # ------------------------------------------------------------
+    # training.proto - data
+    # ------------------------------------------------------------
+
+    PascalVocConfig:
+      type: object
+      required: [include_difficult]
+      properties:
+        include_difficult:
+          type: boolean
+          description: Pascal VOC の difficult 指定の例を学習に含めるか
+
+    ImageAnnotationConfig:
+      type: object
+      description: proto の oneof。現在は pascal_voc のみ
+      minProperties: 1
+      maxProperties: 1
+      additionalProperties: false
+      properties:
+        pascal_voc:
+          $ref: '#/components/schemas/PascalVocConfig'
+
+    SegmentationSpec:
+      type: object
+      required: [ignore_index]
+      properties:
+        ignore_index:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 255
+          default: 255
+          description: 損失の計算から除外するラベル値。必ず設定する(既定値 255)
+
+    ObjectDetectionSpec:
+      type: object
+      additionalProperties: false
+      properties: {}
+
+    ClassificationSpec:
+      type: object
+      additionalProperties: false
+      properties: {}
+
+    ImageTaskSpecs:
+      type: object
+      description: proto の oneof。segmentation / object_detection / classification のうち 1 つ
+      minProperties: 1
+      maxProperties: 1
+      additionalProperties: false
+      properties:
+        segmentation:
+          $ref: '#/components/schemas/SegmentationSpec'
+        object_detection:
+          $ref: '#/components/schemas/ObjectDetectionSpec'
+        classification:
+          $ref: '#/components/schemas/ClassificationSpec'
+
+    ImageSpec:
+      type: object
+      required: [annotation, input_width, input_height, task_specs]
+      properties:
+        annotation:
+          $ref: '#/components/schemas/ImageAnnotationConfig'
+        input_width:
+          type: integer
+          format: int32
+          minimum: 1
+          default: 256
+        input_height:
+          type: integer
+          format: int32
+          minimum: 1
+          default: 256
+        task_specs:
+          $ref: '#/components/schemas/ImageTaskSpecs'
+
+    DataSpec:
+      type: object
+      description: proto の oneof。現在は image のみ
+      minProperties: 1
+      maxProperties: 1
+      additionalProperties: false
+      properties:
+        image:
+          $ref: '#/components/schemas/ImageSpec'
+
+    Seed:
+      type: object
+      description: |
+        乱数シード。0 も有効な値なので、メッセージで包んで「未指定」と区別する。
+        固定しない場合は StartTrainingRequest から seed のキーごと省略する。
+      required: [value]
+      properties:
+        value:
+          type: integer
+          format: int64
+          minimum: 0
+
+    # ------------------------------------------------------------
+    # training.proto - requests / responses
+    # ------------------------------------------------------------
+
+    StartTrainingRequest:
+      type: object
+      required:
+        - model_name
+        - model_graph
+        - optimizer
+        - loss
+        - epoch
+        - batch
+        - dataset_path
+        - device
+        - data_spec
+        - save_last_every
+        - resume_from
+      properties:
+        model_name:
+          type: string
+          minLength: 1
+        model_graph:
+          $ref: '#/components/schemas/ModelGraph'
+        optimizer:
+          $ref: '#/components/schemas/OptimizerConfig'
+        loss:
+          $ref: '#/components/schemas/LossConfig'
+        epoch:
+          type: integer
+          format: int32
+          minimum: 1
+        batch:
+          type: integer
+          format: int32
+          minimum: 1
+        dataset_path:
+          type: string
+          minLength: 1
+          description: 学習エンジンから見たサーバー上のパス
+        device:
+          type: string
+          minLength: 1
+          description: cpu または cuda:0 のような文字列。/capabilities の結果から選ぶ
+        data_spec:
+          $ref: '#/components/schemas/DataSpec'
+        save_last_every:
+          type: integer
+          format: int32
+          minimum: 0
+          description: checkpoint を保存する間隔(エポック)。0 なら毎エポック
+        resume_from:
+          type: string
+          description: 再開元の checkpoint のパス。空文字なら再開しない
+        seed:
+          $ref: '#/components/schemas/Seed'
+
+    TrainingStatus:
+      type: string
+      enum:
+        - TRAINING_STATUS_UNSPECIFIED
+        - TRAINING_STATUS_RUNNING
+        - TRAINING_STATUS_COMPLETED
+        - TRAINING_STATUS_FAILED
+        - TRAINING_STATUS_STOPPED
+        - TRAINING_STATUS_IDLE
+
+    StartTrainingResponse:
+      type: object
+      required: [job_id, status]
+      properties:
+        job_id:
+          type: string
+          minLength: 1
+        status:
+          $ref: '#/components/schemas/TrainingStatus'
+
+    StopTrainingResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          $ref: '#/components/schemas/TrainingStatus'
+
+    SegmentationMetrics:
+      type: object
+      required: [pixel_acc, miou, fw_iou, mean_class_accuracy, per_class_iou]
+      properties:
+        pixel_acc:
+          type: number
+          format: double
+        miou:
+          type: number
+          format: double
+        fw_iou:
+          type: number
+          format: double
+        mean_class_accuracy:
+          type: number
+          format: double
+        per_class_iou:
+          type: array
+          items:
+            type: number
+            format: double
+
+    ClassificationMetrics:
+      type: object
+      required: [accuracy, macro_f1, per_class_accuracy]
+      properties:
+        accuracy:
+          type: number
+          format: double
+        macro_f1:
+          type: number
+          format: double
+        per_class_accuracy:
+          type: array
+          items:
+            type: number
+            format: double
+
+    ProgressMetrics:
+      type: object
+      description: |
+        proto の oneof(metrics)。タスクに応じて segmentation か classification のどちらか。
+        メトリクスをまだ計算していないエポックでは、StreamProgressResponse から metrics ごと省略される。
+      minProperties: 1
+      maxProperties: 1
+      additionalProperties: false
+      properties:
+        segmentation:
+          $ref: '#/components/schemas/SegmentationMetrics'
+        classification:
+          $ref: '#/components/schemas/ClassificationMetrics'
+
+    StreamProgressResponse:
+      type: object
+      description: SSE の各イベントの data に入る JSON 1 件
+      required: [epoch, train_loss, val_loss, status, epoch_elapsed_ms, total_elapsed_ms]
+      properties:
+        epoch:
+          type: integer
+          format: int32
+          minimum: 0
+          description: 終了したエポック数
+        train_loss:
+          type: number
+          format: double
+        val_loss:
+          type: number
+          format: double
+        status:
+          $ref: '#/components/schemas/TrainingStatus'
+        metrics:
+          $ref: '#/components/schemas/ProgressMetrics'
+        epoch_elapsed_ms:
+          type: integer
+          format: int64
+          minimum: 0
+          description: このエポックにかかった時間(ミリ秒)
+        total_elapsed_ms:
+          type: integer
+          format: int64
+          minimum: 0
+          description: 累計の処理時間(ミリ秒)
+        error_message:
+          type: string
+          description: status が TRAINING_STATUS_FAILED のときの原因
+
+    # ------------------------------------------------------------
+    # 検証(HTTP 固有。対応する proto はまだない)
+    # ------------------------------------------------------------
+
+    ValidateModelGraphRequest:
+      type: object
+      required: [model_graph]
+      properties:
+        model_graph:
+          $ref: '#/components/schemas/ModelGraph'
+
+    ValidateModelGraphResponse:
+      type: object
+      required: [ok, issues]
+      properties:
+        ok:
+          type: boolean
+          description: severity が error の issue が 1 件もなければ true
+        issues:
+          type: array
+          description: 見つかった問題のすべて。1 件目で打ち切らない
+          items:
+            $ref: '#/components/schemas/Issue'
