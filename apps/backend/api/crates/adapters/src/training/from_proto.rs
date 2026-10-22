@@ -88,10 +88,7 @@ fn valid_response() -> pb::StreamProgressResponse {
 mod status_tests {
     use super::*;
 
-    fn test_try_from(
-        status: i32,
-        expected: Result<TrainingJobStatus, TrainingConversionError>,
-    ) {
+    fn test_try_from(status: i32, expected: Result<TrainingJobStatus, TrainingConversionError>) {
         let response = pb::StreamProgressResponse {
             status,
             ..valid_response()
