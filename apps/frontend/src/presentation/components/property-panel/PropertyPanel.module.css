@@ -1,0 +1,148 @@
+/* ---- 入れ物(ResizablePanel)---- */
+
+.panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--color-surface);
+  border-left: 1px solid var(--color-border);
+}
+
+.collapsed {
+  display: flex;
+  justify-content: center;
+  width: 32px;
+  height: 100%;
+  padding-top: var(--space-2);
+  background: var(--color-surface);
+  border-left: 1px solid var(--color-border);
+}
+
+/* 左端のつまみ。見た目は細い線だが、つかみやすいよう当たり判定は幅 8px にしている */
+.resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  z-index: 1;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.resizer:hover,
+.resizer:focus-visible {
+  background: var(--color-accent);
+  opacity: 0.4;
+}
+
+.panelHeader {
+  display: flex;
+  justify-content: flex-start;
+  padding: var(--space-1) var(--space-2) 0;
+}
+
+.toggle {
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface-muted);
+  cursor: pointer;
+}
+
+.panelBody {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-2) var(--space-3) var(--space-3);
+}
+
+/* ---- 中身 ---- */
+
+.heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+  font-size: 15px;
+}
+
+.typeId,
+.mono {
+  font-family: var(--font-mono);
+}
+
+.typeId {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-small);
+  font-weight: 400;
+}
+
+.description,
+.hint {
+  margin: 0 0 var(--space-3);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-small);
+}
+
+.idField {
+  margin-bottom: var(--space-3);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.idLabel {
+  display: block;
+  margin-bottom: 2px;
+  font-weight: 600;
+}
+
+.idInput {
+  width: 100%;
+  padding: 2px var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  font-family: var(--font-mono);
+}
+
+.idInput[aria-invalid='true'] {
+  border-color: var(--color-error);
+}
+
+.params {
+  margin-bottom: var(--space-3);
+}
+
+.summary {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-1) var(--space-3);
+  margin: 0 0 var(--space-3);
+}
+
+.summary dt {
+  color: var(--color-text-muted);
+}
+
+.summary dd {
+  margin: 0;
+}
+
+.issues {
+  margin: 0;
+  padding-left: var(--space-4);
+  font-size: var(--font-size-small);
+}
+
+.error {
+  margin: 2px 0 0;
+  color: var(--color-error);
+  font-size: var(--font-size-small);
+}
+
+.warning {
+  color: var(--color-warning);
+}

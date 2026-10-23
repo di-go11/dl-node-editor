@@ -1,6 +1,6 @@
 import type { ParamValue } from '../model-graph/node-spec'
 import type { ParamDef } from '../param/param-def'
-import { describeParamConstraint, paramSchemaOf } from '../param/param-def'
+import { paramErrorOf } from '../param/param-def'
 import { ANNOTATION_TYPES, IMAGE_SIZE_DEFS, IMAGE_TASK_TYPES } from '../training/data-spec'
 import { LOSS_TYPES } from '../training/loss'
 import { OPTIMIZER_TYPES } from '../training/optimizer'
@@ -29,8 +29,8 @@ import { issueError, sortIssuesBySeverity, toValidationResult } from './issue'
  *
  * ## エラーメッセージ
  *
- * Zod の既定のメッセージ(英語)は使わず、ParamDef の label と
- * describeParamConstraint から日本語の文を組み立てる。ログを読むのは利用者であり、
+ * Zod の既定のメッセージ(英語)は使わず、ParamDef の label と制約から
+ * 日本語の文を組み立てる(param-def.ts の requirementMessage)。ログを読むのは利用者であり、
  * 「Too small: expected number to be >0」より「学習率は 0 より大きい数値にしてください」
  * のほうが、何をすればよいかが分かる。
  *
@@ -56,25 +56,6 @@ export type TrainingValidationRule = (input: TrainingValidationInput) => readonl
 // 共通の部品
 // ------------------------------------------------------------
 
-/** ParamDef の制約を、利用者向けの「〜にしてください」という文にする */
-function constraintMessage(label: string, def: ParamDef): string {
-  const constraint = describeParamConstraint(def)
-  switch (def.kind) {
-    case 'int':
-      return constraint === undefined
-        ? `${label} は整数にしてください。`
-        : `${label} は ${constraint} の整数にしてください。`
-    case 'float':
-      return constraint === undefined
-        ? `${label} は数値にしてください。`
-        : `${label} は ${constraint} の数値にしてください。`
-    case 'bool':
-      return `${label} はオン / オフで指定してください。`
-    case 'enum':
-      return `${label} は次のどれかにしてください: ${constraint ?? ''}`
-  }
-}
-
 function checkValue(
   value: ParamValue | undefined,
   def: ParamDef,
@@ -82,8 +63,8 @@ function checkValue(
   field: string,
   code: IssueCode,
 ): Issue | null {
-  if (paramSchemaOf(def).safeParse(value).success) return null
-  return issueError(code, constraintMessage(label, def), { field })
+  const message = paramErrorOf(def, value, label)
+  return message === null ? null : issueError(code, message, { field })
 }
 
 function requireNonEmpty(value: string, label: string, field: string): Issue | null {

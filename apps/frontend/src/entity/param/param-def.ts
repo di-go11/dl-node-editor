@@ -155,3 +155,35 @@ export function describeParamConstraint(def: ParamDef): string | undefined {
       return def.options.map((option) => option.label).join(' / ')
   }
 }
+
+/**
+ * 制約を満たさない値に対する「〜にしてください」という文を作る。
+ *
+ * プロパティパネルの入力欄の横の表示(subject なし)と、学習設定の検証のログ
+ * (subject あり。例「エポック数は整数(1 以上)にしてください。」)の両方で使う。
+ * Zod の既定のメッセージ(英語)は使わない。ログや入力欄を読むのは利用者であり、
+ * 「Too small: expected number to be >=1」より、何をすればよいかが分かる文のほうがよい。
+ */
+export function requirementMessage(def: ParamDef, subject?: string): string {
+  const who = subject === undefined ? '' : `${subject}は`
+  const constraint = describeParamConstraint(def)
+  switch (def.kind) {
+    case 'int':
+      return `${who}${constraint === undefined ? '整数' : `整数(${constraint})`}にしてください。`
+    case 'float':
+      return `${who}${constraint === undefined ? '数値' : `数値(${constraint})`}にしてください。`
+    case 'bool':
+      return `${who}オン / オフで指定してください。`
+    case 'enum':
+      return `${who}次のどれかにしてください: ${constraint ?? ''}`
+  }
+}
+
+/** 値が制約を満たしていれば null、満たしていなければ requirementMessage の文を返す */
+export function paramErrorOf(
+  def: ParamDef,
+  value: ParamValue | undefined,
+  subject?: string,
+): string | null {
+  return paramSchemaOf(def).safeParse(value).success ? null : requirementMessage(def, subject)
+}

@@ -7,6 +7,8 @@ import { emptyEditorDocument } from '../../entity/document/document'
 import type { ConnectionCheck } from '../../entity/graph-editing/connect'
 import { connect, disconnectAll } from '../../entity/graph-editing/connect'
 import { createNode } from '../../entity/graph-editing/create-node'
+import type { RenameResult } from '../../entity/graph-editing/rename'
+import { checkNodeIdInput } from '../../entity/graph-editing/rename'
 import type {
   ConnectionRef,
   EditorNodeId,
@@ -95,6 +97,11 @@ export type EditorActions = {
     connections: readonly ConnectionRef[],
   ) => void
   readonly updateParams: (id: NodeId, patch: ParamValues) => void
+  /**
+   * ノードの ID を付け替える(入力は検証前の文字列)。使えない ID なら状態を変えずに理由を返す。
+   * 接続・出力・座標・選択状態の ID もまとめて書き換える。
+   */
+  readonly renameNode: (from: NodeId, input: string) => RenameResult
   readonly setSelection: (selection: EditorSelection) => void
   /** ヘッダのデータ形式・特徴抽出手法を切り替える。置いたノードは消さない(指示書 4.3) */
   readonly setContext: (context: EditorContext) => void
@@ -206,6 +213,26 @@ export function createEditorStore(options: EditorStoreOptions): EditorStore {
             graph: replaceNodeSpec(document.graph, id, withParams(node.spec, patch)),
           }
         })
+      },
+
+      renameNode: (from, input) => {
+        const { document, selection } = get()
+        const result = checkNodeIdInput(document.graph, from, input)
+        if (!result.ok || result.id === from) return result
+
+        const to = result.id
+        // 座標の表は挿入順を保ったまま、キーだけを差し替える(保存ファイルの差分を小さくするため)
+        const positions = new Map(
+          [...document.layout.positions].map(([id, position]) => [id === from ? to : id, position]),
+        )
+        set({
+          document: { ...document, graph: result.graph, layout: { ...document.layout, positions } },
+          selection: {
+            ...selection,
+            nodeIds: selection.nodeIds.map((id) => (id === from ? to : id)),
+          },
+        })
+        return result
       },
 
       setSelection: (selection) => {

@@ -182,6 +182,36 @@ describe('deleteElements', () => {
   })
 })
 
+describe('renameNode', () => {
+  it('ID と、座標・選択状態のキーをまとめて付け替える', () => {
+    const store = newStore({ ...emptyEditorDocument(), graph: validSegnetGraph() })
+    store.getState().moveNode(nodeId('conv1'), { x: 1, y: 2 })
+    store.getState().moveNode(nodeId('bn1'), { x: 3, y: 4 })
+    store.getState().setSelection({ nodeIds: [nodeId('conv1')], edgeIds: [] })
+
+    const result = store.getState().renameNode(nodeId('conv1'), 'enc1')
+    expect(result.ok).toBe(true)
+
+    const { document, selection } = store.getState()
+    expect(findNode(document.graph, nodeId('enc1'))).toBeDefined()
+    // relu1 の入力も新しい ID を指す(線が切れない)
+    expect(findNode(document.graph, nodeId('relu1'))?.inputs[0]?.source).toEqual(
+      nodeOutput(nodeId('enc1'), 'y'),
+    )
+    // 座標の表は挿入順を保つ
+    expect([...document.layout.positions.keys()]).toEqual(['enc1', 'bn1'])
+    expect(selection.nodeIds).toEqual(['enc1'])
+  })
+
+  it('使えない ID なら状態を変えずに理由を返す', () => {
+    const store = newStore({ ...emptyEditorDocument(), graph: validSegnetGraph() })
+    const before = store.getState().document
+    const result = store.getState().renameNode(nodeId('conv1'), 'bn1')
+    expect(result.ok).toBe(false)
+    expect(store.getState().document).toBe(before)
+  })
+})
+
 describe('setContext', () => {
   it('条件を切り替えても、置いたノードは消さない(指示書 4.3)', () => {
     const store = newStore({ ...emptyEditorDocument(), graph: validSegnetGraph() })

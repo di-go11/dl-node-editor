@@ -6,8 +6,10 @@ import {
   defaultParamsOf,
   describeParamConstraint,
   enumLabelOf,
+  paramErrorOf,
   paramSchemaOf,
   paramsSchemaOf,
+  requirementMessage,
 } from './param-def'
 
 describe('paramSchemaOf - int', () => {
@@ -191,5 +193,25 @@ describe('describeParamConstraint', () => {
         ],
       }),
     ).toBe('Alpha / Beta')
+  })
+})
+
+describe('requirementMessage / paramErrorOf', () => {
+  const kernel = { kind: 'int', label: 'カーネルサイズ', default: 3, min: 1 } as const
+
+  it('制約を「〜にしてください」という日本語の文にする', () => {
+    expect(requirementMessage(kernel)).toBe('整数(1 以上)にしてください。')
+    expect(requirementMessage(kernel, 'カーネルサイズ')).toBe(
+      'カーネルサイズは整数(1 以上)にしてください。',
+    )
+    expect(requirementMessage({ kind: 'float', label: 'lr', default: 1e-3, exclusiveMin: 0 })).toBe(
+      '数値(0 より大きい)にしてください。',
+    )
+  })
+
+  it('値が制約を満たしていれば null', () => {
+    expect(paramErrorOf(kernel, 3)).toBeNull()
+    expect(paramErrorOf(kernel, 0)).toBe('整数(1 以上)にしてください。')
+    expect(paramErrorOf(kernel, undefined)).not.toBeNull()
   })
 })

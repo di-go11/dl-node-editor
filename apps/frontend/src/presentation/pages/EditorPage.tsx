@@ -5,6 +5,8 @@ import { validateModelGraph } from '../../entity/validation/validate-model-graph
 import { EditorCanvas } from '../components/canvas/EditorCanvas'
 import { Header } from '../components/header/Header'
 import { LogPanel } from '../components/log/LogPanel'
+import { PropertyPanel } from '../components/property-panel/PropertyPanel'
+import { ResizablePanel } from '../components/property-panel/ResizablePanel'
 import { Sidebar } from '../components/sidebar/Sidebar'
 import { useEditorStore } from '../stores/editor-store-context'
 
@@ -19,8 +21,8 @@ import styles from './EditorPage.module.css'
  *
  * この部品の仕事は「配置」と「検証結果の配布」だけである。
  *
- * 検証(validateModelGraph)はここで 1 回だけ計算し、キャンバス(ノードの問題の印)と
- * ログに同じ結果を渡す。結果はストアに保存しない(後から計算できるデータは持たない)。
+ * 検証(validateModelGraph)はここで 1 回だけ計算し、キャンバス(ノードの問題の印)・
+ * プロパティパネル・ログに同じ結果を渡す。結果はストアに保存しない(後から計算できるデータは持たない)。
  * useMemo の依存は graph / context / catalog だけなので、ノードを動かしただけ
  * (layout の変更)では再計算されない。
  */
@@ -75,9 +77,11 @@ function EditorPageContent() {
       <main className={styles.canvas} ref={canvasAreaRef} aria-label="ノードエディタ">
         <EditorCanvas issues={issues} />
       </main>
-      <aside className={styles.inspector} aria-label="プロパティパネル">
-        <p className={styles.placeholder}>プロパティパネルは 2c で実装します。</p>
-      </aside>
+      <div className={styles.inspector}>
+        <ResizablePanel label="プロパティパネル">
+          <PropertyPanel issues={issues} />
+        </ResizablePanel>
+      </div>
       <div className={styles.log}>
         <LogPanel issues={issues} />
       </div>

@@ -140,7 +140,7 @@ describe('数値の項目', () => {
 
   it('メッセージはカタログの表示名と制約から日本語で組み立てる', () => {
     const issues = issuesOf(validSettings({ epoch: 0 }))
-    expect(issues[0]?.message).toBe('エポック数 は 1 以上 の整数にしてください。')
+    expect(issues[0]?.message).toBe('エポック数は整数(1 以上)にしてください。')
   })
 })
 
