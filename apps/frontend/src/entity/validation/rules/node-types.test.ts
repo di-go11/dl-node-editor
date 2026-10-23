@@ -5,7 +5,9 @@ import type { ModelGraph } from '../../model-graph/model-graph'
 import { nodeId } from '../../model-graph/node-id'
 import type { NodeKind } from '../../model-graph/node-spec'
 import { GRAPH_INPUT } from '../../model-graph/port'
-import { validSegnetGraph, validationInput } from '../test-fixtures'
+import { createNodeCatalog } from '../../node-catalog/catalog'
+import { DEFAULT_NODE_TYPES } from '../../node-catalog/entries'
+import { buildGraph, validSegnetGraph, validationInput } from '../test-fixtures'
 
 import { validateContextCompat, validateNodeTypes } from './node-types'
 
@@ -62,11 +64,29 @@ describe('validateContextCompat', () => {
     expect(issues.every((issue) => issue.severity === 'error')).toBe(true)
   })
 
-  it('どの条件なら使えるかをメッセージに出す', () => {
+  it('今の条件と、どの条件なら使えるかをメッセージに出す(指示書 4.3 の文言)', () => {
     const issues = validateContextCompat(
       validationInput(validSegnetGraph(), { dataDim: '1d', method: 'cnn' }),
     )
-    expect(issues[0]?.message).toContain('2D / cnn')
+    expect(issues[0]?.message).toBe(
+      'このノード(Conv2D)は現在の条件(1D / CNN)では使えません。使える条件: 2D / CNN',
+    )
+  })
+
+  it('カタログに 1D の条件を足すだけで、そのノードは 1D で使えるようになる', () => {
+    // 1D 用のノードは「後でカタログに足すだけで追加できる」こと(指示書 4.3)の確認。
+    // 検証のコードは変えず、カタログの contexts だけを変えたカタログを渡す
+    const catalog = createNodeCatalog(
+      DEFAULT_NODE_TYPES.map((def) =>
+        def.typeId === 'conv2d'
+          ? { ...def, contexts: [...def.contexts, { dataDim: '1d', method: 'cnn' } as const] }
+          : def,
+      ),
+    )
+    const graph = buildGraph([{ id: 'conv1', kind: 'conv2d', inputs: { x: 'graph-input' } }])
+    expect(
+      validateContextCompat({ graph, context: { dataDim: '1d', method: 'cnn' }, catalog }),
+    ).toEqual([])
   })
 
   it('該当するノードを指し示す(ログのクリックでフォーカスするため)', () => {

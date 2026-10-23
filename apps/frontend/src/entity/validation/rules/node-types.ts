@@ -1,4 +1,5 @@
-import { NODE_CATEGORY_LABELS } from '../../node-catalog/node-type'
+import { formatEditorContext } from '../../editor-context/editor-context'
+import { isAvailableInContext } from '../../node-catalog/node-type'
 import type { Issue } from '../issue'
 import { issueError } from '../issue'
 import type { ValidationRule } from '../validation-input'
@@ -37,26 +38,27 @@ export const validateNodeTypes: ValidationRule = (input) => {
  * 整合性チェックを通さない」としているためである。文中では「警告」と書かれているが、
  * 実行を止める以上、この型では error が正しい。
  *
+ * メッセージは指示書 4.3 の文言「このノードは現在の条件(例:1D / CNN)では使えません」に
+ * 合わせ、どの条件なら使えるかも添える(条件の表記はヘッダの表示と同じ formatEditorContext)。
+ *
  * 条件を切り替えてもノードを消さないのは、切り替えを試すだけで作業が消えるのを
  * 防ぐためである。代わりに赤色表示(presentation)とこの Issue で知らせる。
  */
 export const validateContextCompat: ValidationRule = (input) => {
+  const current = formatEditorContext(input.context)
   const issues: Issue[] = []
   for (const node of input.graph.nodes) {
     const def = nodeTypeOf(input.catalog, node)
     if (def === undefined) continue
-    if (
-      def.contexts.some(
-        (c) => c.dataDim === input.context.dataDim && c.method === input.context.method,
-      )
-    ) {
-      continue
-    }
-    const supported = def.contexts.map((c) => `${c.dataDim.toUpperCase()} / ${c.method}`).join('、')
+    // 判定はカタログの isAvailableInContext に任せる(サイドバーの絞り込みと同じ関数)。
+    // 2 か所で別々に判定すると、「サイドバーには出るのに赤くなる」ずれが起こりうる
+    if (isAvailableInContext(def, input.context)) continue
+
+    const supported = def.contexts.map(formatEditorContext).join('、')
     issues.push(
       issueError(
         'node/unavailable-in-context',
-        `${def.label}(${NODE_CATEGORY_LABELS[def.category]})は現在の条件では使えません。` +
+        `このノード(${def.label})は現在の条件(${current})では使えません。` +
           `使える条件: ${supported}`,
         { nodeId: node.id },
       ),

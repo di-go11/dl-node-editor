@@ -4,16 +4,22 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { emptyEditorDocument } from '../../../entity/document/document'
 import type { EditorContext } from '../../../entity/editor-context/editor-context'
-import { defaultNodeCatalog } from '../../../entity/node-catalog/entries'
+import { createNodeCatalog } from '../../../entity/node-catalog/catalog'
+import type { NodeCatalog } from '../../../entity/node-catalog/catalog'
+import { DEFAULT_NODE_TYPES, defaultNodeCatalog } from '../../../entity/node-catalog/entries'
 import { createEditorStore } from '../../stores/editor-store'
 import { EditorStoreContext } from '../../stores/editor-store-context'
 import { NODE_DRAG_MIME } from '../canvas/node-drag'
 
 import { Sidebar } from './Sidebar'
 
-function renderSidebar(context?: EditorContext, onActivate = vi.fn()) {
+function renderSidebar(
+  context?: EditorContext,
+  onActivate = vi.fn(),
+  catalog: NodeCatalog = defaultNodeCatalog,
+) {
   const store = createEditorStore({
-    catalog: defaultNodeCatalog,
+    catalog,
     initialDocument: { ...emptyEditorDocument(), ...(context === undefined ? {} : { context }) },
   })
   render(
@@ -53,6 +59,22 @@ describe('Sidebar', () => {
     renderSidebar({ dataDim: '1d', method: 'cnn' })
     expect(screen.getByRole('note')).toHaveTextContent('1D 用のノードは近日実装予定です')
     expect(screen.queryByRole('button')).toBeNull()
+  })
+
+  it('1D のノードは、カタログに足すだけでサイドバーに出る(UI のコードは変えない)', () => {
+    // 指示書 4.3「1D 用のノードは、後でカタログに足すだけで追加できるようにしておく」。
+    // 本物の 1D の層はまだ proto にないので、Conv2D の contexts に 1D を足した
+    // 架空のカタログで、仕組みだけを確かめる
+    const catalog = createNodeCatalog(
+      DEFAULT_NODE_TYPES.map((def) =>
+        def.typeId === 'conv2d'
+          ? { ...def, contexts: [...def.contexts, { dataDim: '1d', method: 'cnn' } as const] }
+          : def,
+      ),
+    )
+    renderSidebar({ dataDim: '1d', method: 'cnn' }, vi.fn(), catalog)
+    expect(screen.getByRole('button', { name: 'Conv2D' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'BatchNorm' })).toBeNull()
   })
 
   it('クリックでノードを選ぶ(マウスでドラッグできない環境のため)', async () => {
