@@ -165,6 +165,33 @@ describe('updateParams', () => {
   })
 })
 
+describe('deleteElements', () => {
+  it('線を先に外してからノードを消す(位置で指す線が、ノードの削除でずれないように)', () => {
+    // relu1 を消すと、bn1 の入力(relu1 から)も消える。同時に、別の線 pool1→unpool1.indices
+    // (unpool1 の inputs[1])も選んで消す。ノードを先に消しても unpool1 の位置は変わらないが、
+    // 線 → ノードの順なら、どの組み合わせでも同じ時点の状態から正しく処理できる
+    const store = newStore({ ...emptyEditorDocument(), graph: validSegnetGraph() })
+    store
+      .getState()
+      .deleteElements([nodeId('relu1')], [{ kind: 'input', nodeId: nodeId('unpool1'), index: 1 }])
+
+    const { graph } = store.getState().document
+    expect(findNode(graph, nodeId('relu1'))).toBeUndefined()
+    expect(findNode(graph, nodeId('bn1'))?.inputs).toEqual([])
+    expect(findNode(graph, nodeId('unpool1'))?.inputs.map((input) => input.port)).toEqual(['x'])
+  })
+})
+
+describe('setContext', () => {
+  it('条件を切り替えても、置いたノードは消さない(指示書 4.3)', () => {
+    const store = newStore({ ...emptyEditorDocument(), graph: validSegnetGraph() })
+    const graphBefore = store.getState().document.graph
+    store.getState().setContext({ dataDim: '1d', method: 'cnn' })
+    expect(store.getState().document.context).toEqual({ dataDim: '1d', method: 'cnn' })
+    expect(store.getState().document.graph).toBe(graphBefore)
+  })
+})
+
 describe('replaceDocument', () => {
   it('文書を入れ替え、選択を解除する', () => {
     const store = newStore()

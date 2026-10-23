@@ -52,9 +52,11 @@ describe('AppRoutes', () => {
     renderAt('/')
     // 読み込みは非同期なので、最初は読み込み中の表示になる
     expect(screen.getByRole('status')).toHaveTextContent('読み込んでいます')
-    expect(
-      await screen.findByRole('heading', { level: 1, name: 'ノードエディタ' }),
-    ).toBeInTheDocument()
+    // エディタ画面の 4 つの領域が並ぶ
+    expect(await screen.findByRole('main', { name: 'ノードエディタ' })).toBeInTheDocument()
+    expect(screen.getByRole('navigation', { name: 'ノードの一覧' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'ログ' })).toBeInTheDocument()
+    expect(screen.getByRole('complementary', { name: 'プロパティパネル' })).toBeInTheDocument()
   })
 
   it('カタログを読み込めなければ、理由を出す', async () => {

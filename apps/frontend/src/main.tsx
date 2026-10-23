@@ -2,6 +2,8 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router'
 
+import './presentation/styles/theme.css'
+
 import { createStaticNodeCatalogSource } from './infrastructure/catalog/static-node-catalog-source'
 import { createApiClient } from './infrastructure/http/api-client'
 import { createHttpCapabilitiesApi } from './infrastructure/http/http-capabilities-api'

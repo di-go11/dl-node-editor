@@ -12,3 +12,34 @@ import { afterEach } from 'vitest'
 afterEach(() => {
   cleanup()
 })
+
+/*
+ * React Flow が使うブラウザの API のうち、jsdom にないものの代用品。
+ *
+ * jsdom はレイアウト(大きさの計算)を行わない DOM の実装なので、ResizeObserver や
+ * DOMMatrixReadOnly を持たない。React Flow はノードの大きさを測るためにこれらを使うので、
+ * ないと描画の途中で例外になる。React Flow の公式のテストの手引きにならい、
+ * 「何もしない」最小限の代用品を置く(実際の大きさや位置は検査しない前提)。
+ *
+ * このファイルは `@vitest-environment node` のテストでも読まれるので、
+ * window があるとき(jsdom のとき)だけ設定する。
+ */
+if (typeof window !== 'undefined') {
+  class ResizeObserverStub {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  }
+  globalThis.ResizeObserver ??= ResizeObserverStub
+
+  class DOMMatrixReadOnlyStub {
+    m22: number
+    constructor(transform?: string) {
+      // React Flow は transform の scale(ズーム率)だけを読む
+      const scale = /scale\(([\d.]+)\)/.exec(transform ?? '')?.[1]
+      this.m22 = scale === undefined ? 1 : Number(scale)
+    }
+  }
+  // @ts-expect-error 必要な部分だけを持つ代用品なので、型は完全には一致しない
+  globalThis.DOMMatrixReadOnly ??= DOMMatrixReadOnlyStub
+}

@@ -2,6 +2,7 @@ import { createStore } from 'zustand/vanilla'
 import type { StoreApi } from 'zustand/vanilla'
 
 import type { EditorDocument, Position, Viewport } from '../../entity/document/document'
+import type { EditorContext } from '../../entity/editor-context/editor-context'
 import { emptyEditorDocument } from '../../entity/document/document'
 import type { ConnectionCheck } from '../../entity/graph-editing/connect'
 import { connect, disconnectAll } from '../../entity/graph-editing/connect'
@@ -64,23 +65,42 @@ export type EditorState = {
   readonly selection: EditorSelection
 }
 
+/**
+ * 操作の型は、メソッド構文ではなく関数型のプロパティで書く。
+ * `const addNode = useEditorStore((s) => s.addNode)` のように取り出して単独で呼ぶので、
+ * this に依存しないことを型で表しておく(ESLint の unbound-method が検査する)。
+ */
 export type EditorActions = {
   /**
    * サイドバーからドロップしたノードを置く。置いたノードを選択状態にする。
    * 知らない種類・エディタ専用の種類なら何もせず null を返す。
    */
-  addNode(typeId: string, position: Position): NodeId | null
-  moveNode(id: EditorNodeId, position: Position): void
+  readonly addNode: (typeId: string, position: Position) => NodeId | null
+  readonly moveNode: (id: EditorNodeId, position: Position) => void
   /** ノードを消す(Input / Output は消せないので無視する) */
-  removeNodes(ids: readonly EditorNodeId[]): void
+  readonly removeNodes: (ids: readonly EditorNodeId[]) => void
   /** つなぐ。規則に反すればグラフを変えず、理由を返す */
-  connect(source: SourceEndpoint, target: TargetEndpoint): ConnectionCheck
-  disconnect(refs: readonly ConnectionRef[]): void
-  updateParams(id: NodeId, patch: ParamValues): void
-  setSelection(selection: EditorSelection): void
-  setViewport(viewport: Viewport): void
+  readonly connect: (source: SourceEndpoint, target: TargetEndpoint) => ConnectionCheck
+  readonly disconnect: (refs: readonly ConnectionRef[]) => void
+  /**
+   * ノードと線をまとめて消す(Delete キー)。
+   *
+   * React Flow はノードを消すとき、つながっている線の削除も同時に知らせてくる。
+   * 線は ModelGraph の中の位置(ConnectionRef)で指しているので、先にノードを消すと
+   * 位置がずれて別の線を外してしまう。1 つの操作の中で「線 → ノード」の順に処理し、
+   * 両方を同じ時点の状態から計算する。
+   */
+  readonly deleteElements: (
+    nodeIds: readonly EditorNodeId[],
+    connections: readonly ConnectionRef[],
+  ) => void
+  readonly updateParams: (id: NodeId, patch: ParamValues) => void
+  readonly setSelection: (selection: EditorSelection) => void
+  /** ヘッダのデータ形式・特徴抽出手法を切り替える。置いたノードは消さない(指示書 4.3) */
+  readonly setContext: (context: EditorContext) => void
+  readonly setViewport: (viewport: Viewport) => void
   /** 文書を丸ごと入れ替える(読み込み・新規作成。フェーズ 4 で使う) */
-  replaceDocument(document: EditorDocument): void
+  readonly replaceDocument: (document: EditorDocument) => void
 }
 
 export type EditorStoreState = EditorState & EditorActions
@@ -172,6 +192,11 @@ export function createEditorStore(options: EditorStoreOptions): EditorStore {
         })
       },
 
+      deleteElements: (nodeIds, connections) => {
+        get().disconnect(connections)
+        get().removeNodes(nodeIds)
+      },
+
       updateParams: (id, patch) => {
         updateDocument((document) => {
           const node = findNode(document.graph, id)
@@ -185,6 +210,10 @@ export function createEditorStore(options: EditorStoreOptions): EditorStore {
 
       setSelection: (selection) => {
         set({ selection })
+      },
+
+      setContext: (context) => {
+        updateDocument((document) => ({ ...document, context }))
       },
 
       setViewport: (viewport) => {
