@@ -146,3 +146,13 @@
 .warning {
   color: var(--color-warning);
 }
+
+/* 画面には見せず、スクリーンリーダーには読ませるラベル(見出しの位置で意味が分かる欄に使う) */
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

@@ -1,5 +1,6 @@
 import { Link, Route, Routes } from 'react-router'
 
+import { useUnsavedChangesWarning } from '../components/header/use-document-actions'
 import { EditorPage } from '../pages/EditorPage'
 import { ProgressPage } from '../pages/ProgressPage'
 import { TrainingSettingsPage } from '../pages/TrainingSettingsPage'
@@ -18,6 +19,7 @@ import { EditorSession } from './EditorSession'
 export function AppRoutes() {
   return (
     <EditorSession>
+      <UnsavedChangesGuard />
       <Routes>
         <Route path="/" element={<EditorPage />} />
         <Route path="/training" element={<TrainingSettingsPage />} />
@@ -26,6 +28,15 @@ export function AppRoutes() {
       </Routes>
     </EditorSession>
   )
+}
+
+/**
+ * 保存していない変更があるときに、タブを閉じる前の警告を出す。
+ * どの画面にいても効くよう、ルーティングの外(セッションの中)に置く。
+ */
+function UnsavedChangesGuard() {
+  useUnsavedChangesWarning()
+  return null
 }
 
 function NotFound() {

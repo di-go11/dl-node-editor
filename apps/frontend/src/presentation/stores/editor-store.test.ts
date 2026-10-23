@@ -15,7 +15,7 @@ import { GRAPH_INPUT, nodeOutput } from '../../entity/model-graph/port'
 import { defaultNodeCatalog } from '../../entity/node-catalog/entries'
 import { validSegnetGraph } from '../../entity/validation/test-fixtures'
 
-import { createEditorStore } from './editor-store'
+import { MAX_LOG_MESSAGES, createEditorStore, isDocumentDirty } from './editor-store'
 
 /**
  * ストアのテスト。Zustand の vanilla ストアは React なしで動くので、Node 上で
@@ -239,5 +239,79 @@ describe('ストアは作るたびに独立している', () => {
     const b = newStore()
     a.getState().addNode('conv2d', { x: 0, y: 0 })
     expect(b.getState().document.graph.nodes).toEqual([])
+  })
+})
+
+describe('保存の記録と未保存の判定', () => {
+  it('作った直後と、保存した直後は未保存ではない', () => {
+    const store = newStore()
+    expect(isDocumentDirty(store.getState())).toBe(false)
+    store.getState().addNode('conv2d', { x: 0, y: 0 })
+    expect(isDocumentDirty(store.getState())).toBe(true)
+    store.getState().markSaved(store.getState().document, '2026-10-23T00:00:00.000Z')
+    expect(isDocumentDirty(store.getState())).toBe(false)
+    expect(store.getState().document.meta.savedAt).toBe('2026-10-23T00:00:00.000Z')
+  })
+
+  it('保存の途中で編集した分は、未保存のまま残る', () => {
+    const store = newStore()
+    const savedDocument = store.getState().document // この時点の内容を保存し始めた
+    store.getState().addNode('conv2d', { x: 0, y: 0 }) // 保存の完了前に編集した
+    store.getState().markSaved(savedDocument, '2026-10-23T00:00:00.000Z')
+    expect(isDocumentDirty(store.getState())).toBe(true)
+  })
+
+  it('表示範囲の変更だけでは未保存にしない(スクロールのたびに確認が出ないように)', () => {
+    const store = newStore()
+    store.getState().setViewport({ x: 10, y: 10, zoom: 2 })
+    expect(isDocumentDirty(store.getState())).toBe(false)
+  })
+
+  it('名前・条件・座標の変更は未保存になる', () => {
+    const changes = [
+      (s: ReturnType<typeof newStore>) => s.getState().setDocumentName('other'),
+      (s: ReturnType<typeof newStore>) => s.getState().setContext({ dataDim: '1d', method: 'cnn' }),
+      (s: ReturnType<typeof newStore>) => s.getState().moveNode(GRAPH_INPUT_NODE, { x: 9, y: 9 }),
+    ]
+    for (const change of changes) {
+      const store = newStore()
+      change(store)
+      expect(isDocumentDirty(store.getState())).toBe(true)
+    }
+  })
+
+  it('文書を入れ替えると保存済みとみなし、作り直しの番号を進める', () => {
+    const store = newStore()
+    store.getState().addNode('conv2d', { x: 0, y: 0 })
+    store.getState().replaceDocument(emptyEditorDocument('loaded'))
+    expect(isDocumentDirty(store.getState())).toBe(false)
+    expect(store.getState().documentRevision).toBe(1)
+  })
+})
+
+describe('操作の結果のメッセージ', () => {
+  it('番号を振って追加し、消せる', () => {
+    const store = newStore()
+    store.getState().addMessages([
+      { level: 'info', text: 'a' },
+      { level: 'error', text: 'b' },
+    ])
+    expect(store.getState().messages.map((m) => [m.id, m.text])).toEqual([
+      [1, 'a'],
+      [2, 'b'],
+    ])
+    store.getState().clearMessages()
+    expect(store.getState().messages).toEqual([])
+  })
+
+  it('上限を超えたら古いものから捨てる', () => {
+    const store = newStore()
+    store
+      .getState()
+      .addMessages(
+        Array.from({ length: MAX_LOG_MESSAGES + 5 }, (_, i) => ({ level: 'info', text: `${i}` })),
+      )
+    expect(store.getState().messages).toHaveLength(MAX_LOG_MESSAGES)
+    expect(store.getState().messages[0]?.text).toBe('5')
   })
 })

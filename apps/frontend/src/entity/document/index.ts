@@ -1,5 +1,7 @@
+export * from './auto-layout'
 export * from './build'
 export * from './document'
+export * from './import-config'
 export * from './migrate'
 export * from './parse'
 export * from './schema'

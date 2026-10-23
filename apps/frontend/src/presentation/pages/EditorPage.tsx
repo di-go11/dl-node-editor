@@ -41,6 +41,9 @@ function EditorPageContent() {
   const context = useEditorStore((state) => state.document.context)
   const catalog = useEditorStore((state) => state.catalog)
   const addNode = useEditorStore((state) => state.addNode)
+  const messages = useEditorStore((state) => state.messages)
+  const clearMessages = useEditorStore((state) => state.clearMessages)
+  const documentRevision = useEditorStore((state) => state.documentRevision)
   const nodeCount = graph.nodes.length
 
   const issues = useMemo(
@@ -75,7 +78,8 @@ function EditorPageContent() {
         <Sidebar onActivate={addNodeAtCenter} />
       </div>
       <main className={styles.canvas} ref={canvasAreaRef} aria-label="ノードエディタ">
-        <EditorCanvas issues={issues} />
+        {/* 文書を読み込んだら key が変わり、キャンバスを作り直す(表示範囲を開き直すため) */}
+        <EditorCanvas key={documentRevision} issues={issues} />
       </main>
       <div className={styles.inspector}>
         <ResizablePanel label="プロパティパネル">
@@ -83,7 +87,7 @@ function EditorPageContent() {
         </ResizablePanel>
       </div>
       <div className={styles.log}>
-        <LogPanel issues={issues} />
+        <LogPanel issues={issues} messages={messages} onClearMessages={clearMessages} />
       </div>
     </div>
   )

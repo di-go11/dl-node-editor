@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useNavigate } from 'react-router'
 
 import type {
@@ -13,6 +14,7 @@ import { useEditorStore } from '../../stores/editor-store-context'
 
 import { DeviceStatus } from './DeviceStatus'
 import styles from './Header.module.css'
+import { useDocumentActions } from './use-document-actions'
 
 /**
  * エディタ画面のヘッダ(指示書 4.2)。
@@ -23,7 +25,8 @@ import styles from './Header.module.css'
  * 1D と Transformer は「近日実装予定」だが、選べるようにしておく(指示書 4.3)。
  * 選んだときの扱い(サイドバーの注意書き、置いたノードの赤色表示)はデータ側で決まる。
  *
- * 保存 / 読込はフェーズ 4 で作るので、今は押せない状態で置いておく。
+ * [保存] / [読込] の中身は use-document-actions.ts。Ctrl+S(macOS では ⌘S)でも保存できる。
+ * 保存していない変更があれば、文書の名前の横に「未保存」の印を出す。
  */
 
 function optionLabel<T extends string>(option: ContextOption<T>): string {
@@ -41,7 +44,21 @@ function findOption<T extends string>(
 export function Header() {
   const context = useEditorStore((state) => state.document.context)
   const setContext = useEditorStore((state) => state.setContext)
+  const name = useEditorStore((state) => state.document.meta.name)
   const navigate = useNavigate()
+  const { save, open, isDirty } = useDocumentActions()
+
+  // Ctrl+S で保存する。preventDefault しないと、ブラウザの「ページを保存」が開いてしまう
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+        event.preventDefault()
+        void save()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [save])
 
   return (
     <header className={styles.header}>
@@ -79,13 +96,33 @@ export function Header() {
       </label>
 
       <div className={styles.group}>
-        <button type="button" disabled title="フェーズ 4 で実装します">
+        <button
+          type="button"
+          title="保存ファイル(JSON)をダウンロードする(Ctrl+S)"
+          onClick={() => {
+            void save()
+          }}
+        >
           保存
         </button>
-        <button type="button" disabled title="フェーズ 4 で実装します">
+        <button
+          type="button"
+          title="保存ファイル、または学習の設定ファイル(JSON)を開く"
+          onClick={() => {
+            void open()
+          }}
+        >
           読込
         </button>
       </div>
+      <span className={styles.documentName}>
+        {name}
+        {isDirty && (
+          <span className={styles.dirty} title="保存していない変更があります">
+            ● 未保存
+          </span>
+        )}
+      </span>
 
       <div className={styles.spacer} />
 

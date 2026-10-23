@@ -40,7 +40,7 @@ export type ParseDocumentResult =
  * モジュールが、読み込まれただけでライブラリ全体の設定を書き換えるのは避けたいためである。
  * スキーマに自分で書いたメッセージ(ノード ID の文字種など)は、こちらより優先される。
  */
-const japaneseErrors = z.locales.ja().localeError
+export const japaneseErrors = z.locales.ja().localeError
 
 /** Zod の path を 'model.model_graph.nodes[2].id' のような読める形にする */
 export function formatIssuePath(path: readonly PropertyKey[]): string {
@@ -49,6 +49,35 @@ export function formatIssuePath(path: readonly PropertyKey[]): string {
     const name = String(key)
     return text === '' ? name : `${text}.${name}`
   }, '')
+}
+
+/**
+ * Zod の検証エラーを、場所(field)付きの Issue に直す。
+ * 保存ファイルと C++ の設定ファイル(import-config.ts)の両方の読み込みで使う。
+ */
+export function structureIssuesOf(zodIssues: readonly z.core.$ZodIssue[]): readonly Issue[] {
+  return zodIssues.map((zodIssue) => {
+    const field = formatIssuePath(zodIssue.path)
+    const message = field === '' ? zodIssue.message : `${field}: ${zodIssue.message}`
+    return issueError('document/invalid-structure', message, field === '' ? {} : { field })
+  })
+}
+
+/** 文字列を JSON として読む。読めなければ document/invalid-json の Issue を返す */
+export function parseJsonText(
+  text: string,
+):
+  | { readonly ok: true; readonly raw: unknown }
+  | { readonly ok: false; readonly issues: readonly Issue[] } {
+  try {
+    return { ok: true, raw: JSON.parse(text) as unknown }
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    return {
+      ok: false,
+      issues: [issueError('document/invalid-json', `JSON として読めないファイルです: ${detail}`)],
+    }
+  }
 }
 
 function toDocument(json: DocumentV1Json): EditorDocument {
@@ -78,16 +107,7 @@ export function parseDocument(raw: unknown, options: MigrationOptions = {}): Par
   if (!migrated.ok) return migrated
 
   const result = documentV1JsonSchema.safeParse(migrated.document, { error: japaneseErrors })
-  if (!result.success) {
-    return {
-      ok: false,
-      issues: result.error.issues.map((zodIssue) => {
-        const field = formatIssuePath(zodIssue.path)
-        const message = field === '' ? zodIssue.message : `${field}: ${zodIssue.message}`
-        return issueError('document/invalid-structure', message, field === '' ? {} : { field })
-      }),
-    }
-  }
+  if (!result.success) return { ok: false, issues: structureIssuesOf(result.error.issues) }
 
   return { ok: true, document: toDocument(result.data) }
 }
@@ -97,15 +117,7 @@ export function parseDocumentText(
   text: string,
   options: MigrationOptions = {},
 ): ParseDocumentResult {
-  let raw: unknown
-  try {
-    raw = JSON.parse(text)
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error)
-    return {
-      ok: false,
-      issues: [issueError('document/invalid-json', `JSON として読めないファイルです: ${detail}`)],
-    }
-  }
-  return parseDocument(raw, options)
+  const json = parseJsonText(text)
+  if (!json.ok) return json
+  return parseDocument(json.raw, options)
 }

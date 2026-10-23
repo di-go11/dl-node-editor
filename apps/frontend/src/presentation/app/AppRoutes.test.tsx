@@ -36,6 +36,10 @@ function renderAt(path: string, dependencies: Partial<Dependencies> = {}) {
   const value: Dependencies = {
     nodeCatalogSource: catalogSource(true),
     capabilitiesApi: fakeCapabilitiesApi,
+    documentStorage: {
+      save: () => Promise.resolve({ ok: true }),
+      open: () => Promise.resolve({ kind: 'cancelled' }),
+    },
     ...dependencies,
   }
   return render(

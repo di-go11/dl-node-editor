@@ -46,10 +46,26 @@ describe('PropertyPanel - 何も選んでいないとき', () => {
   it('グラフ全体の情報を出す', () => {
     renderPanel()
     const summary = screen.getByRole('region', { name: 'グラフの情報' })
-    expect(summary).toHaveTextContent('segnet')
+    expect(within(summary).getByLabelText('文書の名前')).toHaveValue('segnet')
+    expect(summary).toHaveTextContent('まだ保存していません')
     expect(summary).toHaveTextContent('2D / CNN')
     expect(summary).toHaveTextContent('ノード数6')
     expect(summary).toHaveTextContent('out_conv.y')
+  })
+})
+
+describe('PropertyPanel - 文書の名前', () => {
+  it('Enter で確定し、空にしたら元の名前に戻す', async () => {
+    const { store } = renderPanel()
+    const input = screen.getByLabelText('文書の名前')
+    await userEvent.clear(input)
+    await userEvent.type(input, 'unet{Enter}')
+    expect(store.getState().document.meta.name).toBe('unet')
+
+    await userEvent.clear(input)
+    await userEvent.type(input, '{Enter}')
+    expect(store.getState().document.meta.name).toBe('unet')
+    expect(input).toHaveValue('unet')
   })
 })
 

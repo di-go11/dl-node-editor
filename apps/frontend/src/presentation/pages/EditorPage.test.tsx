@@ -1,10 +1,15 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import exampleRaw from '../../../../backend/ai-engine/modelconfigs/test_segnet_dag.json?raw'
 import { apiOk } from '../../application/ports/api-result'
+import type { DocumentStorage, OpenedFile } from '../../application/ports/document-storage'
+import type { EditorDocument } from '../../entity/document/document'
 import { emptyEditorDocument } from '../../entity/document/document'
+import { GRAPH_INPUT_NODE, GRAPH_OUTPUT_NODE } from '../../entity/graph-editing/endpoint'
+import { nodeId } from '../../entity/model-graph/node-id'
 import { defaultNodeCatalog } from '../../entity/node-catalog/entries'
 import { validSegnetGraph } from '../../entity/validation/test-fixtures'
 import type { Dependencies } from '../app/dependencies'
@@ -24,18 +29,38 @@ import { EditorPage } from './EditorPage'
  * 検証の結果がキャンバスとログの両方に届くか)の誤りを見逃すためである。
  */
 
-const dependencies: Dependencies = {
-  nodeCatalogSource: { load: () => Promise.resolve(apiOk(defaultNodeCatalog)) },
-  capabilitiesApi: {
-    getCapabilities: () => Promise.resolve(apiOk({ cudaAvailable: false, devices: [] })),
-  },
+/**
+ * 偽物の保存先。保存された内容を記録し、open では「次に選ばれるファイル」を返す。
+ * ブラウザのダウンロードとファイル選択の代わりに、保存 → 読込を往復させるのに使う。
+ */
+function fakeStorage() {
+  const saved: OpenedFile[] = []
+  const toOpen: OpenedFile[] = []
+  const storage: DocumentStorage = {
+    save: (name, text) => {
+      saved.push({ name, text })
+      return Promise.resolve({ ok: true })
+    },
+    open: () => {
+      const file = toOpen.shift()
+      return Promise.resolve(file === undefined ? { kind: 'cancelled' } : { kind: 'opened', file })
+    },
+  }
+  return { storage, saved, toOpen }
 }
 
-function renderEditor() {
-  const store = createEditorStore({
-    catalog: defaultNodeCatalog,
-    initialDocument: { ...emptyEditorDocument(), graph: validSegnetGraph() },
-  })
+function renderEditor(
+  initialDocument: EditorDocument = { ...emptyEditorDocument(), graph: validSegnetGraph() },
+  storage: DocumentStorage = fakeStorage().storage,
+) {
+  const dependencies: Dependencies = {
+    nodeCatalogSource: { load: () => Promise.resolve(apiOk(defaultNodeCatalog)) },
+    capabilitiesApi: {
+      getCapabilities: () => Promise.resolve(apiOk({ cudaAvailable: false, devices: [] })),
+    },
+    documentStorage: storage,
+  }
+  const store = createEditorStore({ catalog: defaultNodeCatalog, initialDocument })
   render(
     <DependenciesContext value={dependencies}>
       <EditorStoreContext value={store}>
@@ -111,5 +136,121 @@ describe('条件の切り替え(フェーズ 3 の完了条件)', () => {
     expect(screen.getByTestId('model-node-conv1').className).toMatch(/unavailable/)
     const log = screen.getByRole('region', { name: 'ログ' })
     expect(log).toHaveTextContent('現在の条件(2D / Transformer)では使えません')
+  })
+})
+
+describe('保存と読込(フェーズ 4 の完了条件)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  /** 座標と並び順を確かめるための、すべてのノードに座標がある文書 */
+  function placedDocument(): EditorDocument {
+    const graph = validSegnetGraph()
+    // わざとトポロジカル順ではない並びにする(並べ替えが入れば必ず崩れる)
+    const nodes = [...graph.nodes].reverse()
+    const ids = [GRAPH_INPUT_NODE, ...nodes.map((node) => node.id), GRAPH_OUTPUT_NODE]
+    return {
+      ...emptyEditorDocument('segnet'),
+      graph: { ...graph, nodes },
+      layout: {
+        positions: new Map(ids.map((id, index) => [id, { x: index * 100, y: index * 7 }])),
+        viewport: { x: 10, y: 20, zoom: 0.8 },
+      },
+    }
+  }
+
+  const log = () => screen.getByRole('region', { name: 'ログ' })
+
+  it('保存して読み込み直すと、座標と並び順も含めて元に戻る', async () => {
+    const files = fakeStorage()
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const original = placedDocument()
+    const { store } = renderEditor(original, files.storage)
+
+    // 1. 保存する
+    await userEvent.click(screen.getByRole('button', { name: '保存' }))
+    expect(files.saved.map((file) => file.name)).toEqual(['segnet.json'])
+    expect(log()).toHaveTextContent('segnet.json として保存しました。')
+    expect(screen.queryByText('● 未保存')).toBeNull()
+
+    // 2. 保存したあとに編集する(ノードを動かす・足す)。未保存の印が出る
+    store.getState().moveNode(nodeId('conv1'), { x: -500, y: -500 })
+    store.getState().addNode('linear', { x: 0, y: 0 })
+    expect(await screen.findByText('● 未保存')).toBeInTheDocument()
+
+    // 3. 保存したファイルを読み込む。保存していない変更があるので確認が出る
+    files.toOpen.push(files.saved[0] as OpenedFile)
+    await userEvent.click(screen.getByRole('button', { name: '読込' }))
+    expect(confirm).toHaveBeenCalledOnce()
+
+    // 4. 保存した時点に戻る(並び順・座標・表示範囲)
+    const { document } = store.getState()
+    expect(document.graph.nodes.map((node) => node.id)).toEqual(
+      original.graph.nodes.map((node) => node.id),
+    )
+    expect([...document.layout.positions]).toEqual([...original.layout.positions])
+    expect(document.layout.viewport).toEqual(original.layout.viewport)
+    expect(screen.queryByText('● 未保存')).toBeNull()
+    expect(log()).toHaveTextContent('segnet.json を開きました。')
+  })
+
+  it('不正なファイルは、どこがおかしいかをログに出し、今の作業はそのまま残す', async () => {
+    const files = fakeStorage()
+    const confirm = vi.spyOn(window, 'confirm')
+    const { store } = renderEditor(placedDocument(), files.storage)
+    const before = store.getState().document
+
+    files.toOpen.push({
+      name: 'broken.json',
+      text: JSON.stringify({
+        format: 'model-editor-document',
+        version: 1,
+        meta: { name: 'x' },
+        context: { data_dim: '3d', method: 'cnn' },
+        model: { model_graph: { nodes: [], outputs: [] } },
+      }),
+    })
+    await userEvent.click(screen.getByRole('button', { name: '読込' }))
+
+    expect(log()).toHaveTextContent('broken.json を開けませんでした(問題 1 件)')
+    expect(log()).toHaveTextContent('context.data_dim')
+    expect(store.getState().document).toBe(before)
+    // 不正なファイルでは今の作業を消さないので、確認も出さない
+    expect(confirm).not.toHaveBeenCalled()
+  })
+
+  it('確認で「キャンセル」を選んだら、読み込まない', async () => {
+    const files = fakeStorage()
+    vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const { store } = renderEditor(placedDocument(), files.storage)
+    store.getState().moveNode(nodeId('conv1'), { x: 1, y: 1 }) // 未保存の変更を作る
+    const before = store.getState().document
+
+    files.toOpen.push({ name: 'other.json', text: exampleRaw })
+    await userEvent.click(screen.getByRole('button', { name: '読込' }))
+    expect(store.getState().document).toBe(before)
+  })
+
+  it('C++ の設定ファイルを取り込み、ノードを自動で配置する', async () => {
+    const files = fakeStorage()
+    const { store } = renderEditor(emptyEditorDocument(), files.storage)
+
+    files.toOpen.push({ name: 'test_segnet_dag.json', text: exampleRaw })
+    await userEvent.click(screen.getByRole('button', { name: '読込' }))
+
+    const { document } = store.getState()
+    expect(document.meta.name).toBe('test_segnet')
+    expect(document.graph.nodes).toHaveLength(6)
+    expect(document.training?.optimizer.kind).toBe('adam')
+    expect(document.layout.positions.size).toBe(8)
+    expect(log()).toHaveTextContent('学習の設定ファイルとして取り込みました')
+  })
+
+  it('Ctrl+S でも保存する', async () => {
+    const files = fakeStorage()
+    renderEditor(placedDocument(), files.storage)
+    await userEvent.keyboard('{Control>}s{/Control}')
+    expect(files.saved).toHaveLength(1)
   })
 })

@@ -5,6 +5,7 @@ import { BrowserRouter } from 'react-router'
 import './presentation/styles/theme.css'
 
 import { createStaticNodeCatalogSource } from './infrastructure/catalog/static-node-catalog-source'
+import { createBrowserDocumentStorage } from './infrastructure/file/browser-document-storage'
 import { createApiClient } from './infrastructure/http/api-client'
 import { createHttpCapabilitiesApi } from './infrastructure/http/http-capabilities-api'
 import { AppRoutes } from './presentation/app/AppRoutes'
@@ -34,6 +35,7 @@ async function bootstrap(): Promise<void> {
   const dependencies: Dependencies = {
     nodeCatalogSource: createStaticNodeCatalogSource(),
     capabilitiesApi: createHttpCapabilitiesApi(apiClient),
+    documentStorage: createBrowserDocumentStorage(),
   }
 
   const root = document.getElementById('root')

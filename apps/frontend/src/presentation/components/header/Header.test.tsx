@@ -24,6 +24,10 @@ function renderHeader(capabilities: ApiResult<Capabilities>) {
   const dependencies: Dependencies = {
     nodeCatalogSource: { load: () => Promise.resolve(apiOk(defaultNodeCatalog)) },
     capabilitiesApi: { getCapabilities: () => Promise.resolve(capabilities) },
+    documentStorage: {
+      save: () => Promise.resolve({ ok: true }),
+      open: () => Promise.resolve({ kind: 'cancelled' }),
+    },
   }
   render(
     <DependenciesContext value={dependencies}>
@@ -86,10 +90,10 @@ describe('Header - 条件の選択', () => {
 })
 
 describe('Header - ボタン', () => {
-  it('保存 / 読込はフェーズ 4 まで押せない', () => {
+  it('保存 / 読込を押せる', () => {
     renderHeader(apiOk(gpuCapabilities))
-    expect(screen.getByRole('button', { name: '保存' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: '読込' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '保存' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: '読込' })).toBeEnabled()
   })
 
   it('[学習開始] で学習設定画面へ移る', async () => {

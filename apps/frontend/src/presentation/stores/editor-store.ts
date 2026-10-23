@@ -61,10 +61,73 @@ export type EditorSelection = {
 
 export const EMPTY_SELECTION: EditorSelection = { nodeIds: [], edgeIds: [] }
 
+/**
+ * ログの「操作の結果」の 1 行(保存しました、読み込めませんでした …)。
+ *
+ * 検証の Issue とは別の型にしている。Issue は「今のグラフの問題」で、グラフが変われば
+ * 計算し直されて消える。こちらは「過去に起きた出来事」で、利用者が消すまで残る。
+ */
+export type LogMessage = {
+  readonly id: number
+  readonly level: 'info' | 'warning' | 'error'
+  readonly text: string
+}
+
+/** 残しておく操作の結果の最大件数(古いものから捨てる) */
+export const MAX_LOG_MESSAGES = 100
+
+/**
+ * 最後に保存した(または読み込んだ)時点の、文書の中身への参照。
+ *
+ * 文書はイミュータブルに更新している(変更のたびに新しいオブジェクトを作る)ので、
+ * 「保存した時点のオブジェクトと今のオブジェクトが同じか」を比べるだけで、
+ * 中身を深く比べなくても変更の有無が分かる。
+ *
+ * 表示範囲(viewport)は比べない。画面をスクロールしただけで「未保存」になると、
+ * 確認のダイアログが頻繁に出て、本当に大事な警告が無視されるようになるためである。
+ */
+export type SavedSnapshot = {
+  readonly name: string
+  readonly context: EditorDocument['context']
+  readonly graph: EditorDocument['graph']
+  readonly positions: EditorDocument['layout']['positions']
+  readonly training: EditorDocument['training']
+}
+
+export function snapshotOf(document: EditorDocument): SavedSnapshot {
+  return {
+    name: document.meta.name,
+    context: document.context,
+    graph: document.graph,
+    positions: document.layout.positions,
+    training: document.training,
+  }
+}
+
+/** 保存していない変更があるか */
+export function isDocumentDirty(state: Pick<EditorState, 'document' | 'savedSnapshot'>): boolean {
+  const current = snapshotOf(state.document)
+  const saved = state.savedSnapshot
+  return (
+    current.name !== saved.name ||
+    current.context !== saved.context ||
+    current.graph !== saved.graph ||
+    current.positions !== saved.positions ||
+    current.training !== saved.training
+  )
+}
+
 export type EditorState = {
   readonly catalog: NodeCatalog
   readonly document: EditorDocument
   readonly selection: EditorSelection
+  readonly savedSnapshot: SavedSnapshot
+  /**
+   * 文書を丸ごと入れ替えた回数。キャンバスの key に使い、読み込んだら作り直させる
+   * (表示範囲を、読み込んだ文書の値で開き直すため)。
+   */
+  readonly documentRevision: number
+  readonly messages: readonly LogMessage[]
 }
 
 /**
@@ -106,8 +169,20 @@ export type EditorActions = {
   /** ヘッダのデータ形式・特徴抽出手法を切り替える。置いたノードは消さない(指示書 4.3) */
   readonly setContext: (context: EditorContext) => void
   readonly setViewport: (viewport: Viewport) => void
-  /** 文書を丸ごと入れ替える(読み込み・新規作成。フェーズ 4 で使う) */
+  /** 文書を丸ごと入れ替える(読み込み・新規作成)。入れ替えた直後は「保存済み」とみなす */
   readonly replaceDocument: (document: EditorDocument) => void
+  /** 文書の名前(保存ファイルの meta.name とファイル名に使う) */
+  readonly setDocumentName: (name: string) => void
+  /**
+   * 保存できたことを記録する(保存日時を入れ、未保存の印を消す)。
+   *
+   * 「保存した文書」を引数で受け取る。保存は非同期なので、保存の途中に利用者が
+   * 編集を続けることがありうる。今の文書を保存済みとみなすと、その編集が
+   * 保存されていないのに「未保存」の印が消えてしまう。
+   */
+  readonly markSaved: (savedDocument: EditorDocument, savedAt: string) => void
+  readonly addMessages: (messages: readonly Omit<LogMessage, 'id'>[]) => void
+  readonly clearMessages: () => void
 }
 
 export type EditorStoreState = EditorState & EditorActions
@@ -126,10 +201,16 @@ export function createEditorStore(options: EditorStoreOptions): EditorStore {
       set((state) => ({ document: update(state.document) }))
     }
 
+    const initialDocument = options.initialDocument ?? emptyEditorDocument()
+    let nextMessageId = 1
+
     return {
       catalog: options.catalog,
-      document: options.initialDocument ?? emptyEditorDocument(),
+      document: initialDocument,
       selection: EMPTY_SELECTION,
+      savedSnapshot: snapshotOf(initialDocument),
+      documentRevision: 0,
+      messages: [],
 
       addNode: (typeId, position) => {
         const { catalog, document } = get()
@@ -248,7 +329,34 @@ export function createEditorStore(options: EditorStoreOptions): EditorStore {
       },
 
       replaceDocument: (document) => {
-        set({ document, selection: EMPTY_SELECTION })
+        set((state) => ({
+          document,
+          selection: EMPTY_SELECTION,
+          savedSnapshot: snapshotOf(document),
+          documentRevision: state.documentRevision + 1,
+        }))
+      },
+
+      setDocumentName: (name) => {
+        updateDocument((document) => ({ ...document, meta: { ...document.meta, name } }))
+      },
+
+      markSaved: (savedDocument, savedAt) => {
+        const { document } = get()
+        set({
+          document: { ...document, meta: { ...document.meta, savedAt } },
+          savedSnapshot: snapshotOf(savedDocument),
+        })
+      },
+
+      addMessages: (messages) => {
+        if (messages.length === 0) return
+        const added = messages.map((message) => ({ ...message, id: nextMessageId++ }))
+        set((state) => ({ messages: [...state.messages, ...added].slice(-MAX_LOG_MESSAGES) }))
+      },
+
+      clearMessages: () => {
+        set({ messages: [] })
       },
     }
   })

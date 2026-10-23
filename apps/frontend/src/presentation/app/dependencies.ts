@@ -1,6 +1,7 @@
 import { createContext, useContext } from 'react'
 
 import type { CapabilitiesApi } from '../../application/ports/capabilities-api'
+import type { DocumentStorage } from '../../application/ports/document-storage'
 import type { NodeCatalogSource } from '../../application/ports/node-catalog-source'
 
 /**
@@ -24,6 +25,7 @@ import type { NodeCatalogSource } from '../../application/ports/node-catalog-sou
 export type Dependencies = {
   readonly nodeCatalogSource: NodeCatalogSource
   readonly capabilitiesApi: CapabilitiesApi
+  readonly documentStorage: DocumentStorage
 }
 
 export const DependenciesContext = createContext<Dependencies | null>(null)
