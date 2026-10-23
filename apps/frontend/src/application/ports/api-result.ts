@@ -1,3 +1,5 @@
+import type { Issue } from '../../entity/validation/issue'
+
 /**
  * 外部(API・ファイル)とのやり取りの結果。
  *
@@ -26,6 +28,8 @@ export type ApiError = {
   readonly status?: number
   /** 契約の ErrorResponse.error.code(例 UPSTREAM_UNAVAILABLE) */
   readonly code?: string
+  /** 契約の ErrorResponse.error.issues。位置の分かる問題(400 のときなど)。ログに並べる */
+  readonly issues?: readonly Issue[]
 }
 
 export type ApiResult<T> =

@@ -37,6 +37,21 @@ export const ANNOTATION_TYPES = {
 
 export type AnnotationKind = keyof typeof ANNOTATION_TYPES
 
+/**
+ * タスク 1 種類の定義。学習エンジンが対応しているか(available)を持つ。
+ *
+ * 1D のノード(editor-context.ts)と同じく、「選べるが、まだ使えない」をデータで表す。
+ * 今の C++ はセグメンテーションだけを学習できる(クラス分類と物体検出は、データセットの
+ * 読み込みと評価で「まだ対応していません」の例外になる)。未対応のタスクを選ぶと、
+ * 整合性チェックで error にする。C++ が対応したら available を true にするだけでよい。
+ */
+export type ImageTaskDef = VariantDef & {
+  readonly available: boolean
+  readonly note?: string
+}
+
+const ENGINE_NOT_READY = '学習エンジン(C++)がまだ対応していません'
+
 export const IMAGE_TASK_TYPES = {
   segmentation: {
     label: 'セグメンテーション',
@@ -51,18 +66,23 @@ export const IMAGE_TASK_TYPES = {
         help: '損失の計算から除外するラベル値。Pascal VOC では物体の境界に 255 が付いている。',
       },
     },
+    available: true,
   },
   object_detection: {
     label: '物体検出',
     description: '物体の位置(矩形)とクラスを当てる。',
     params: {},
+    available: false,
+    note: ENGINE_NOT_READY,
   },
   classification: {
     label: 'クラス分類',
     description: '画像 1 枚ごとにクラスを当てる。',
     params: {},
+    available: false,
+    note: ENGINE_NOT_READY,
   },
-} satisfies Record<string, VariantDef>
+} satisfies Record<string, ImageTaskDef>
 
 export type ImageTaskKind = keyof typeof IMAGE_TASK_TYPES
 

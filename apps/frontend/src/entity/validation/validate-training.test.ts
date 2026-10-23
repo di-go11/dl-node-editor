@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { defaultVariant, withVariantParams } from '../training/variant'
+import { IMAGE_TASK_TYPES } from '../training/data-spec'
 import { LOSS_TYPES } from '../training/loss'
 import { OPTIMIZER_TYPES } from '../training/optimizer'
 import type { TrainingSettings } from '../training/training-settings'
@@ -187,8 +188,8 @@ describe('optimizer', () => {
 })
 
 describe('loss', () => {
-  it('パラメータのない loss はそのまま通る', () => {
-    for (const kind of ['cross_entropy', 'mse', 'dice', 'boundary'] as const) {
+  it('パラメータのない loss はそのまま通る(MSE はタスクとの組み合わせで別に報告する)', () => {
+    for (const kind of ['cross_entropy', 'dice', 'boundary'] as const) {
       expect(issuesOf(validSettings({ loss: defaultVariant(LOSS_TYPES, kind) }))).toEqual([])
     }
   })
@@ -223,5 +224,43 @@ describe('data_spec', () => {
     expect(summaryOf(issuesOf(validSettings({ dataSpec })))).toEqual([
       'training/param-missing @ data_spec.image.annotation.pascal_voc.include_difficult',
     ])
+  })
+})
+
+describe('タスクと loss の組み合わせ(未決事項 1)', () => {
+  const withTask = (kind: 'segmentation' | 'classification' | 'object_detection') => {
+    const base = validSettings().dataSpec
+    return { ...base, task: defaultVariant(IMAGE_TASK_TYPES, kind) }
+  }
+
+  it('学習エンジンが未対応のタスクは error', () => {
+    const issues = issuesOf(validSettings({ dataSpec: withTask('classification') }))
+    expect(summaryOf(issues)).toContain(
+      'training/task-unavailable @ data_spec.image.task_specs.classification',
+    )
+    expect(issues[0]?.message).toContain('まだ対応していません')
+  })
+
+  it('セグメンテーションでは、MSE 以外の loss を使える', () => {
+    for (const kind of ['cross_entropy', 'dice', 'focal', 'combo', 'boundary'] as const) {
+      expect(issuesOf(validSettings({ loss: defaultVariant(LOSS_TYPES, kind) }))).toEqual([])
+    }
+  })
+
+  it('MSE は今どのタスクでも使えない(正解がクラス番号で、形が合わない)', () => {
+    const issues = issuesOf(validSettings({ loss: defaultVariant(LOSS_TYPES, 'mse') }))
+    expect(summaryOf(issues)).toEqual(['training/loss-task-mismatch @ loss.mse'])
+    expect(issues[0]?.message).toContain('今はどのタスクでも使えません')
+  })
+
+  it('組み合わせの不正は、使えるタスクを案内する', () => {
+    const issues = issuesOf(
+      validSettings({
+        dataSpec: withTask('object_detection'),
+        loss: defaultVariant(LOSS_TYPES, 'dice'),
+      }),
+    )
+    const mismatch = issues.find((issue) => issue.code === 'training/loss-task-mismatch')
+    expect(mismatch?.message).toContain('使えるタスク: セグメンテーション')
   })
 })

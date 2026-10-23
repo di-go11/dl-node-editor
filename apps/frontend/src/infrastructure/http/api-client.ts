@@ -5,6 +5,8 @@ import { z } from 'zod'
 import type { ApiError, ApiResult } from '../../application/ports/api-result'
 import { apiError, apiOk } from '../../application/ports/api-result'
 import type { paths } from '../../api/schema'
+import { parseNodeId } from '../../entity/model-graph/node-id'
+import type { Issue } from '../../entity/validation/issue'
 
 /**
  * HTTP クライアント(契約 openapi.yaml に従う)。
@@ -32,11 +34,38 @@ export function createApiClient(baseUrl: string = API_BASE_PATH): ApiClient {
   return createClient<paths>({ baseUrl })
 }
 
-/** 契約の ErrorResponse。エラーの本文がこの形なら、メッセージとコードを取り出す */
+/** 契約の Issue(サーバーが返す検証の問題 1 件) */
+export const issueJsonSchema = z.object({
+  severity: z.enum(['error', 'warning']),
+  node_id: z.string().optional(),
+  port: z.string().optional(),
+  message: z.string(),
+})
+
+/**
+ * 契約の Issue → エンティティの Issue。
+ *
+ * サーバー由来の問題には、フロントの IssueCode のような細かい分類がないので
+ * 'server/reported' にまとめる。node_id がノード ID として使えない文字列なら、
+ * 位置は捨ててメッセージだけを残す(ログのクリックで存在しないノードを探さないように)。
+ */
+export function issueFromJson(json: z.infer<typeof issueJsonSchema>): Issue {
+  const id = json.node_id === undefined ? null : parseNodeId(json.node_id)
+  return {
+    severity: json.severity,
+    code: 'server/reported',
+    message: json.message,
+    ...(id === null ? {} : { nodeId: id }),
+    ...(json.port === undefined ? {} : { port: json.port }),
+  }
+}
+
+/** 契約の ErrorResponse。エラーの本文がこの形なら、メッセージ・コード・問題を取り出す */
 const errorResponseSchema = z.object({
   error: z.object({
     code: z.string(),
     message: z.string(),
+    issues: z.array(issueJsonSchema).optional(),
   }),
 })
 
@@ -51,11 +80,13 @@ type FetchResult = {
 function httpError(response: Response, body: unknown): ApiError {
   const parsed = errorResponseSchema.safeParse(body)
   if (parsed.success) {
+    const { code, message, issues } = parsed.data.error
     return {
       kind: 'http',
       status: response.status,
-      code: parsed.data.error.code,
-      message: parsed.data.error.message,
+      code,
+      message,
+      ...(issues === undefined ? {} : { issues: issues.map(issueFromJson) }),
     }
   }
   return {

@@ -54,6 +54,12 @@ export type IssueCode =
   | 'training/param-missing'
   | 'training/param-unknown'
   | 'training/param-invalid'
+  | 'training/task-unavailable'
+  | 'training/loss-task-mismatch'
+  | 'training/output-activation'
+  // サーバー側のチェック(/model-graphs/validate)
+  | 'server/reported'
+  | 'server/unreachable'
   // 保存ファイル(指示書 7 章)
   | 'document/invalid-json'
   | 'document/not-a-document'

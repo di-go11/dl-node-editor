@@ -1,4 +1,5 @@
 export * from './issue'
+export * from './output-activation'
 export * from './port-kind-resolution'
 export * from './rules'
 export * from './validate-model-graph'

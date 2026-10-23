@@ -236,11 +236,50 @@ export const validateDataSpec: TrainingValidationRule = ({ settings }) => {
 }
 
 /**
+ * タスクが学習エンジンで使えるか(IMAGE_TASK_TYPES の available)。
+ * 選べるようにはしているが、未対応のタスクのまま学習を始めると、C++ がデータセットの
+ * 読み込みで失敗する。始める前に止める。
+ */
+export const validateTaskAvailability: TrainingValidationRule = ({ settings }) => {
+  const task = settings.dataSpec.task
+  const def = IMAGE_TASK_TYPES[task.kind]
+  if (def.available) return []
+  return [
+    issueError(
+      'training/task-unavailable',
+      `タスク「${def.label}」はまだ使えません(${def.note ?? '未対応です'})。`,
+      { field: `data_spec.image.task_specs.${task.kind}` },
+    ),
+  ]
+}
+
+/**
+ * loss とタスクの組み合わせ(未決事項 1。ユーザーと合意済み)。
+ * 使える組み合わせは LOSS_TYPES の tasks にデータとして書いてあり、ここはそれを読むだけ。
+ */
+export const validateLossTask: TrainingValidationRule = ({ settings }) => {
+  const loss = LOSS_TYPES[settings.loss.kind]
+  const taskKind = settings.dataSpec.task.kind
+  if ((loss.tasks as readonly string[]).includes(taskKind)) return []
+
+  const task = IMAGE_TASK_TYPES[taskKind]
+  const usable = loss.tasks.map((kind) => IMAGE_TASK_TYPES[kind].label)
+  const hint =
+    usable.length === 0 ? '今はどのタスクでも使えません。' : `使えるタスク: ${usable.join('、')}。`
+  return [
+    issueError(
+      'training/loss-task-mismatch',
+      `loss「${loss.label}」はタスク「${task.label}」では使えません。${hint}`,
+      { field: `loss.${settings.loss.kind}` },
+    ),
+  ]
+}
+
+/**
  * 並びは学習設定画面の項目の並び(≒ proto のフィールド順)に合わせている。
  * ログに出る順と画面の上からの順がそろい、どこを直せばよいかを探しやすい。
  *
- * loss とタスクの組み合わせの制限(未決事項 1)を入れることになったら、
- * ここにルールを 1 つ足す。
+ * loss とタスクの組み合わせ(未決事項 1)は validateLossTask が見る。
  */
 export const TRAINING_RULES: readonly TrainingValidationRule[] = [
   validateModelName,
@@ -250,6 +289,8 @@ export const TRAINING_RULES: readonly TrainingValidationRule[] = [
   validateDatasetPath,
   validateDevice,
   validateDataSpec,
+  validateTaskAvailability,
+  validateLossTask,
 ]
 
 export function validateTrainingSettings(input: TrainingValidationInput): ValidationResult {
