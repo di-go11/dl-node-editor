@@ -9,7 +9,7 @@ import {
   summaryPlaceholdersOf,
   wireKindOf,
 } from '../node-type'
-import { defaultParamsOf, paramsSchemaOf } from '../param-def'
+import { defaultParamsOf, paramsSchemaOf } from '../../param/param-def'
 
 import { DEFAULT_NODE_TYPES, conv2dType, defaultNodeCatalog } from './index'
 

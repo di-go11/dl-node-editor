@@ -7,7 +7,7 @@ import { GRAPH_INPUT, nodeOutput } from '../model-graph/port'
 import type { NodeOutputRef } from '../model-graph/port'
 import { findNodeType } from '../node-catalog/catalog'
 import { defaultNodeCatalog } from '../node-catalog/entries'
-import { defaultParamsOf } from '../node-catalog/param-def'
+import { defaultParamsOf } from '../param/param-def'
 
 import type { ValidationInput } from './validation-input'
 

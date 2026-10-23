@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 
-import { paramSchemaOf } from '../node-catalog/param-def'
+import { paramSchemaOf } from '../param/param-def'
 
 import { IMAGE_SIZE_DEFS } from './data-spec'
 import {

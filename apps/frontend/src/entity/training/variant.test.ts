@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 
-import { paramsSchemaOf } from '../node-catalog/param-def'
+import { paramsSchemaOf } from '../param/param-def'
 
 import { ANNOTATION_TYPES, IMAGE_TASK_TYPES } from './data-spec'
 import { LOSS_TYPES } from './loss'

@@ -172,6 +172,25 @@ export function removeInput(
   }
 }
 
+/**
+ * 接続を 1 本だけ外す。index は node.inputs の中での位置。
+ *
+ * removeInput(source 指定)では区別できない場合のためにある。Add に同じ出力を
+ * 2 本つなぐ(x + x)と、2 本は source も port も同じになり、source で指定すると
+ * 両方が消えてしまう。位置で指定すれば、画面で選んだ 1 本だけを外せる。
+ * 範囲外の index なら何もしない。
+ */
+export function removeInputAt(graph: ModelGraph, targetId: NodeId, index: number): ModelGraph {
+  return {
+    ...graph,
+    nodes: graph.nodes.map((node) =>
+      node.id === targetId
+        ? { ...node, inputs: node.inputs.filter((_input, i) => i !== index) }
+        : node,
+    ),
+  }
+}
+
 /** モデルの出力を差し替える(当面 1 つだけだが、型は複数を表せるままにしておく) */
 export function setOutputs(graph: ModelGraph, outputs: readonly NodeOutputRef[]): ModelGraph {
   return { ...graph, outputs }

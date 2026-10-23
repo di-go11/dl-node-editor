@@ -9,6 +9,7 @@ import {
   findNode,
   inputsOfPort,
   removeInput,
+  removeInputAt,
   removeNode,
   renameNode,
   replaceNodeSpec,
@@ -91,6 +92,29 @@ describe('removeInput', () => {
     const graph = removeInput(sampleGraph(), nodeId('concat1'), 'x')
     const concat1 = findNode(graph, nodeId('concat1'))
     expect(inputsOfPort(concat1!, 'x')).toHaveLength(0)
+  })
+})
+
+describe('removeInputAt', () => {
+  it('同じ source の接続が 2 本あっても、指定した位置の 1 本だけを外す', () => {
+    // Add に同じ出力を 2 本つないだ状態(x + x)。source 指定では両方消えてしまう
+    let graph = addNode(emptyModelGraph(), node('add1', 'add'))
+    graph = appendInput(graph, nodeId('add1'), 'x', GRAPH_INPUT)
+    graph = appendInput(graph, nodeId('add1'), 'x', GRAPH_INPUT)
+
+    const removed = removeInputAt(graph, nodeId('add1'), 0)
+    expect(findNode(removed, nodeId('add1'))?.inputs).toEqual([{ port: 'x', source: GRAPH_INPUT }])
+  })
+
+  it('残りの接続の並び順を保つ', () => {
+    const graph = removeInputAt(sampleGraph(), nodeId('concat1'), 0)
+    expect(inputsOfPort(findNode(graph, nodeId('concat1'))!, 'x').map((i) => i.source)).toEqual([
+      nodeOutput(nodeId('relu1'), 'y'),
+    ])
+  })
+
+  it('範囲外の位置なら何も変えない', () => {
+    expect(removeInputAt(sampleGraph(), nodeId('concat1'), 5)).toEqual(sampleGraph())
   })
 })
 

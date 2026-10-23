@@ -1,4 +1,4 @@
-import type { FloatParamDef } from '../node-catalog/param-def'
+import type { FloatParamDef } from '../param/param-def'
 
 import type { Variant, VariantDef } from './variant'
 

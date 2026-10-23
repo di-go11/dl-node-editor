@@ -1,6 +1,6 @@
 import type { ParamValue } from '../model-graph/node-spec'
-import type { ParamDef } from '../node-catalog/param-def'
-import { describeParamConstraint, paramSchemaOf } from '../node-catalog/param-def'
+import type { ParamDef } from '../param/param-def'
+import { describeParamConstraint, paramSchemaOf } from '../param/param-def'
 import { ANNOTATION_TYPES, IMAGE_SIZE_DEFS, IMAGE_TASK_TYPES } from '../training/data-spec'
 import { LOSS_TYPES } from '../training/loss'
 import { OPTIMIZER_TYPES } from '../training/optimizer'

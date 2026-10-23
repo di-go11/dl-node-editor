@@ -17,7 +17,7 @@ import type {
   linearType,
   unpoolingType,
 } from '../entity/node-catalog/entries'
-import { paramsSchemaOf } from '../entity/node-catalog/param-def'
+import { paramsSchemaOf } from '../entity/param/param-def'
 
 import type { components } from './schema'
 

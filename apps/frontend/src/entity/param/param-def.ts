@@ -13,6 +13,13 @@ import type { ParamValue, ParamValues } from '../model-graph/node-spec'
  *
  * 同じ制約を「フォームの min 属性」と「検証コードの if 文」に別々に書くと、
  * 必ず片方が古くなる。1 つの宣言から両方を導けば、ずれようがない。
+ *
+ * ## なぜ独立したモジュールなのか
+ *
+ * ParamDef を使うのは、ノードカタログ(層のパラメータ)と学習設定(optimizer / loss の
+ * パラメータ、エポック数など)の 2 つである。どちらか一方の下に置くと、もう一方が
+ * 「関係のないモジュール」に依存することになる。editor-context と同じく、
+ * 複数の概念から共有される部品として独立させている。
  */
 
 export type EnumOption = {

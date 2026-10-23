@@ -1,6 +1,6 @@
 import type { ParamValue, ParamValues } from '../model-graph/node-spec'
-import type { ParamDef, ParamDefs } from '../node-catalog/param-def'
-import { defaultParamsOf } from '../node-catalog/param-def'
+import type { ParamDef, ParamDefs } from '../param/param-def'
+import { defaultParamsOf } from '../param/param-def'
 
 /**
  * バリアント - proto の oneof を「種類 1 つ + パラメータ袋」として扱うための型。

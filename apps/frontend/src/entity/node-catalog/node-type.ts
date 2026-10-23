@@ -4,8 +4,8 @@ import type { ReservedNodeId } from '../model-graph/node-id'
 import type { NodeKind, ParamValue, ParamValues } from '../model-graph/node-spec'
 import type { PortKind } from '../model-graph/port'
 
-import type { ParamDefs } from './param-def'
-import { enumLabelOf } from './param-def'
+import type { ParamDefs } from '../param/param-def'
+import { enumLabelOf } from '../param/param-def'
 
 /**
  * ノード 1 種類の定義。カタログ 1 件ぶん。

@@ -1,7 +1,7 @@
 import type { z } from 'zod'
 
 import type { ParamValues } from '../../model-graph/node-spec'
-import { paramsSchemaOf } from '../../node-catalog/param-def'
+import { paramsSchemaOf } from '../../param/param-def'
 import type { Issue, IssueCode } from '../issue'
 import { issueError } from '../issue'
 import type { ValidationRule } from '../validation-input'

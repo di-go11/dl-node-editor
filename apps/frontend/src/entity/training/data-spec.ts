@@ -1,4 +1,4 @@
-import type { IntParamDef } from '../node-catalog/param-def'
+import type { IntParamDef } from '../param/param-def'
 
 import type { Variant, VariantDef } from './variant'
 import { defaultVariant } from './variant'
