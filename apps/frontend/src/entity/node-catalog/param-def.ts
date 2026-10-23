@@ -37,6 +37,8 @@ export type FloatParamDef = {
   /** min とは違い、この値そのものは許さない(eps > 0 のような制約に使う) */
   readonly exclusiveMin?: number
   readonly max?: number
+  /** max とは違い、この値そのものは許さない(Adam の beta < 1 のような制約に使う) */
+  readonly exclusiveMax?: number
   readonly help?: string
 }
 
@@ -74,6 +76,7 @@ export function paramSchemaOf(def: ParamDef): z.ZodType<ParamValue> {
       if (def.min !== undefined) schema = schema.gte(def.min)
       if (def.exclusiveMin !== undefined) schema = schema.gt(def.exclusiveMin)
       if (def.max !== undefined) schema = schema.lte(def.max)
+      if (def.exclusiveMax !== undefined) schema = schema.lt(def.exclusiveMax)
       return schema
     }
     case 'bool':
@@ -134,6 +137,9 @@ export function describeParamConstraint(def: ParamDef): string | undefined {
         parts.push(`${def.exclusiveMin} より大きい`)
       }
       if (def.max !== undefined) parts.push(`${def.max} 以下`)
+      if (def.kind === 'float' && def.exclusiveMax !== undefined) {
+        parts.push(`${def.exclusiveMax} 未満`)
+      }
       return parts.length > 0 ? parts.join('、') : undefined
     }
     case 'bool':

@@ -40,6 +40,14 @@ describe('paramSchemaOf - float', () => {
     expect(paramSchemaOf(def).safeParse(1e-8).success).toBe(true)
   })
 
+  it('exclusiveMax はその値そのものを拒否する', () => {
+    // Adam の beta < 1 のような制約。beta = 1 だと移動平均が更新されなくなる
+    const def = { kind: 'float', label: 'beta1', default: 0.9, min: 0, exclusiveMax: 1 } as const
+    expect(paramSchemaOf(def).safeParse(1).success).toBe(false)
+    expect(paramSchemaOf(def).safeParse(0.999).success).toBe(true)
+    expect(paramSchemaOf(def).safeParse(0).success).toBe(true)
+  })
+
   it('min はその値を許す', () => {
     const def = { kind: 'float', label: 'momentum', default: 0.1, min: 0, max: 1 } as const
     expect(paramSchemaOf(def).safeParse(0).success).toBe(true)
@@ -161,6 +169,9 @@ describe('describeParamConstraint', () => {
     expect(
       describeParamConstraint({ kind: 'float', label: 'eps', default: 1e-5, exclusiveMin: 0 }),
     ).toBe('0 より大きい')
+    expect(
+      describeParamConstraint({ kind: 'float', label: 'b', default: 0.9, min: 0, exclusiveMax: 1 }),
+    ).toBe('0 以上、1 未満')
   })
 
   it('制約のない定義では undefined', () => {

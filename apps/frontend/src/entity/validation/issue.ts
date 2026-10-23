@@ -46,6 +46,19 @@ export type IssueCode =
   | 'param/invalid'
   // 形状
   | 'channel/mismatch'
+  // 学習設定(指示書 8 章 (2))
+  | 'training/required'
+  | 'training/invalid-format'
+  | 'training/out-of-range'
+  | 'training/unknown-device'
+  | 'training/param-missing'
+  | 'training/param-unknown'
+  | 'training/param-invalid'
+  // 保存ファイル(指示書 7 章)
+  | 'document/invalid-json'
+  | 'document/not-a-document'
+  | 'document/unsupported-version'
+  | 'document/invalid-structure'
 
 export type IssueLocation = {
   /** 該当するノード(グラフ全体の問題なら省略)。ログのクリックでフォーカスするのに使う */
@@ -54,6 +67,15 @@ export type IssueLocation = {
   readonly port?: string
   /** 該当するパラメータ名。プロパティパネルの入力欄を指し示すのに使う */
   readonly paramName?: string
+  /**
+   * 学習設定や保存ファイルの中の位置。proto の JSON 表記のパスで書く
+   * (例 'optimizer.learning_rate'、'data_spec.image.input_width')。
+   *
+   * 学習設定の問題はノードではなく「設定項目」を指すため、nodeId / paramName とは
+   * 別に持たせている。JSON 表記の名前にそろえるのは、C++ のエラーメッセージ
+   * (TrainingProtoMapper.cpp)と同じ書き方になり、両者を見比べやすいためである。
+   */
+  readonly field?: string
 }
 
 export type Issue = IssueLocation & {
