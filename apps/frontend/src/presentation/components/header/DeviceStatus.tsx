@@ -1,11 +1,7 @@
-import { useEffect, useState } from 'react'
-
-import type { ApiError } from '../../../application/ports/api-result'
-import type { Capabilities } from '../../../entity/capabilities/capabilities'
 import { deviceIdOf, primaryDevice } from '../../../entity/capabilities/capabilities'
-import { useDependencies } from '../../app/dependencies'
 
 import styles from './Header.module.css'
+import { useCapabilities } from './use-capabilities'
 
 /**
  * ヘッダのデバイス表示(指示書 4.2「デバイス: CUDA ✓ (cuda:0)」)。
@@ -14,29 +10,8 @@ import styles from './Header.module.css'
  * エディタでの編集は続けられるので、エラーで画面を止めず、ここに理由を出すだけにする。
  */
 
-type State =
-  | { readonly status: 'loading' }
-  | { readonly status: 'ready'; readonly capabilities: Capabilities }
-  | { readonly status: 'error'; readonly error: ApiError }
-
 export function DeviceStatus() {
-  const { capabilitiesApi } = useDependencies()
-  const [state, setState] = useState<State>({ status: 'loading' })
-
-  useEffect(() => {
-    let cancelled = false
-    void capabilitiesApi.getCapabilities().then((result) => {
-      if (cancelled) return
-      setState(
-        result.ok
-          ? { status: 'ready', capabilities: result.value }
-          : { status: 'error', error: result.error },
-      )
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [capabilitiesApi])
+  const state = useCapabilities()
 
   switch (state.status) {
     case 'loading':

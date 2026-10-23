@@ -2,6 +2,8 @@ import { createStore } from 'zustand/vanilla'
 import type { StoreApi } from 'zustand/vanilla'
 
 import type { EditorDocument, Position, Viewport } from '../../entity/document/document'
+import type { RunState } from '../../application/run-state/run-state'
+import { INITIAL_RUN_STATE } from '../../application/run-state/run-state'
 import type { EditorContext } from '../../entity/editor-context/editor-context'
 import { emptyEditorDocument } from '../../entity/document/document'
 import type { ConnectionCheck } from '../../entity/graph-editing/connect'
@@ -26,6 +28,11 @@ import type { NodeId } from '../../entity/model-graph/node-id'
 import type { ParamValues } from '../../entity/model-graph/node-spec'
 import { withParams } from '../../entity/model-graph/node-spec'
 import type { NodeCatalog } from '../../entity/node-catalog/catalog'
+import type { TrainingSettings } from '../../entity/training/training-settings'
+import {
+  MODEL_NAME_PATTERN,
+  defaultTrainingSettings,
+} from '../../entity/training/training-settings'
 import { findNodeType } from '../../entity/node-catalog/catalog'
 
 /**
@@ -128,6 +135,14 @@ export type EditorState = {
    */
   readonly documentRevision: number
   readonly messages: readonly LogMessage[]
+  /** 学習の実行までの状態機械(application/run-state)。遷移の規則はそちらにある */
+  readonly runState: RunState
+  /**
+   * 「このノードを画面の中央に表示して」という要求(ログのクリック)。
+   * キャンバスが処理したら clearFocusRequest で消す。学習設定画面からエディタに移った直後の
+   * ように、キャンバスがまだない時点で出された要求も、ここに残しておけば後で処理できる。
+   */
+  readonly focusRequest: { readonly nodeId: EditorNodeId } | null
 }
 
 /**
@@ -183,6 +198,14 @@ export type EditorActions = {
   readonly markSaved: (savedDocument: EditorDocument, savedAt: string) => void
   readonly addMessages: (messages: readonly Omit<LogMessage, 'id'>[]) => void
   readonly clearMessages: () => void
+  /** 学習設定がまだなければ、既定値で作る(学習設定画面を開いたとき) */
+  readonly ensureTrainingSettings: () => void
+  /** 学習設定を書き換える。学習設定がまだなければ何もしない */
+  readonly updateTraining: (update: (settings: TrainingSettings) => TrainingSettings) => void
+  readonly setRunState: (runState: RunState) => void
+  /** ノードを選択し、画面の中央に表示するよう要求する */
+  readonly focusNode: (id: EditorNodeId) => void
+  readonly clearFocusRequest: () => void
 }
 
 export type EditorStoreState = EditorState & EditorActions
@@ -211,6 +234,8 @@ export function createEditorStore(options: EditorStoreOptions): EditorStore {
       savedSnapshot: snapshotOf(initialDocument),
       documentRevision: 0,
       messages: [],
+      runState: INITIAL_RUN_STATE,
+      focusRequest: null,
 
       addNode: (typeId, position) => {
         const { catalog, document } = get()
@@ -334,6 +359,9 @@ export function createEditorStore(options: EditorStoreOptions): EditorStore {
           selection: EMPTY_SELECTION,
           savedSnapshot: snapshotOf(document),
           documentRevision: state.documentRevision + 1,
+          // 別の文書のチェック結果を持ち越さない(学習中なら、その状態は残す)
+          runState: state.runState.kind === 'running' ? state.runState : INITIAL_RUN_STATE,
+          focusRequest: null,
         }))
       },
 
@@ -357,6 +385,37 @@ export function createEditorStore(options: EditorStoreOptions): EditorStore {
 
       clearMessages: () => {
         set({ messages: [] })
+      },
+
+      ensureTrainingSettings: () => {
+        updateDocument((document) => {
+          if (document.training !== null) return document
+          // モデル名は文書の名前から取る。checkpoint のファイル名に使えない文字を含むなら既定値のまま
+          const defaults = defaultTrainingSettings()
+          const name = document.meta.name
+          const modelName = MODEL_NAME_PATTERN.test(name) ? name : defaults.modelName
+          return { ...document, training: { ...defaults, modelName } }
+        })
+      },
+
+      updateTraining: (update) => {
+        updateDocument((document) =>
+          document.training === null
+            ? document
+            : { ...document, training: update(document.training) },
+        )
+      },
+
+      setRunState: (runState) => {
+        set({ runState })
+      },
+
+      focusNode: (id) => {
+        set({ selection: { nodeIds: [id], edgeIds: [] }, focusRequest: { nodeId: id } })
+      },
+
+      clearFocusRequest: () => {
+        set({ focusRequest: null })
       },
     }
   })

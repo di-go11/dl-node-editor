@@ -19,6 +19,7 @@ import {
   finishCheck,
   finishRun,
   finishStart,
+  isStaleResult,
 } from './run-state'
 
 const OK: ValidationResult = { ok: true, issues: [] }
@@ -61,7 +62,7 @@ describe('状態機械 - 正常な流れ', () => {
   it('チェックが NG なら editing に戻り、結果を残す(ログに出すため)', () => {
     const target = targetOf(documentWithTraining())
     const state = finishCheck(beginCheck(INITIAL_RUN_STATE, target), target, NG)
-    expect(state).toEqual({ kind: 'editing', lastResult: NG })
+    expect(state).toEqual({ kind: 'editing', lastResult: NG, lastTarget: target })
     expect(canStart(state, target)).toBe(false)
   })
 })
@@ -101,7 +102,11 @@ describe('状態機械 - 変更したら再チェックが必要(指示書 4.5)'
     const document = documentWithTraining()
     const state = checkedState(targetOf(document))
     const edited = { ...document, graph: { ...document.graph } }
-    expect(effectiveRunState(state, targetOf(edited))).toEqual({ kind: 'editing', lastResult: OK })
+    expect(effectiveRunState(state, targetOf(edited))).toEqual({
+      kind: 'editing',
+      lastResult: OK,
+      lastTarget: targetOf(document),
+    })
   })
 
   it('チェックの途中で変更したら、返ってきた結果は捨てる(古い内容の結果で checked にしない)', () => {
@@ -151,5 +156,20 @@ describe('状態機械 - 押せない操作', () => {
     const starting = beginStart(checkedState(targetOf(document)), targetOf(document))
     const edited = targetOf({ ...document, graph: { ...document.graph } })
     expect(effectiveRunState(starting, edited).kind).toBe('starting')
+  })
+})
+
+describe('isStaleResult', () => {
+  it('NG の直後は古くない。その後に変更したら古い', () => {
+    const document = documentWithTraining()
+    const target = targetOf(document)
+    const ng = finishCheck(beginCheck(INITIAL_RUN_STATE, target), target, NG)
+    expect(isStaleResult(ng, target)).toBe(false)
+    const edited = targetOf({ ...document, graph: { ...document.graph } })
+    expect(isStaleResult(ng, edited)).toBe(true)
+  })
+
+  it('一度もチェックしていなければ古くない', () => {
+    expect(isStaleResult(INITIAL_RUN_STATE, targetOf(documentWithTraining()))).toBe(false)
   })
 })

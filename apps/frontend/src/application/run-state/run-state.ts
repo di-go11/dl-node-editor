@@ -34,15 +34,23 @@ export type CheckTarget = {
 }
 
 export type RunState =
-  /** 編集中。前回のチェックの結果があれば持つ(ログに出すため) */
-  | { readonly kind: 'editing'; readonly lastResult: ValidationResult | null }
+  /**
+   * 編集中。前回のチェックの結果と、そのときの対象があれば持つ。
+   * 結果はログに出すため、対象は「その結果が今の内容に対するものか(古くなっていないか)」を
+   * 画面が判定するため(isStaleResult)。
+   */
+  | {
+      readonly kind: 'editing'
+      readonly lastResult: ValidationResult | null
+      readonly lastTarget: CheckTarget | null
+    }
   | { readonly kind: 'checking'; readonly target: CheckTarget }
   | { readonly kind: 'checked'; readonly target: CheckTarget; readonly result: ValidationResult }
   /** 学習開始のリクエストを送っている最中 */
   | { readonly kind: 'starting'; readonly target: CheckTarget; readonly result: ValidationResult }
   | { readonly kind: 'running'; readonly jobId: string }
 
-export const INITIAL_RUN_STATE: RunState = { kind: 'editing', lastResult: null }
+export const INITIAL_RUN_STATE: RunState = { kind: 'editing', lastResult: null, lastTarget: null }
 
 /** 文書からチェックの対象を取り出す。学習設定がまだなければ null */
 export function checkTargetOf(document: EditorDocument): CheckTarget | null {
@@ -63,11 +71,11 @@ export function sameCheckTarget(a: CheckTarget, b: CheckTarget | null): boolean 
 export function effectiveRunState(state: RunState, current: CheckTarget | null): RunState {
   switch (state.kind) {
     case 'checking':
-      return sameCheckTarget(state.target, current) ? state : { kind: 'editing', lastResult: null }
+      return sameCheckTarget(state.target, current) ? state : INITIAL_RUN_STATE
     case 'checked':
       return sameCheckTarget(state.target, current)
         ? state
-        : { kind: 'editing', lastResult: state.result }
+        : { kind: 'editing', lastResult: state.result, lastTarget: state.target }
     case 'editing':
     case 'starting':
     case 'running':
@@ -93,7 +101,9 @@ export function finishCheck(
   result: ValidationResult,
 ): RunState {
   if (state.kind !== 'checking' || !sameCheckTarget(state.target, target)) return state
-  return result.ok ? { kind: 'checked', target, result } : { kind: 'editing', lastResult: result }
+  return result.ok
+    ? { kind: 'checked', target, result }
+    : { kind: 'editing', lastResult: result, lastTarget: target }
 }
 
 /** [学習実行] を押せるか(checked のときだけ。指示書 4.5) */
@@ -124,4 +134,16 @@ export function finishStart(state: RunState, outcome: StartOutcome): RunState {
 /** 学習が終わった(完了・失敗・停止。フェーズ 6)。編集に戻る */
 export function finishRun(state: RunState): RunState {
   return state.kind === 'running' ? INITIAL_RUN_STATE : state
+}
+
+/**
+ * 前回のチェックの結果が、そのあとの変更で古くなっているか。
+ * 古い結果をログに出すときは、そのことを利用者に知らせる(直したつもりの問題が残って見えるため)。
+ */
+export function isStaleResult(state: RunState, current: CheckTarget | null): boolean {
+  return (
+    state.kind === 'editing' &&
+    state.lastTarget !== null &&
+    !sameCheckTarget(state.lastTarget, current)
+  )
 }

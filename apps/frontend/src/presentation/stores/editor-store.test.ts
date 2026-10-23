@@ -315,3 +315,69 @@ describe('操作の結果のメッセージ', () => {
     expect(store.getState().messages[0]?.text).toBe('5')
   })
 })
+
+describe('学習設定', () => {
+  it('ensureTrainingSettings は、なければ既定値で作り、モデル名を文書の名前から取る', () => {
+    const store = newStore(emptyEditorDocument('segnet'))
+    store.getState().ensureTrainingSettings()
+    expect(store.getState().document.training?.modelName).toBe('segnet')
+  })
+
+  it('文書の名前がモデル名に使えない文字を含むなら、既定のモデル名にする', () => {
+    const store = newStore(emptyEditorDocument('画像 分類'))
+    store.getState().ensureTrainingSettings()
+    expect(store.getState().document.training?.modelName).toBe('model')
+  })
+
+  it('すでにあれば何もしない(同じオブジェクトのまま)', () => {
+    const store = newStore(emptyEditorDocument('a'))
+    store.getState().ensureTrainingSettings()
+    const before = store.getState().document
+    store.getState().ensureTrainingSettings()
+    expect(store.getState().document).toBe(before)
+  })
+
+  it('updateTraining で書き換える。学習設定がなければ何もしない', () => {
+    const store = newStore()
+    const before = store.getState().document
+    store.getState().updateTraining((s) => ({ ...s, epoch: 5 }))
+    expect(store.getState().document).toBe(before)
+
+    store.getState().ensureTrainingSettings()
+    store.getState().updateTraining((s) => ({ ...s, epoch: 5 }))
+    expect(store.getState().document.training?.epoch).toBe(5)
+  })
+})
+
+describe('focusNode', () => {
+  it('ノードを選択し、中央に表示する要求を出す。処理したら消せる', () => {
+    const store = newStore({ ...emptyEditorDocument(), graph: validSegnetGraph() })
+    store.getState().focusNode(nodeId('bn1'))
+    expect(store.getState().selection).toEqual({ nodeIds: ['bn1'], edgeIds: [] })
+    expect(store.getState().focusRequest).toEqual({ nodeId: 'bn1' })
+    store.getState().clearFocusRequest()
+    expect(store.getState().focusRequest).toBeNull()
+  })
+})
+
+describe('文書の入れ替えと実行の状態', () => {
+  it('別の文書を読み込んだら、チェックの結果を持ち越さない', () => {
+    const store = newStore()
+    store
+      .getState()
+      .setRunState({ kind: 'editing', lastResult: { ok: false, issues: [] }, lastTarget: null })
+    store.getState().replaceDocument(emptyEditorDocument('other'))
+    expect(store.getState().runState).toEqual({
+      kind: 'editing',
+      lastResult: null,
+      lastTarget: null,
+    })
+  })
+
+  it('学習中なら、その状態は残す(サーバーでは学習が続いているため)', () => {
+    const store = newStore()
+    store.getState().setRunState({ kind: 'running', jobId: 'job-1' })
+    store.getState().replaceDocument(emptyEditorDocument('other'))
+    expect(store.getState().runState).toEqual({ kind: 'running', jobId: 'job-1' })
+  })
+})

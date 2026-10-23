@@ -11,6 +11,7 @@ import type { Dependencies } from '../../app/dependencies'
 import { DependenciesContext } from '../../app/dependencies'
 import { createEditorStore } from '../../stores/editor-store'
 import { EditorStoreContext } from '../../stores/editor-store-context'
+import { fakeDependencies } from '../../test-utils/fake-dependencies'
 
 import { Header } from './Header'
 
@@ -21,14 +22,9 @@ import { Header } from './Header'
 
 function renderHeader(capabilities: ApiResult<Capabilities>) {
   const store = createEditorStore({ catalog: defaultNodeCatalog })
-  const dependencies: Dependencies = {
-    nodeCatalogSource: { load: () => Promise.resolve(apiOk(defaultNodeCatalog)) },
+  const dependencies: Dependencies = fakeDependencies({
     capabilitiesApi: { getCapabilities: () => Promise.resolve(capabilities) },
-    documentStorage: {
-      save: () => Promise.resolve({ ok: true }),
-      open: () => Promise.resolve({ kind: 'cancelled' }),
-    },
-  }
+  })
   render(
     <DependenciesContext value={dependencies}>
       <EditorStoreContext value={store}>

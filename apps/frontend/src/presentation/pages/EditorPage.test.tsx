@@ -4,18 +4,18 @@ import { MemoryRouter } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import exampleRaw from '../../../../backend/ai-engine/modelconfigs/test_segnet_dag.json?raw'
-import { apiOk } from '../../application/ports/api-result'
 import type { DocumentStorage, OpenedFile } from '../../application/ports/document-storage'
 import type { EditorDocument } from '../../entity/document/document'
 import { emptyEditorDocument } from '../../entity/document/document'
 import { GRAPH_INPUT_NODE, GRAPH_OUTPUT_NODE } from '../../entity/graph-editing/endpoint'
 import { nodeId } from '../../entity/model-graph/node-id'
 import { defaultNodeCatalog } from '../../entity/node-catalog/entries'
-import { validSegnetGraph } from '../../entity/validation/test-fixtures'
+import { buildGraph, validSegnetGraph } from '../../entity/validation/test-fixtures'
 import type { Dependencies } from '../app/dependencies'
 import { DependenciesContext } from '../app/dependencies'
 import { createEditorStore } from '../stores/editor-store'
 import { EditorStoreContext } from '../stores/editor-store-context'
+import { fakeDependencies } from '../test-utils/fake-dependencies'
 
 import { EditorPage } from './EditorPage'
 
@@ -53,13 +53,7 @@ function renderEditor(
   initialDocument: EditorDocument = { ...emptyEditorDocument(), graph: validSegnetGraph() },
   storage: DocumentStorage = fakeStorage().storage,
 ) {
-  const dependencies: Dependencies = {
-    nodeCatalogSource: { load: () => Promise.resolve(apiOk(defaultNodeCatalog)) },
-    capabilitiesApi: {
-      getCapabilities: () => Promise.resolve(apiOk({ cudaAvailable: false, devices: [] })),
-    },
-    documentStorage: storage,
-  }
+  const dependencies: Dependencies = fakeDependencies({ documentStorage: storage })
   const store = createEditorStore({ catalog: defaultNodeCatalog, initialDocument })
   render(
     <DependenciesContext value={dependencies}>
@@ -252,5 +246,20 @@ describe('保存と読込(フェーズ 4 の完了条件)', () => {
     renderEditor(placedDocument(), files.storage)
     await userEvent.keyboard('{Control>}s{/Control}')
     expect(files.saved).toHaveLength(1)
+  })
+})
+
+describe('ログのクリック(指示書 4.2)', () => {
+  it('ノードの問題をクリックすると、そのノードを選択して中央に表示する要求を出す', async () => {
+    // 入力がつながっていない Conv2D だけのグラフ(conv1 に問題が出る)
+    const { store } = renderEditor({
+      ...emptyEditorDocument(),
+      graph: buildGraph([{ id: 'conv1', kind: 'conv2d' }]),
+    })
+    const log = screen.getByRole('region', { name: 'ログ' })
+    const link = within(log).getAllByRole('button', { name: 'conv1' })[0]
+    if (link === undefined) throw new Error('conv1 の問題がありません')
+    await userEvent.click(link)
+    expect(store.getState().selection.nodeIds).toEqual(['conv1'])
   })
 })

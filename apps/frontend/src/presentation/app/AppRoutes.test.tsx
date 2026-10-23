@@ -10,6 +10,7 @@ import { defaultNodeCatalog } from '../../entity/node-catalog/entries'
 import { AppRoutes } from './AppRoutes'
 import type { Dependencies } from './dependencies'
 import { DependenciesContext } from './dependencies'
+import { fakeDependencies } from '../test-utils/fake-dependencies'
 
 /**
  * ルーティングと、依存性注入(DI)の配線のテスト。
@@ -33,15 +34,11 @@ const catalogSource = (ok: boolean): NodeCatalogSource => ({
 })
 
 function renderAt(path: string, dependencies: Partial<Dependencies> = {}) {
-  const value: Dependencies = {
+  const value: Dependencies = fakeDependencies({
     nodeCatalogSource: catalogSource(true),
     capabilitiesApi: fakeCapabilitiesApi,
-    documentStorage: {
-      save: () => Promise.resolve({ ok: true }),
-      open: () => Promise.resolve({ kind: 'cancelled' }),
-    },
     ...dependencies,
-  }
+  })
   return render(
     <DependenciesContext value={value}>
       <MemoryRouter initialEntries={[path]}>

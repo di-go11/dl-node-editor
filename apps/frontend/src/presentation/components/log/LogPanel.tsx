@@ -10,14 +10,21 @@ import styles from './LogPanel.module.css'
  *                 利用者が消すまで残る。新しいものを上に出す
  *   整合性チェック … 今のグラフの問題(検証の結果)。グラフを直せば自動で消える
  *
- * どちらもこの部品では計算しない。EditorPage から受け取って描くだけである。
- * 行をクリックしてノードにフォーカスする機能はフェーズ 5 で作る。
+ * どちらもこの部品では計算しない。画面から受け取って描くだけである。
+ *
+ * ノードに結び付いた問題の行は、クリックできる(指示書 4.2「ログの行をクリックすると、
+ * 該当するノードを選択して画面の中央に表示する」)。クリックで何をするか(エディタでは
+ * その場でノードを中央に表示、学習設定画面ではエディタに移ってから表示)は画面が決める。
  */
 
 export type LogPanelProps = {
   readonly issues: readonly Issue[]
   readonly messages?: readonly LogMessage[]
   readonly onClearMessages?: () => void
+  /** 問題の行がクリックされたとき。ノードに結び付いた行だけがクリックできる */
+  readonly onIssueClick?: (issue: Issue) => void
+  /** 表示している問題が古い(チェックの後に変更された)ときの注意書き */
+  readonly staleNote?: string
 }
 
 const SEVERITY_MARK = { error: '✖', warning: '⚠', info: 'ℹ' } as const
@@ -29,7 +36,13 @@ function levelClass(level: keyof typeof SEVERITY_MARK): string | undefined {
   return styles.info
 }
 
-export function LogPanel({ issues, messages = [], onClearMessages }: LogPanelProps) {
+export function LogPanel({
+  issues,
+  messages = [],
+  onClearMessages,
+  onIssueClick,
+  staleNote,
+}: LogPanelProps) {
   const errorCount = issues.filter((issue) => issue.severity === 'error').length
   const warningCount = issues.length - errorCount
 
@@ -59,6 +72,7 @@ export function LogPanel({ issues, messages = [], onClearMessages }: LogPanelPro
             ))}
           </ul>
         )}
+        {staleNote !== undefined && <p className={styles.stale}>{staleNote}</p>}
         {issues.length === 0 ? (
           <p className={styles.empty}>問題は見つかっていません。</p>
         ) : (
@@ -72,8 +86,19 @@ export function LogPanel({ issues, messages = [], onClearMessages }: LogPanelPro
                 <span className={styles.mark} aria-label={SEVERITY_LABEL[issue.severity]}>
                   {SEVERITY_MARK[issue.severity]}
                 </span>
-                {issue.nodeId !== undefined && (
-                  <span className={styles.nodeId}>{issue.nodeId}</span>
+                {issue.nodeId !== undefined && onIssueClick !== undefined ? (
+                  <button
+                    type="button"
+                    className={styles.nodeLink}
+                    onClick={() => onIssueClick(issue)}
+                    title={`${issue.nodeId} を表示する`}
+                  >
+                    {issue.nodeId}
+                  </button>
+                ) : (
+                  issue.nodeId !== undefined && (
+                    <span className={styles.nodeId}>{issue.nodeId}</span>
+                  )
                 )}
                 <span>{issue.message}</span>
               </li>

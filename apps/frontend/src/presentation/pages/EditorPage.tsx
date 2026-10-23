@@ -44,6 +44,7 @@ function EditorPageContent() {
   const messages = useEditorStore((state) => state.messages)
   const clearMessages = useEditorStore((state) => state.clearMessages)
   const documentRevision = useEditorStore((state) => state.documentRevision)
+  const focusNode = useEditorStore((state) => state.focusNode)
   const nodeCount = graph.nodes.length
 
   const issues = useMemo(
@@ -87,7 +88,14 @@ function EditorPageContent() {
         </ResizablePanel>
       </div>
       <div className={styles.log}>
-        <LogPanel issues={issues} messages={messages} onClearMessages={clearMessages} />
+        <LogPanel
+          issues={issues}
+          messages={messages}
+          onClearMessages={clearMessages}
+          onIssueClick={(issue) => {
+            if (issue.nodeId !== undefined) focusNode(issue.nodeId)
+          }}
+        />
       </div>
     </div>
   )

@@ -1,4 +1,11 @@
-import { Background, Controls, MiniMap, ReactFlow, useReactFlow } from '@xyflow/react'
+import {
+  Background,
+  Controls,
+  MiniMap,
+  ReactFlow,
+  useNodesInitialized,
+  useReactFlow,
+} from '@xyflow/react'
 import type {
   Connection,
   Dimensions,
@@ -9,7 +16,7 @@ import type {
   Viewport,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { DragEvent } from 'react'
 
 import { checkConnection } from '../../../entity/graph-editing/connect'
@@ -66,7 +73,9 @@ export function EditorCanvas({ issues }: EditorCanvasProps) {
   const document = useEditorStore((state) => state.document)
   const catalog = useEditorStore((state) => state.catalog)
   const selection = useEditorStore((state) => state.selection)
-  const { screenToFlowPosition } = useReactFlow()
+  const focusRequest = useEditorStore((state) => state.focusRequest)
+  const { screenToFlowPosition, fitView } = useReactFlow()
+  const nodesInitialized = useNodesInitialized()
 
   const [measured, setMeasured] = useState<ReadonlyMap<string, Dimensions>>(() => new Map())
   // 表示範囲の初期値は、開いた瞬間の文書から 1 度だけ決める。保存されていなければ全体が収まるようにする
@@ -89,6 +98,19 @@ export function EditorCanvas({ issues }: EditorCanvasProps) {
       })),
     [elements.edges],
   )
+
+  /**
+   * ログのクリックで出された「このノードを中央に表示して」という要求を処理する。
+   *
+   * ノードの大きさを測り終えるまでは、どこが中央か分からない(fitView が効かない)。
+   * 学習設定画面から移ってきた直後はキャンバスを作ったばかりなので、
+   * useNodesInitialized で測り終えるのを待ってから処理する。
+   */
+  useEffect(() => {
+    if (focusRequest === null || !nodesInitialized) return
+    void fitView({ nodes: [{ id: focusRequest.nodeId }], duration: 300, maxZoom: 1.2 })
+    store.getState().clearFocusRequest()
+  }, [focusRequest, nodesInitialized, fitView, store])
 
   const onNodesChange = useCallback(
     (changes: NodeChange<ModelFlowNode>[]) => {
