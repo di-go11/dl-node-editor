@@ -6,10 +6,10 @@ use super::data_spec::DataSpec;
 
 pub struct TrainingConfig {
     pub model_name: String,
-    pub epoch: u64,
-    pub batch: u64,
+    pub epoch: u32,
+    pub batch: u32,
     pub device: String,
-    pub detaset_path: String,
+    pub dataset_path: String,
     pub optimizer: Optimizer,
     pub loss: Loss,
     pub resume_from: Option<String>,
