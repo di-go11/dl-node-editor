@@ -1,9 +1,8 @@
+use super::data_spec::DataSpec;
 // まだ、値の範囲チェックを入れていないため必要なものはstructで抽象を作った後,implの実装のコンストラクタでバリデーションを行う.
 
 // training_config
 #[derive(Debug, PartialEq, Clone)]
-use super::data_spec::DataSpec;
-
 pub struct TrainingConfig {
     pub model_name: String,
     pub epoch: u32,

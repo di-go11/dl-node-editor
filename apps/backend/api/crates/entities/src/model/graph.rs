@@ -1,4 +1,4 @@
-use super::model_layer::NodeSpec;
+use super::layer::NodeSpec;
 
 // Node
 #[derive(Debug, Clone, PartialEq)]

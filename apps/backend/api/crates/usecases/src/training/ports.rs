@@ -1,6 +1,8 @@
 use futures_core::Stream;
 
-use entities::training::{JobId, ModelGraph, TrainingConfig, TrainingConfig, TrainingProcess};
+use entities::model::ModelGraph;
+use entities::training::config::TrainingConfig;
+use entities::training::{JobId, TrainingProcess};
 use thiserror::Error;
 
 pub trait TrainingProcessProvider {
@@ -13,12 +15,14 @@ pub trait TrainingProcessProvider {
     ) -> impl Future<Output = Result<Self::ProgressStream, TrainingProcessProviderError>> + Send; // C++サーバーとのストリームを開くための関数(一回の通信だからFuture) OutputはFutureによる何らかのアクションで届く値こっちもvariantで動的に決めることができる。
 }
 
+/*
 pub trait StartProcessOrder {
     fn start_training(
         training_config: &TrainingConfig,
         model_graph: &ModelGraph,
     ) -> impl Future<Output = Result<JobId, OrderError>> + Send; // C++サーバーに対して学習プロセスを開始するための命令を送る関数
 }
+*/
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 
