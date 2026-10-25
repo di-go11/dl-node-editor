@@ -10,6 +10,7 @@ use crate::pb::training::v1::StreamProgressRequest;
 
 use crate::pb::training::v1::training_service_client::TrainingServiceClient;
 
+// gRPCを使ったTrainingProcessProviderの実装
 pub struct GrpcTrainingProcessProvider {
     client: TrainingServiceClient<Channel>,
 }
@@ -53,3 +54,5 @@ impl TrainingProcessProvider for GrpcTrainingProcessProvider {
         Ok(Box::pin(stream)) // 外側のOk(接続に成功したらストリームを返す)
     }
 }
+
+// TrainingStarterのgRPC実装

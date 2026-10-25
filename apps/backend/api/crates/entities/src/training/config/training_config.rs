@@ -1,3 +1,5 @@
+use crate::model::ModelGraph;
+
 use super::data_spec::DataSpec;
 // まだ、値の範囲チェックを入れていないため必要なものはstructで抽象を作った後,implの実装のコンストラクタでバリデーションを行う.
 
@@ -5,6 +7,7 @@ use super::data_spec::DataSpec;
 #[derive(Debug, PartialEq, Clone)]
 pub struct TrainingConfig {
     pub model_name: String,
+    pub model_graph: ModelGraph,
     pub epoch: u32,
     pub batch: u32,
     pub device: String,

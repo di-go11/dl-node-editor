@@ -20,12 +20,12 @@ pub enum NodeSpec {
 // Conv2D
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Conv2DSpec {
-    in_channels: i64,
-    out_channels: i64,
-    kernel_size: i64,
-    stride: i64,
-    padding: i64,
-    dilation: i64,
+    pub in_channels: i64,
+    pub out_channels: i64,
+    pub kernel_size: i64,
+    pub stride: i64,
+    pub padding: i64,
+    pub dilation: i64,
 }
 
 // PoolingType
@@ -38,33 +38,33 @@ pub enum PoolingType {
 // Pooling2D
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pooling2DSpec {
-    pool_type: PoolingType,
-    kernel_size: i64,
-    stride: i64,
-    padding: i64,
+    pub pooling_type: PoolingType,
+    pub kernel_size: i64,
+    pub stride: i64,
+    pub padding: i64,
 }
 
 // BatchNormalizer
 #[derive(Debug, Clone, PartialEq)]
 pub struct BatchNormalizerSpec {
-    num_features: i64,
-    eps: f64,
-    momentum: f64,
+    pub num_features: i64,
+    pub eps: f64,
+    pub momentum: f64,
 }
 
 // Linear
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LinearSpec {
-    in_features: i64,
-    out_features: i64,
-    bias: bool,
+    pub in_features: i64,
+    pub out_features: i64,
+    pub bias: bool,
 }
 
 // ActivationType
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ActivationType {
     Unspecified,
-    ReLU,
+    Relu,
     Sigmoid,
     Softmax,
     Tanh,
@@ -72,26 +72,26 @@ pub enum ActivationType {
 // Activation
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ActivationSpec {
-    activation_type: ActivationType,
-    dim: i32,
+    pub activation_type: ActivationType,
+    pub dim: i32,
 }
 
 // IndexedPooling
 // 出力ポートは y と indices。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IndexedPoolingSpec {
-    kernel_size: i64,
-    stride: i64,
-    padding: i64,
+    pub kernel_size: i64,
+    pub stride: i64,
+    pub padding: i64,
 }
 
 // Unpooling
 // 入力ポートは x と indices。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnpoolingSpec {
-    kernel_size: i64,
-    stride: i64,
-    padding: i64,
+    pub kernel_size: i64,
+    pub stride: i64,
+    pub padding: i64,
 }
 
 // UpsampleMode
@@ -104,15 +104,15 @@ pub enum UpsampleMode {
 // Upsample
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UpsampleSpec {
-    upsample_mode: UpsampleMode,
-    scale_factor: i64,
+    pub upsample_mode: UpsampleMode,
+    pub scale_factor: i64,
 }
 
 // Add
 // alpha は 2 番目以降の入力にかける係数。proto 上の 0(未指定)は 1.0 として扱われる。
 #[derive(Debug, Clone, PartialEq)]
 pub struct AddSpec {
-    alpha: f64,
+    pub alpha: f64,
 }
 
 // Concat
