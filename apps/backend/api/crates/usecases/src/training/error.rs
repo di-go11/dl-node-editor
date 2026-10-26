@@ -11,6 +11,13 @@ pub enum StartTrainingError {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
+
+pub enum StopTrainingError {
+    // C++サーバーに対して学習プロセスを停止するための命令を送る関数が失敗した場合のエラー
+    #[error("Stop training order failed: {0}")]
+    StopOrderFailed(String),
+}
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum TrainingProcessProviderError {
     // 通信できなかった(C++のサーバーが起動していない. タイムアウトなど)
     #[error("training-process-provider is unavailable: {0}")]

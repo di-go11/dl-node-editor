@@ -1,10 +1,9 @@
 use futures_core::Stream;
 
 use entities::training::config::TrainingConfig;
-use entities::training::{JobId, TrainingProcess};
+use entities::training::{JobId, TrainingJobStatus, TrainingProcess};
 
 use super::error::{StartTrainingError, TrainingProcessProviderError};
-
 
 pub trait TrainingProcessProvider {
     type ProgressStream: Stream<Item = Result<TrainingProcess, TrainingProcessProviderError>> + Send; // c++から何度も届く通信(Stream) ItemはStreamが持つ関連型で通信で届く1件ごとの型をvariantなどで決めることができる今回のように。
@@ -22,4 +21,11 @@ pub trait TrainingStarter {
         &self,
         training_config: &TrainingConfig,
     ) -> impl Future<Output = Result<JobId, StartTrainingError>> + Send; // C++サーバーに対して学習プロセスを開始するための命令を送る関数
+}
+
+pub trait TrainingStopper {
+    fn stop_training(
+        &self,
+        job_id: &JobId,
+    ) -> impl Future<Output = Result<TrainingJobStatus, StartTrainingError>> + Send; // C++サーバーに対して学習プロセスを停止するための命令を送る関数戻り値として、学習ステータスを返す。
 }
