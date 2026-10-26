@@ -1,5 +1,6 @@
+use entities::training::TrainingJobStatus;
 use entities::training::{JobId, TrainingJobStatus};
-use entities::training::
+use usecases::training::StopTrainingError;
 use usecases::training::TrainingStopper;
 
 pub struct GrpcTrainingStopper {
@@ -9,12 +10,9 @@ pub struct GrpcTrainingStopper {
 impl TrainingStopper for GrpcTrainingStopper {
     fn stop_training(
         &self,
-        job_id: &entities::training::JobId,
-    ) -> impl std::prelude::rust_2024::Future<
-        Output = Result<
-            entities::training::TrainingJobStatus,
-            usecases::training::StartTrainingError,
-        >,
-    > + Send {
+        job_id: &JobId,
+    ) -> impl std::prelude::rust_2024::Future<Output = Result<TrainingJobStatus, StopTrainingError>> + Send
+    {
+        let request = 
     }
 }
