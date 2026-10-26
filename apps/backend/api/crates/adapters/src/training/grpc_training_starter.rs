@@ -36,7 +36,6 @@ impl TrainingStarter for GrpcTrainingStarter {
             .into_inner(); // StartTrainingResponse
 
         // proto の String をドメインの JobId に変換(空文字列ならエラー)
-        JobId::new(response.job_id)
-            .map_err(|e| StartTrainingError::StartOrderFailed(e.to_string()))
+        JobId::new(response.job_id).map_err(|e| StartTrainingError::StartOrderFailed(e.to_string()))
     }
 }

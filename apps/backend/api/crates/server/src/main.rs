@@ -1,6 +1,9 @@
-use adapters::capabilities::GrpcCapabilityProvider;
+use adapters::GrpcCapabilityProvider;
+use adapters::GrpcTrainingProcessProvider;
+use adapters::GrpcTrainingStarter;
 use tonic::transport::Channel;
 use usecases::capabilities::GetCapabilities;
+use usecases::training::{GetTrainingProcess, StartTraining};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -11,9 +14,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // C++への接続
     let channel = Channel::from_shared(addr)?.connect_lazy();
     // GrpcCapbilityProviderのインスタンス化
-    let provider = GrpcCapabilityProvider::new(channel);
-    // Providerをユースケースに渡す
-    let get_capabilities = GetCapabilities::new(provider);
+    let capability_provider = GrpcCapabilityProvider::new(channel.clone()); // channelは後でも使うので複製を渡す
+    // GrpcTrainingStarterのインスタンス化
+    let training_starter = GrpcTrainingStarter::new(channel.clone());
+    // GrpcTrainingProcessProviderのインスタンス化
+    let training_process_provider = GrpcTrainingProcessProvider::new(channel.clone());
+    // GrpcCapabilityProviderをユースケースに渡す
+    let get_capabilities = GetCapabilities::new(capability_provider);
+    // GrpcTrainingStarterをユースケースに渡す。
+    let start_training = StartTraining::new(training_starter);
+    // GrpcTrainingProcessProviderをユースケースにわたす。
+    let get_process = GetTrainingProcess::new(training_process_provider);
     // ユースケースの実行
     match get_capabilities.execute().await {
         Ok(caps) => {

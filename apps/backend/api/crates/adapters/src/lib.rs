@@ -1,7 +1,9 @@
 pub mod capabilities;
 pub mod training;
 
+pub use capabilities::GrpcCapabilityProvider;
 pub use training::GrpcTrainingProcessProvider;
+pub use training::GrpcTrainingStarter;
 
 pub mod pb {
     pub mod capabilities {

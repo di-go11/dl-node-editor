@@ -2,9 +2,9 @@ use futures_core::Stream;
 
 use entities::training::config::TrainingConfig;
 use entities::training::{JobId, TrainingProcess};
-use thiserror::Error;
 
-use super::error::StartTrainingError;
+use super::error::{StartTrainingError, TrainingProcessProviderError};
+
 
 pub trait TrainingProcessProvider {
     type ProgressStream: Stream<Item = Result<TrainingProcess, TrainingProcessProviderError>> + Send; // c++から何度も届く通信(Stream) ItemはStreamが持つ関連型で通信で届く1件ごとの型をvariantなどで決めることができる今回のように。
@@ -22,15 +22,4 @@ pub trait TrainingStarter {
         &self,
         training_config: &TrainingConfig,
     ) -> impl Future<Output = Result<JobId, StartTrainingError>> + Send; // C++サーバーに対して学習プロセスを開始するための命令を送る関数
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
-
-pub enum TrainingProcessProviderError {
-    // 通信できなかった(C++のサーバーが起動していない. タイムアウトなど)
-    #[error("training-process-provider is unavailable: {0}")]
-    Unavailable(String),
-    // 返ってきたデータが不正
-    #[error("training-process-provider returned invalid data: {0}")]
-    InvalidData(String),
 }

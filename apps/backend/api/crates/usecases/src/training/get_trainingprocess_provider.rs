@@ -1,6 +1,7 @@
 use entities::training::JobId;
 
-use super::{TrainingProcessProvider, TrainingProcessProviderError};
+use super::TrainingProcessProvider;
+use super::error::TrainingProcessProviderError;
 
 pub struct GetTrainingProcess<P: TrainingProcessProvider> {
     provider: P,
