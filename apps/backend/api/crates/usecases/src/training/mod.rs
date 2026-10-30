@@ -9,3 +9,4 @@ pub use ports::{TrainingProcessProvider, TrainingStarter, TrainingStopper};
 
 pub use error::{StartTrainingError, StopTrainingError, TrainingProcessProviderError};
 pub use start_training::StartTraining;
+pub use stop_training::StopTraining;

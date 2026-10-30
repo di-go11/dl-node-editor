@@ -16,6 +16,9 @@ pub enum StopTrainingError {
     // C++サーバーに対して学習プロセスを停止するための命令を送る関数が失敗した場合のエラー
     #[error("Stop training order failed: {0}")]
     StopOrderFailed(String),
+    // C++サーバーから返ってきたレスポンスが不正だった場合のエラー
+    #[error("Stop training returned invalid response: {0}")]
+    InvalidResponse(String),
 }
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum TrainingProcessProviderError {

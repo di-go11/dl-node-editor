@@ -2,10 +2,20 @@ use crate::pb::training::v1::{self as training_pb};
 
 use entities::training::config::TrainingConfig;
 use entities::training::config::{Loss, Optimizer};
+use entities::training::JobId;
 
 use crate::pb::training::v1::optimizer_config::Config as OptimizerConfig;
 
 use crate::pb::training::v1::loss_config::Config as LossConfig;
+
+// StopTrainingRequestをJobIdから生成するためのトレイト実装
+impl From<&JobId> for training_pb::StopTrainingRequest {
+    fn from(value: &JobId) -> Self {
+        training_pb::StopTrainingRequest {
+            job_id: value.as_str().to_string(),
+        }
+    }
+}
 
 // TrainingConfig関連のドメインをprotoに変換するためのトレイト実装
 impl From<&TrainingConfig> for training_pb::StartTrainingRequest {

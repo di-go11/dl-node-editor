@@ -8,3 +8,4 @@ mod to_proto;
 pub use error::TrainingConversionError;
 pub use grpc_training_process_provider::GrpcTrainingProcessProvider;
 pub use grpc_training_starter::GrpcTrainingStarter;
+pub use grpc_training_stopper::GrpcTrainingStopper;

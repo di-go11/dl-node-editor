@@ -1,9 +1,10 @@
 use adapters::GrpcCapabilityProvider;
 use adapters::GrpcTrainingProcessProvider;
 use adapters::GrpcTrainingStarter;
+use adapters::GrpcTrainingStopper;
 use tonic::transport::Channel;
 use usecases::capabilities::GetCapabilities;
-use usecases::training::{GetTrainingProcess, StartTraining};
+use usecases::training::{GetTrainingProcess, StartTraining, StopTraining};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -19,12 +20,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let training_starter = GrpcTrainingStarter::new(channel.clone());
     // GrpcTrainingProcessProviderのインスタンス化
     let training_process_provider = GrpcTrainingProcessProvider::new(channel.clone());
+    // GrpcTrainingStopperのインスタンス化
+    let training_stopper = GrpcTrainingStopper::new(channel.clone());
     // GrpcCapabilityProviderをユースケースに渡す
     let get_capabilities = GetCapabilities::new(capability_provider);
     // GrpcTrainingStarterをユースケースに渡す。
     let start_training = StartTraining::new(training_starter);
     // GrpcTrainingProcessProviderをユースケースにわたす。
     let get_process = GetTrainingProcess::new(training_process_provider);
+    // GrpcTrainingStopperをユースケースに渡す。
+    let stop_training = StopTraining::new(training_stopper);
     // ユースケースの実行
     match get_capabilities.execute().await {
         Ok(caps) => {

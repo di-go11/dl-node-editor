@@ -39,23 +39,31 @@ impl From<pb::ClassificationMetrics> for ClassificationMetrics {
     }
 }
 
+// proto の TrainingStatus(i32) をドメインの TrainingJobStatus に変換する。
+// StreamProgressResponse と StopTrainingResponse の両方で使う。
+// error_message は Failed のときだけ reason として使う(Stop のように持たないレスポンスでは空文字を渡す)
+pub(super) fn status_from_proto(
+    status: i32,
+    error_message: &str,
+) -> Result<TrainingJobStatus, TrainingConversionError> {
+    let pb_status = pb::TrainingStatus::try_from(status)
+        .map_err(|_| TrainingConversionError::UnknownTrainingStatus(status))?;
+    match pb_status {
+        pb::TrainingStatus::Idle => Ok(TrainingJobStatus::Idle),
+        pb::TrainingStatus::Running => Ok(TrainingJobStatus::Running),
+        pb::TrainingStatus::Completed => Ok(TrainingJobStatus::Completed),
+        pb::TrainingStatus::Failed => Ok(TrainingJobStatus::Failed {
+            reason: error_message.to_string(),
+        }),
+        pb::TrainingStatus::Stopped => Ok(TrainingJobStatus::Stopped),
+        pb::TrainingStatus::Unspecified => Err(TrainingConversionError::UnspecifiedJobStatusType),
+    }
+}
+
 impl TryFrom<pb::StreamProgressResponse> for TrainingProcess {
     type Error = TrainingConversionError;
     fn try_from(value: pb::StreamProgressResponse) -> Result<Self, Self::Error> {
-        let status = pb::TrainingStatus::try_from(value.status)
-            .map_err(|_| TrainingConversionError::UnknownTrainingStatus(value.status))?;
-        let status = match status {
-            pb::TrainingStatus::Idle => TrainingJobStatus::Idle,
-            pb::TrainingStatus::Running => TrainingJobStatus::Running,
-            pb::TrainingStatus::Completed => TrainingJobStatus::Completed,
-            pb::TrainingStatus::Failed => TrainingJobStatus::Failed {
-                reason: value.error_message.clone(),
-            },
-            pb::TrainingStatus::Stopped => TrainingJobStatus::Stopped,
-            pb::TrainingStatus::Unspecified => {
-                return Err(TrainingConversionError::UnspecifiedJobStatusType);
-            }
-        };
+        let status = status_from_proto(value.status, &value.error_message)?;
         Ok(TrainingProcess {
             epoch: value.epoch,
             train_loss: value.train_loss,
