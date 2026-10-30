@@ -1,5 +1,6 @@
 pub mod capabilities;
 pub mod training;
+pub mod http;
 
 pub use capabilities::GrpcCapabilityProvider;
 pub use training::GrpcTrainingProcessProvider;
