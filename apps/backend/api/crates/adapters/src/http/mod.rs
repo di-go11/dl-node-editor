@@ -1,1 +1,3 @@
-pub mod dto;
+mod dto;
+
+pub use dto::TrainingConfigDto;
