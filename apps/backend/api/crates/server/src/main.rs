@@ -2,9 +2,13 @@ use adapters::GrpcCapabilityProvider;
 use adapters::GrpcTrainingProcessProvider;
 use adapters::GrpcTrainingStarter;
 use adapters::GrpcTrainingStopper;
+use adapters::http::AppState;
+use std::sync::Arc;
 use tonic::transport::Channel;
 use usecases::capabilities::GetCapabilities;
 use usecases::training::{GetTrainingProcess, StartTraining, StopTraining};
+
+use adapters::http::router;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -14,31 +18,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // C++への接続
     let channel = Channel::from_shared(addr)?.connect_lazy();
-    // GrpcCapbilityProviderのインスタンス化
-    let capability_provider = GrpcCapabilityProvider::new(channel.clone()); // channelは後でも使うので複製を渡す
-    // GrpcTrainingStarterのインスタンス化
-    let training_starter = GrpcTrainingStarter::new(channel.clone());
-    // GrpcTrainingProcessProviderのインスタンス化
-    let training_process_provider = GrpcTrainingProcessProvider::new(channel.clone());
-    // GrpcTrainingStopperのインスタンス化
-    let training_stopper = GrpcTrainingStopper::new(channel.clone());
-    // GrpcCapabilityProviderをユースケースに渡す
-    let get_capabilities = GetCapabilities::new(capability_provider);
-    // GrpcTrainingStarterをユースケースに渡す。
-    let _start_training = StartTraining::new(training_starter);
-    // GrpcTrainingProcessProviderをユースケースにわたす。
-    let _get_process = GetTrainingProcess::new(training_process_provider);
-    // GrpcTrainingStopperをユースケースに渡す。
-    let _stop_training = StopTraining::new(training_stopper);
-    // ユースケースの実行
-    match get_capabilities.execute().await {
-        Ok(caps) => {
-            println!("cuda available: {}", caps.cuda_available());
-            for d in caps.devices() {
-                println!("  {:?} #{}: {}", d.device_type, d.index, d.name);
-            }
-        }
-        Err(e) => eprintln!("failed to get capabilities: {e}"),
-    }
+    // アダプターをユースケースに渡して、AppStateにまとめる
+    let state = AppState {
+        get_capabilities: Arc::new(GetCapabilities::new(GrpcCapabilityProvider::new(
+            channel.clone(),
+        ))),
+        start_training: Arc::new(StartTraining::new(GrpcTrainingStarter::new(
+            channel.clone(),
+        ))),
+        get_process: Arc::new(GetTrainingProcess::new(GrpcTrainingProcessProvider::new(
+            channel.clone(),
+        ))),
+        stop_training: Arc::new(StopTraining::new(GrpcTrainingStopper::new(channel.clone()))),
+    };
+
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await?;
+    axum::serve(listener, router(state)).await?;
     Ok(())
 }
