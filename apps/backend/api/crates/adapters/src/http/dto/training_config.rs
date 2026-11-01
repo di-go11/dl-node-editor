@@ -1,7 +1,8 @@
 use entities::training::config::Loss as LossConfig;
 use entities::training::config::Optimizer as OptimizerConfig;
 use entities::training::config::TrainingConfig;
-use serde::Deserialize;
+use entities::training::JobId;
+use serde::{Deserialize, Serialize};
 
 use super::data_spec::DataSpecDto;
 use super::model::ModelGraphDto;
@@ -38,6 +39,19 @@ impl From<TrainingConfigDto> for TrainingConfig {
             seed: value.seed,
             data_spec: value.data_spec.into(),
             save_last_every: value.save_last_every,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct StartTrainingResponseDto {
+    pub job_id: String,
+}
+
+impl From<JobId> for StartTrainingResponseDto {
+    fn from(value: JobId) -> Self {
+        StartTrainingResponseDto {
+            job_id: value.as_str().to_string(),
         }
     }
 }
@@ -196,7 +210,10 @@ mod tests {
                 dilation: 1,
             })
         );
-        assert_eq!(config.model_graph.nodes[1].spec, NodeSpec::Concat(ConcatSpec));
+        assert_eq!(
+            config.model_graph.nodes[1].spec,
+            NodeSpec::Concat(ConcatSpec)
+        );
         assert_eq!(
             config.optimizer,
             OptimizerConfig::AdamW {

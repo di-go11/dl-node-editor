@@ -25,11 +25,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // GrpcCapabilityProviderをユースケースに渡す
     let get_capabilities = GetCapabilities::new(capability_provider);
     // GrpcTrainingStarterをユースケースに渡す。
-    let start_training = StartTraining::new(training_starter);
+    let _start_training = StartTraining::new(training_starter);
     // GrpcTrainingProcessProviderをユースケースにわたす。
-    let get_process = GetTrainingProcess::new(training_process_provider);
+    let _get_process = GetTrainingProcess::new(training_process_provider);
     // GrpcTrainingStopperをユースケースに渡す。
-    let stop_training = StopTraining::new(training_stopper);
+    let _stop_training = StopTraining::new(training_stopper);
     // ユースケースの実行
     match get_capabilities.execute().await {
         Ok(caps) => {
