@@ -20,15 +20,18 @@ where
     P: TrainingProcessProvider + Send + Sync + 'static,
     T: TrainingStopper + Send + Sync + 'static,
 {
-    Router::new()
-        .route("/capabilities", get(get_capabilities::<C>))
-        .route("/trainings", post(start_training::<S>))
-        .route("/trainings/{job_id}", get(get_training_process::<P>))
-        .route(
-            "/trainings/{job_id}/progress",
-            get(stream_training_process::<P>),
-        )
-        .route("/trainings/{job_id}/stop", post(stop_training::<T>))
-        .route("/trainings/{job_id}/status", get(get_training_status::<P>))
-        .with_state(state)
+    Router::new().nest(
+        "/api/v1",
+        Router::new()
+            .route("/capabilities", get(get_capabilities::<C>))
+            .route("/trainings", post(start_training::<S>))
+            .route("/trainings/{job_id}", get(get_training_process::<P>))
+            .route(
+                "/trainings/{job_id}/progress",
+                get(stream_training_process::<P>),
+            )
+            .route("/trainings/{job_id}/stop", post(stop_training::<T>))
+            .route("/trainings/{job_id}/status", get(get_training_status::<P>))
+            .with_state(state),
+    )
 }
