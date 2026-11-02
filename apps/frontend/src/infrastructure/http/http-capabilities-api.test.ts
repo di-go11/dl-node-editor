@@ -26,41 +26,66 @@ afterAll(() => server.close())
 const api = () => createHttpCapabilitiesApi(createApiClient(TEST_BASE_URL))
 
 describe('createHttpCapabilitiesApi', () => {
-  it('契約の JSON を、エンティティの型に変換して返す', async () => {
+  it('契約の JSON を、エンティティの型に変換して返す(種類と番号は id から読む)', async () => {
     const result = await api().getCapabilities()
     expect(result).toEqual({
       ok: true,
       value: {
         cudaAvailable: true,
         devices: [
-          { name: 'CPU', index: 0, type: 'cpu' },
-          { name: 'Mock GPU (NVIDIA GeForce RTX 4070)', index: 0, type: 'cuda' },
+          { name: 'cpu', index: 0, type: 'cpu' },
+          { name: 'cuda:0', index: 0, type: 'cuda' },
         ],
       },
     })
   })
 
-  it('502(学習エンジンに届かない)なら、契約の ErrorResponse からメッセージを取り出す', async () => {
+  it('GPU がなければ cudaAvailable は false、読めない id は unspecified', async () => {
     server.use(
       http.get(`${TEST_BASE_URL}/capabilities`, () =>
-        HttpResponse.json(
-          { error: { code: 'UPSTREAM_UNAVAILABLE', message: '学習エンジンに接続できません' } },
-          { status: 502 },
-        ),
+        HttpResponse.json({
+          devices: [
+            { id: 'cpu', name: 'cpu' },
+            { id: 'npu:1', name: 'npu' },
+          ],
+        }),
       ),
     )
     expect(await api().getCapabilities()).toEqual({
-      ok: false,
-      error: {
-        kind: 'http',
-        status: 502,
-        code: 'UPSTREAM_UNAVAILABLE',
-        message: '学習エンジンに接続できません',
+      ok: true,
+      value: {
+        cudaAvailable: false,
+        devices: [
+          { name: 'cpu', index: 0, type: 'cpu' },
+          { name: 'npu', index: 0, type: 'unspecified' },
+        ],
       },
     })
   })
 
-  it('エラーの本文が契約の形でなくても、状態コードから説明を作る', async () => {
+  it('cuda の番号を id から読む', async () => {
+    server.use(
+      http.get(`${TEST_BASE_URL}/capabilities`, () =>
+        HttpResponse.json({ devices: [{ id: 'cuda:2', name: 'cuda:2' }] }),
+      ),
+    )
+    expect(await api().getCapabilities()).toEqual({
+      ok: true,
+      value: { cudaAvailable: true, devices: [{ name: 'cuda:2', index: 2, type: 'cuda' }] },
+    })
+  })
+
+  it('502(学習エンジンに届かない)なら、本文が空でも状態コードから説明を作る', async () => {
+    server.use(
+      http.get(`${TEST_BASE_URL}/capabilities`, () => new HttpResponse(null, { status: 502 })),
+    )
+    expect(await api().getCapabilities()).toEqual({
+      ok: false,
+      error: { kind: 'http', status: 502, message: '学習サーバーに接続できません。' },
+    })
+  })
+
+  it('エラーの本文は読まない', async () => {
     server.use(
       http.get(`${TEST_BASE_URL}/capabilities`, () => new HttpResponse('oops', { status: 500 })),
     )
@@ -70,13 +95,11 @@ describe('createHttpCapabilitiesApi', () => {
 
   it('応答が契約の形をしていなければ invalid-response', async () => {
     server.use(
-      http.get(`${TEST_BASE_URL}/capabilities`, () =>
-        HttpResponse.json({ cuda_available: 'yes', devices: [] }),
-      ),
+      http.get(`${TEST_BASE_URL}/capabilities`, () => HttpResponse.json({ devices: 'none' })),
     )
     const result = await api().getCapabilities()
     expect(result).toMatchObject({ ok: false, error: { kind: 'invalid-response' } })
-    if (!result.ok) expect(result.error.message).toContain('cuda_available')
+    if (!result.ok) expect(result.error.message).toContain('devices')
   })
 
   it('通信そのものが失敗したら network', async () => {

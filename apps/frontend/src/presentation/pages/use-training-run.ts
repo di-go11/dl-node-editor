@@ -39,13 +39,13 @@ export type TrainingRun = {
   readonly issues: readonly Issue[]
   /** 表示している結果が、その後の変更で古くなっているか */
   readonly stale: boolean
-  readonly check: () => Promise<void>
+  readonly check: () => void
   readonly start: () => Promise<void>
 }
 
 export function useTrainingRun(availableDevices: readonly string[] | undefined): TrainingRun {
   const store = useEditorStoreApi()
-  const { validationApi, trainingApi } = useDependencies()
+  const { trainingApi } = useDependencies()
   const navigate = useNavigate()
   const runState = useEditorStore((state) => state.runState)
   const document = useEditorStore((state) => state.document)
@@ -53,25 +53,22 @@ export function useTrainingRun(availableDevices: readonly string[] | undefined):
   const target = checkTargetOf(document)
   const state = effectiveRunState(runState, target)
 
-  const check = useCallback(async () => {
+  const check = useCallback(() => {
     const before = store.getState()
     const checkTarget = checkTargetOf(before.document)
     if (checkTarget === null) return
     before.setRunState(beginCheck(before.runState, checkTarget))
 
-    const result = await checkIntegrity(
-      { validationApi },
-      {
-        graph: checkTarget.graph,
-        context: checkTarget.context,
-        catalog: before.catalog,
-        settings: checkTarget.training,
-        ...(availableDevices === undefined ? {} : { availableDevices }),
-      },
-    )
+    const result = checkIntegrity({
+      graph: checkTarget.graph,
+      context: checkTarget.context,
+      catalog: before.catalog,
+      settings: checkTarget.training,
+      ...(availableDevices === undefined ? {} : { availableDevices }),
+    })
     const after = store.getState()
     after.setRunState(finishCheck(after.runState, checkTarget, result))
-  }, [store, validationApi, availableDevices])
+  }, [store, availableDevices])
 
   const start = useCallback(async () => {
     const before = store.getState()
@@ -93,10 +90,6 @@ export function useTrainingRun(availableDevices: readonly string[] | undefined):
     if (result.reason === 'api') {
       after.addMessages([
         { level: 'error', text: `学習を開始できませんでした: ${result.error.message}` },
-        ...(result.error.issues ?? []).map((issue) => ({
-          level: issue.severity,
-          text: issue.message,
-        })),
       ])
     }
   }, [store, trainingApi, navigate])

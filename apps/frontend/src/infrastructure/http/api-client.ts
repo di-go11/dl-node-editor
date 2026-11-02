@@ -5,8 +5,6 @@ import { z } from 'zod'
 import type { ApiError, ApiResult } from '../../application/ports/api-result'
 import { apiError, apiOk } from '../../application/ports/api-result'
 import type { paths } from '../../api/schema'
-import { parseNodeId } from '../../entity/model-graph/node-id'
-import type { Issue } from '../../entity/validation/issue'
 
 /**
  * HTTP クライアント(契約 openapi.yaml に従う)。
@@ -34,65 +32,31 @@ export function createApiClient(baseUrl: string = API_BASE_PATH): ApiClient {
   return createClient<paths>({ baseUrl })
 }
 
-/** 契約の Issue(サーバーが返す検証の問題 1 件) */
-export const issueJsonSchema = z.object({
-  severity: z.enum(['error', 'warning']),
-  node_id: z.string().optional(),
-  port: z.string().optional(),
-  message: z.string(),
-})
-
-/**
- * 契約の Issue → エンティティの Issue。
- *
- * サーバー由来の問題には、フロントの IssueCode のような細かい分類がないので
- * 'server/reported' にまとめる。node_id がノード ID として使えない文字列なら、
- * 位置は捨ててメッセージだけを残す(ログのクリックで存在しないノードを探さないように)。
- */
-export function issueFromJson(json: z.infer<typeof issueJsonSchema>): Issue {
-  const id = json.node_id === undefined ? null : parseNodeId(json.node_id)
-  return {
-    severity: json.severity,
-    code: 'server/reported',
-    message: json.message,
-    ...(id === null ? {} : { nodeId: id }),
-    ...(json.port === undefined ? {} : { port: json.port }),
-  }
-}
-
-/** 契約の ErrorResponse。エラーの本文がこの形なら、メッセージ・コード・問題を取り出す */
-const errorResponseSchema = z.object({
-  error: z.object({
-    code: z.string(),
-    message: z.string(),
-    issues: z.array(issueJsonSchema).optional(),
-  }),
-})
-
 const japaneseErrors = z.locales.ja().localeError
 
 type FetchResult = {
   readonly data?: unknown
-  readonly error?: unknown
   readonly response: Response
 }
 
-function httpError(response: Response, body: unknown): ApiError {
-  const parsed = errorResponseSchema.safeParse(body)
-  if (parsed.success) {
-    const { code, message, issues } = parsed.data.error
-    return {
-      kind: 'http',
-      status: response.status,
-      code,
-      message,
-      ...(issues === undefined ? {} : { issues: issues.map(issueFromJson) }),
-    }
-  }
+/**
+ * 状態コードごとの説明。契約のエラー応答には本文がないので、状態コードから文言を決める。
+ * 409 と 422 を返すのは今のところ学習開始だけである。
+ */
+const HTTP_ERROR_MESSAGES: Readonly<Record<number, string>> = {
+  404: '指定されたジョブが見つかりません。',
+  409: 'すでに実行中の学習があります。',
+  422: '学習設定またはモデル構造が受け付けられませんでした。',
+  502: '学習サーバーに接続できません。',
+}
+
+function httpError(response: Response): ApiError {
   return {
     kind: 'http',
     status: response.status,
-    message: `サーバーがエラーを返しました(HTTP ${response.status})。`,
+    message:
+      HTTP_ERROR_MESSAGES[response.status] ??
+      `サーバーがエラーを返しました(HTTP ${response.status})。`,
   }
 }
 
@@ -120,7 +84,7 @@ export async function callApi<Json, T>(
     return apiError({ kind: 'network', message: `サーバーに接続できません: ${detail}` })
   }
 
-  if (!result.response.ok) return apiError(httpError(result.response, result.error))
+  if (!result.response.ok) return apiError(httpError(result.response))
 
   const parsed = schema.safeParse(result.data, { error: japaneseErrors })
   if (!parsed.success) {

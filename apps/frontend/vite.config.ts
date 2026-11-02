@@ -37,15 +37,16 @@ export default defineConfig({
         resolve(projectRoot, '../backend/ai-engine/modelconfigs'),
       ],
     },
-    // Rust の HTTP API ができたら有効にする(指示書 9 章の注記)。
+    // Rust の HTTP API への転送(指示書 9 章の注記)。
     // ブラウザから見て同一オリジンになるため CORS の設定が不要になり、
     // 転送先は compose のサービス名で名前解決できる。
-    // proxy: {
-    //   '/api': {
-    //     target: 'http://api-dev:8080',
-    //     changeOrigin: true,
-    //   },
-    // },
+    // Rust も /api/v1 の下でルートを公開しているので、パスは書き換えない。
+    proxy: {
+      '/api': {
+        target: 'http://api-dev:8080',
+        changeOrigin: true,
+      },
+    },
   },
   test: {
     // DOM を使うテスト(React Testing Library)のため、既定の環境を jsdom にする。

@@ -8,7 +8,7 @@ import type { VariantCatalog } from '../variant'
 import { isVariantKind, variantKindsOf } from '../variant'
 
 /**
- * 学習設定と進捗の JSON 表記(`test_segnet_dag.json` と同じ形)を検証する Zod スキーマ。
+ * 学習設定の JSON 表記(`test_segnet_dag.json` と同じ形)を検証する Zod スキーマ。
  *
  * 方針は 1a の model-graph/proto-json/schema.ts と同じである。
  *
@@ -20,8 +20,7 @@ import { isVariantKind, variantKindsOf } from '../variant'
  *     構造が正しければ、制約を破った値(編集途中の epoch = 0 など)でも読み込める。
  *     そのほうが、保存ファイルを開いてから画面上で直せるため親切である。
  *
- * 生成型(src/api/schema.d.ts)とのキーの一致は
- * src/api/training-shape.contract.test.ts で型レベルに検査している。
+ * HTTP で送る形はこれとは別で、infrastructure/http/rust-training-request.ts が変換する。
  */
 
 export type ParamBagJson = Record<string, z.infer<typeof paramValueJsonSchema>>
@@ -101,67 +100,8 @@ export const startTrainingRequestJsonSchema = trainingSettingsJsonSchema.extend(
   model_graph: modelGraphJsonSchema,
 })
 
-// ------------------------------------------------------------
-// 進捗(StreamProgressResponse)
-// ------------------------------------------------------------
-
-/** proto の TrainingStatus の名前。並びは proto の番号順 */
-export const TRAINING_STATUS_JSON_VALUES = [
-  'TRAINING_STATUS_UNSPECIFIED',
-  'TRAINING_STATUS_RUNNING',
-  'TRAINING_STATUS_COMPLETED',
-  'TRAINING_STATUS_FAILED',
-  'TRAINING_STATUS_STOPPED',
-  'TRAINING_STATUS_IDLE',
-] as const
-
-export const trainingStatusJsonSchema = z.enum(TRAINING_STATUS_JSON_VALUES)
-
-export const segmentationMetricsJsonSchema = z.object({
-  pixel_acc: z.number(),
-  miou: z.number(),
-  fw_iou: z.number(),
-  mean_class_accuracy: z.number(),
-  per_class_iou: z.array(z.number()),
-})
-
-export const classificationMetricsJsonSchema = z.object({
-  accuracy: z.number(),
-  macro_f1: z.number(),
-  per_class_accuracy: z.array(z.number()),
-})
-
-/**
- * proto の oneof(metrics)。2 つの strictObject の合併にすると、推論される型も
- * 「どちらか一方」になり、変換側で `'segmentation' in json` による絞り込みが効く。
- */
-export const progressMetricsJsonSchema = z.union([
-  z.strictObject({ segmentation: segmentationMetricsJsonSchema }),
-  z.strictObject({ classification: classificationMetricsJsonSchema }),
-])
-
-/**
- * SSE の各イベントの data に入る JSON 1 件。
- *
- * 進捗はサーバーから来る外部入力なので、型を信じずに実行時に検証する。
- * openapi-fetch は SSE を扱えず、生成型だけでは実行時の保証がないためである(指示書 6.0)。
- */
-export const streamProgressJsonSchema = z.object({
-  epoch: z.number(),
-  train_loss: z.number(),
-  val_loss: z.number(),
-  status: trainingStatusJsonSchema,
-  metrics: progressMetricsJsonSchema.optional(),
-  epoch_elapsed_ms: z.number(),
-  total_elapsed_ms: z.number(),
-  error_message: z.string().optional(),
-})
-
 export type ImageSpecJson = z.infer<typeof imageSpecJsonSchema>
 export type DataSpecJson = z.infer<typeof dataSpecJsonSchema>
 export type SeedJson = z.infer<typeof seedJsonSchema>
 export type TrainingSettingsJson = z.infer<typeof trainingSettingsJsonSchema>
 export type StartTrainingRequestJson = z.infer<typeof startTrainingRequestJsonSchema>
-export type TrainingStatusJson = z.infer<typeof trainingStatusJsonSchema>
-export type ProgressMetricsJson = z.infer<typeof progressMetricsJsonSchema>
-export type StreamProgressJson = z.infer<typeof streamProgressJsonSchema>

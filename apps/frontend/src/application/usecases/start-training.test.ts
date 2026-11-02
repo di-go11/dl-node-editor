@@ -22,7 +22,14 @@ function fakeTrainingApi(ok = true) {
           },
     ),
   )
-  return { api: { start } satisfies TrainingApi, start }
+  return {
+    api: {
+      start,
+      subscribeProgress: () => () => undefined,
+      stop: () => Promise.resolve({ ok: true, value: 'running' }),
+    } satisfies TrainingApi,
+    start,
+  }
 }
 
 const document: EditorDocument = {

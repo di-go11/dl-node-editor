@@ -98,7 +98,7 @@ function TrainingSettingsContent({ settings }: { readonly settings: TrainingSett
           type="button"
           disabled={!run.canCheck}
           onClick={() => {
-            void run.check()
+            run.check()
           }}
         >
           整合性チェック

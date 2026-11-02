@@ -4,7 +4,6 @@ import { MemoryRouter, Route, Routes, useParams } from 'react-router'
 import { describe, expect, it, vi } from 'vitest'
 
 import { apiError, apiOk } from '../../application/ports/api-result'
-import type { ModelGraphValidationApi } from '../../application/ports/model-graph-validation-api'
 import type { TrainingApi } from '../../application/ports/training-api'
 import { emptyEditorDocument } from '../../entity/document/document'
 import type { ModelGraph } from '../../entity/model-graph/model-graph'
@@ -23,8 +22,8 @@ import { TrainingSettingsPage } from './TrainingSettingsPage'
  *   - チェックで NG なら実行できず、OK なら実行できる
  *   - チェックの後に何か変更すると、再チェックが必要になる
  *
- * 学習設定画面を、本物のストア・状態機械・ユースケースと、偽物のポート(サーバー側の
- * チェックと学習開始)で描き、利用者の操作から確かめる。
+ * 学習設定画面を、本物のストア・状態機械・ユースケースと、偽物のポート(学習開始など)で描き、
+ * 利用者の操作から確かめる。
  */
 
 function ProgressStub() {
@@ -142,7 +141,9 @@ describe('学習実行', () => {
     const start = vi.fn<TrainingApi['start']>(() =>
       Promise.resolve(apiOk({ jobId: 'job-42', status: 'running' })),
     )
-    const { store } = renderSettings({ dependencies: { trainingApi: { start } } })
+    const { store } = renderSettings({
+      dependencies: { trainingApi: { ...fakeDependencies().trainingApi, start } },
+    })
     await screen.findByLabelText(/モデル名/)
     await fillRequiredFields()
     await checkAndWait()
@@ -160,7 +161,7 @@ describe('学習実行', () => {
         apiError({ kind: 'http', status: 502, message: '学習エンジンに接続できません' }),
       ),
     )
-    renderSettings({ dependencies: { trainingApi: { start } } })
+    renderSettings({ dependencies: { trainingApi: { ...fakeDependencies().trainingApi, start } } })
     await screen.findByLabelText(/モデル名/)
     await fillRequiredFields()
     await checkAndWait()
@@ -186,19 +187,6 @@ describe('ログ', () => {
     expect(await screen.findByRole('heading', { name: 'エディタ' })).toBeInTheDocument()
     expect(store.getState().selection.nodeIds).toEqual(['conv1'])
     expect(store.getState().focusRequest).toEqual({ nodeId: 'conv1' })
-  })
-
-  it('サーバー側のチェックに届かなければ、エラーとして出して実行させない', async () => {
-    const validate = vi.fn<ModelGraphValidationApi['validate']>(() =>
-      Promise.resolve(apiError({ kind: 'network', message: 'サーバーに接続できません' })),
-    )
-    renderSettings({ dependencies: { validationApi: { validate } } })
-    await screen.findByLabelText(/モデル名/)
-    await fillRequiredFields()
-    await checkAndWait()
-
-    expect(log()).toHaveTextContent('サーバー側のチェックができませんでした')
-    expect(runButton()).toBeDisabled()
   })
 })
 

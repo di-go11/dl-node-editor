@@ -1,5 +1,3 @@
-import type { Issue } from '../../entity/validation/issue'
-
 /**
  * 外部(API・ファイル)とのやり取りの結果。
  *
@@ -13,6 +11,8 @@ import type { Issue } from '../../entity/validation/issue'
  */
 
 export type ApiErrorKind =
+  /** 送る内容を契約の形にできなかった(サーバーには送っていない) */
+  | 'invalid-request'
   /** サーバーに届かなかった(ネットワークの断絶、CORS など) */
   | 'network'
   /** サーバーがエラーの状態コードを返した(4xx / 5xx) */
@@ -26,10 +26,6 @@ export type ApiError = {
   readonly message: string
   /** HTTP の状態コード(kind が 'http' のとき) */
   readonly status?: number
-  /** 契約の ErrorResponse.error.code(例 UPSTREAM_UNAVAILABLE) */
-  readonly code?: string
-  /** 契約の ErrorResponse.error.issues。位置の分かる問題(400 のときなど)。ログに並べる */
-  readonly issues?: readonly Issue[]
 }
 
 export type ApiResult<T> =

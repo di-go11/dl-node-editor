@@ -3,11 +3,8 @@ import type { NodeId } from '../model-graph/node-id'
 /**
  * 検証で見つかった問題。
  *
- * 契約(openapi.yaml の Issue)と同じ形にしてある。フロント側のチェックと
- * サーバー側のチェック(/model-graphs/validate)の結果を、ログパネルが
- * 同じ型として並べて扱えるようにするためである。
+ * モデル構造・学習設定のチェックの結果を、ログパネルが同じ型として並べて扱えるようにする。
  *
- * code はドメイン側だけの追加項目で、サーバー由来の Issue には入らない。
  * テストが日本語のメッセージ文に依存すると、言い回しを直すたびにテストが壊れる。
  * 安定した識別子で検査できるようにするために持たせている。
  */
@@ -57,9 +54,6 @@ export type IssueCode =
   | 'training/task-unavailable'
   | 'training/loss-task-mismatch'
   | 'training/output-activation'
-  // サーバー側のチェック(/model-graphs/validate)
-  | 'server/reported'
-  | 'server/unreachable'
   // 保存ファイル(指示書 7 章)
   | 'document/invalid-json'
   | 'document/not-a-document'

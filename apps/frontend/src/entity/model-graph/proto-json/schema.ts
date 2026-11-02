@@ -12,8 +12,7 @@ import { isNodeKind } from '../node-spec'
  * 保存ファイル(指示書 7 章)にも埋め込まれ、3 言語すべての共通語になっている。
  * つまりこのプロジェクトの中核的なデータ形式なので、エンティティ層が持つ。
  *
- * OpenAPI から生成した型(src/api/schema.d.ts)との一致は
- * src/api/model-graph-shape.contract.test.ts で型レベルに検査している。
+ * HTTP で送る形はこれとは別で、infrastructure/http/rust-training-request.ts が変換する。
  *
  * ## このスキーマが検証すること / しないこと
  *

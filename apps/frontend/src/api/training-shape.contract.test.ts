@@ -8,30 +8,27 @@ import type {
 } from '../entity/training/data-spec'
 import type { LOSS_TYPES } from '../entity/training/loss'
 import { OPTIMIZER_TYPES } from '../entity/training/optimizer'
-import type { TRAINING_STATUS_JSON_VALUES } from '../entity/training/proto-json/schema'
-import type {
-  ImageSpecJson,
-  StartTrainingRequestJson,
-  StreamProgressJson,
-  TrainingSettingsJson,
-  classificationMetricsJsonSchema,
-  segmentationMetricsJsonSchema,
-} from '../entity/training/proto-json/schema'
+import type { TrainingStatus } from '../entity/training/progress'
 import { variantKindsOf } from '../entity/training/variant'
+import type { TrainingProcessJson } from '../infrastructure/http/http-training-progress'
+import type {
+  RustDataSpec,
+  RustStartTrainingRequest,
+} from '../infrastructure/http/rust-training-request'
 
 import type { components } from './schema'
 
 /**
- * 学習設定と進捗の、エンティティ層の定義と契約(openapi.yaml)の一致を検査する。
+ * 学習設定の、カタログの定義・HTTP 用のスキーマと、契約(openapi.yaml)の一致を検査する。
  *
  * 1b の node-catalog-params.contract.test.ts と同じ考え方である。
  * エンティティ層は生成型を参照しない(dependency-cruiser のルール)ので、
  * 「参照しないが、一致は検査する」接ぎ目をここに置く。
  *
  * 検査するもの:
- *   - optimizer / loss / annotation / task の種類名が、契約の oneof のキーと一致する
+ *   - optimizer / loss / annotation / task の種類名が、契約の type の値と一致する
  *   - 各種類のパラメータ名が、契約の *Config / *Spec のキーと一致する
- *   - 学習設定・進捗の JSON のキーと、省略できるキーが契約と一致する
+ *   - 学習開始・進捗の JSON のキーと、省略できるキーが契約と一致する
  *
  * 例えば optimizer に 'rmsprop' を足したのに契約を更新し忘れる、あるいは
  * learning_rate を lr と書き間違えると、ここが型エラーになる(tsc -b で検出される)。
@@ -43,16 +40,9 @@ type Equal<A, B> =
 
 /**
  * カタログのパラメータと契約のスキーマの、キーの一致を判定する型。
- *
- * パラメータのない種類(CrossEntropy など)は、契約では `properties: {}` で、
- * 生成型は Record<string, never> になる。この型の keyof は string なので、
- * 素直に keyof を比べると never(パラメータなし)と一致しない。
- * そこで「契約が空のオブジェクトなら、カタログのパラメータも空」という形に読み替える。
+ * 契約の type は種類を示すキーであり、パラメータではないので除いて比べる。
  */
-type ParamKeysMatch<Params, Contract> =
-  Contract extends Record<string, never>
-    ? Equal<keyof Params, never>
-    : Equal<keyof Params, keyof Contract>
+type ParamKeysMatch<Params, Contract> = Equal<keyof Params, Exclude<keyof Contract, 'type'>>
 
 /** 省略できる(? の付いた)キーだけを取り出す型 */
 type OptionalKeys<T> = {
@@ -62,8 +52,8 @@ type OptionalKeys<T> = {
 type Schemas = components['schemas']
 
 describe('optimizer', () => {
-  it('種類名が契約の OptimizerConfig のキーと一致する', () => {
-    const matches: Equal<keyof typeof OPTIMIZER_TYPES, keyof Schemas['OptimizerConfig']> = true
+  it('種類名が契約の OptimizerConfig の type と一致する', () => {
+    const matches: Equal<keyof typeof OPTIMIZER_TYPES, Schemas['OptimizerConfig']['type']> = true
     expect(matches).toBe(true)
     // 型だけでなく、実行時の並び(画面の選択肢)にも全種類が出ることを確かめる
     expect(variantKindsOf(OPTIMIZER_TYPES)).toHaveLength(3)
@@ -78,8 +68,8 @@ describe('optimizer', () => {
 })
 
 describe('loss', () => {
-  it('種類名が契約の LossConfig のキーと一致する', () => {
-    const matches: Equal<keyof typeof LOSS_TYPES, keyof Schemas['LossConfig']> = true
+  it('種類名が契約の LossConfig の type と一致する', () => {
+    const matches: Equal<keyof typeof LOSS_TYPES, Schemas['LossConfig']['type']> = true
     expect(matches).toBe(true)
   })
 
@@ -114,18 +104,19 @@ describe('loss', () => {
 })
 
 describe('data_spec', () => {
-  it('データの種類が契約の DataSpec のキーと一致する', () => {
-    const matches: Equal<(typeof DATA_SPEC_KINDS)[number], keyof Schemas['DataSpec']> = true
+  it('データの種類が契約の DataSpec の type と一致する', () => {
+    const matches: Equal<(typeof DATA_SPEC_KINDS)[number], Schemas['DataSpec']['type']> = true
     expect(matches).toBe(true)
   })
 
-  it('ImageSpec のキーが一致する', () => {
-    const matches: Equal<keyof ImageSpecJson, keyof Schemas['ImageSpec']> = true
+  it('DataSpec のキーが一致する', () => {
+    const matches: Equal<keyof RustDataSpec, keyof Schemas['DataSpec']> = true
     expect(matches).toBe(true)
   })
 
   it('アノテーションの種類とパラメータが一致する', () => {
-    const kinds: Equal<keyof typeof ANNOTATION_TYPES, keyof Schemas['ImageAnnotationConfig']> = true
+    const kinds: Equal<keyof typeof ANNOTATION_TYPES, Schemas['ImageAnnotationConfig']['type']> =
+      true
     const pascalVoc: ParamKeysMatch<
       typeof ANNOTATION_TYPES.pascal_voc.params,
       Schemas['PascalVocConfig']
@@ -133,17 +124,16 @@ describe('data_spec', () => {
     expect([kinds, pascalVoc]).toEqual([true, true])
   })
 
-  it('タスクの種類とパラメータが一致する', () => {
-    const kinds: Equal<keyof typeof IMAGE_TASK_TYPES, keyof Schemas['ImageTaskSpecs']> = true
+  it('タスクの種類とパラメータが一致する(object_detection は Rust の DTO にない)', () => {
+    const kinds: Equal<
+      Exclude<keyof typeof IMAGE_TASK_TYPES, 'object_detection'>,
+      Schemas['ImageTaskSpec']['type']
+    > = true
     const results: readonly boolean[] = [
       kinds,
       true satisfies ParamKeysMatch<
         typeof IMAGE_TASK_TYPES.segmentation.params,
         Schemas['SegmentationSpec']
-      >,
-      true satisfies ParamKeysMatch<
-        typeof IMAGE_TASK_TYPES.object_detection.params,
-        Schemas['ObjectDetectionSpec']
       >,
       true satisfies ParamKeysMatch<
         typeof IMAGE_TASK_TYPES.classification.params,
@@ -157,44 +147,43 @@ describe('data_spec', () => {
 describe('学習開始リクエスト', () => {
   type Request = Schemas['StartTrainingRequest']
 
-  it('学習設定のキーが、StartTrainingRequest から model_graph を除いたものと一致する', () => {
-    const matches: Equal<keyof TrainingSettingsJson, Exclude<keyof Request, 'model_graph'>> = true
-    expect(matches).toBe(true)
-  })
-
   it('リクエスト全体のキーが一致する', () => {
-    const matches: Equal<keyof StartTrainingRequestJson, keyof Request> = true
+    const matches: Equal<keyof RustStartTrainingRequest, keyof Request> = true
     expect(matches).toBe(true)
   })
 
-  it('省略できるキー(seed だけ)が一致する', () => {
-    const matches: Equal<OptionalKeys<StartTrainingRequestJson>, OptionalKeys<Request>> = true
-    const onlySeed: Equal<OptionalKeys<StartTrainingRequestJson>, 'seed'> = true
-    expect([matches, onlySeed]).toEqual([true, true])
+  it('省略できるキー(resume_from と seed)が一致する', () => {
+    const matches: Equal<OptionalKeys<RustStartTrainingRequest>, OptionalKeys<Request>> = true
+    const expected: Equal<OptionalKeys<Request>, 'resume_from' | 'seed'> = true
+    expect([matches, expected]).toEqual([true, true])
   })
 })
 
 describe('進捗', () => {
-  type Progress = Schemas['StreamProgressResponse']
+  type Process = Schemas['TrainingProcess']
 
-  it('学習の状態の名前が契約の TrainingStatus と一致する', () => {
-    const matches: Equal<(typeof TRAINING_STATUS_JSON_VALUES)[number], Schemas['TrainingStatus']> =
-      true
-    expect(matches).toBe(true)
+  it('学習の状態の名前が、エンティティ・HTTP 用のスキーマ・契約で一致する', () => {
+    const entity: Equal<TrainingStatus, Schemas['TrainingStatus']> = true
+    const json: Equal<TrainingProcessJson['status'], Schemas['TrainingStatus']> = true
+    expect([entity, json]).toEqual([true, true])
   })
 
-  it('StreamProgressResponse のキーと、省略できるキーが一致する', () => {
-    const keys: Equal<keyof StreamProgressJson, keyof Progress> = true
-    const optional: Equal<OptionalKeys<StreamProgressJson>, OptionalKeys<Progress>> = true
+  it('TrainingProcess のキーと、省略できるキーが一致する', () => {
+    const keys: Equal<keyof TrainingProcessJson, keyof Process> = true
+    const optional: Equal<OptionalKeys<TrainingProcessJson>, OptionalKeys<Process>> = true
     expect([keys, optional]).toEqual([true, true])
   })
 
   it('メトリクスのキーが一致する', () => {
-    type Segmentation = ReturnType<(typeof segmentationMetricsJsonSchema)['parse']>
-    type Classification = ReturnType<(typeof classificationMetricsJsonSchema)['parse']>
-    const segmentation: Equal<keyof Segmentation, keyof Schemas['SegmentationMetrics']> = true
-    const classification: Equal<keyof Classification, keyof Schemas['ClassificationMetrics']> = true
-    const oneof: Equal<'segmentation' | 'classification', keyof Schemas['ProgressMetrics']> = true
-    expect([segmentation, classification, oneof]).toEqual([true, true, true])
+    type Metrics = NonNullable<TrainingProcessJson['metrics']>
+    const segmentation: Equal<
+      keyof Extract<Metrics, { type: 'segmentation' }>,
+      keyof Schemas['SegmentationMetrics']
+    > = true
+    const classification: Equal<
+      keyof Extract<Metrics, { type: 'classification' }>,
+      keyof Schemas['ClassificationMetrics']
+    > = true
+    expect([segmentation, classification]).toEqual([true, true])
   })
 })

@@ -13,39 +13,11 @@ export interface paths {
         };
         /**
          * 使えるデバイスの一覧を取得する
-         * @description C++ の Capabilities.GetCapabilities をそのまま中継する。
-         *     学習設定画面の device の選択肢と、エディタ画面ヘッダのデバイス表示に使う。
+         * @description 学習設定画面の device の選択肢と、エディタ画面ヘッダのデバイス表示に使う。
          */
         get: operations["getCapabilities"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/model-graphs/validate": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * モデル構造をサーバー側で検証する
-         * @description C++ 側の検証を呼び、見つかった問題をすべて位置付きで返す
-         *     (model_graph.proto 冒頭のコメントを参照)。
-         *
-         *     フロント側でも entity 層の純粋関数で同じ検証を行うが、本当に実行できるかを
-         *     知っているのは C++ 側なので、実行前にここで確認する。
-         *
-         *     ok が false でも HTTP は 200 を返す。「検証が正常に行われ、その結果が NG だった」
-         *     という業務上の結果であり、HTTP としての失敗ではないためである。
-         */
-        post: operations["validateModelGraph"];
         delete?: never;
         options?: never;
         head?: never;
@@ -63,11 +35,47 @@ export interface paths {
         put?: never;
         /**
          * 学習を開始する
-         * @description training.proto の StartTrainingRequest と同じ形の JSON を送る。
-         *     実例は apps/backend/ai-engine/modelconfigs/test_segnet_dag.json。
-         *     受理されると job_id が返り、進捗は /trainings/{job_id}/progress で購読する。
+         * @description 受理されると job_id が返り、進捗は /trainings/{job_id}/progress で購読する。
+         *     同じ model_name で開始すると、C++ が `<model_name>_last.pt` から自動で再開する。
          */
         post: operations["startTraining"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/trainings/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 学習プロセス全体の現在の状態を取得する
+         * @description SSE の progress イベントの data と同じ形を返す。
+         */
+        get: operations["getTrainingProcess"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/trainings/{job_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 学習の状態だけを取得する */
+        get: operations["getTrainingStatus"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -83,16 +91,13 @@ export interface paths {
         };
         /**
          * 学習の進捗を購読する(Server-Sent Events)
-         * @description gRPC のサーバーストリーミング StreamProgress を SSE に写したもの。
-         *     進捗はサーバーからクライアントへの一方向の連続通知なので、双方向を扱える
-         *     WebSocket は使わない。
-         *
-         *     - 各イベントの data は StreamProgressResponse の JSON 1 件(1 行)である。
-         *     - イベント名(event: 行)は付けない。クライアントは既定の message を受け取る。
-         *     - status が TRAINING_STATUS_COMPLETED / FAILED / STOPPED のイベントを送ったら、
-         *       サーバーは接続を閉じる。クライアントも EventSource.close() を呼ぶ。
-         *     - openapi-fetch は SSE を扱えないため、フロントは EventSource を使い、
-         *       受け取った data をこのスキーマから生成した型として解釈する。
+         * @description - イベント名は `progress` と `error` である。既定の message では届かないので、
+         *       クライアントは addEventListener で受ける。
+         *     - `progress` の data は TrainingProcess の JSON 1 件である。
+         *     - `error` の data は説明の文字列である(SSE の開始後は状態コードを返せないため)。
+         *     - status が completed / failed / stopped のイベントを受け取ったら、
+         *       クライアントは EventSource.close() を呼ぶ。
+         *     - openapi-fetch は SSE を扱えないため、フロントは EventSource を使う。
          */
         get: operations["streamProgress"];
         put?: never;
@@ -112,7 +117,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 学習を停止する */
+        /**
+         * 学習を停止する
+         * @description 停止はエポックの区切りで行われるので、応答の status が running でも正常である。
+         *     停止の完了は SSE の stopped で分かる。停止済みのジョブを停止しても 200 を返す。
+         */
         post: operations["stopTraining"];
         delete?: never;
         options?: never;
@@ -124,63 +133,28 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        /**
-         * @description 検証で見つかった 1 件の問題。node_id と port は、ログの行をクリックしたときに
-         *     該当ノードを選択してフォーカスするために使う。
-         */
-        Issue: {
-            /**
-             * @description error は実行を止める。warning は実行を止めない
-             * @enum {string}
-             */
-            severity: "error" | "warning";
-            /** @description 該当するノードの ID(グラフ全体の問題なら省略) */
-            node_id?: string;
-            /** @description 該当するポート名(ポートに紐づかない問題なら省略) */
-            port?: string;
-            /** @description 人間が読む説明 */
-            message: string;
-        };
-        ErrorResponse: {
-            error: {
-                /** @description 機械が分岐するための識別子(例 INVALID_ARGUMENT, UPSTREAM_UNAVAILABLE) */
-                code: string;
-                message: string;
-                /** @description 位置の分かる問題が複数ある場合に入る */
-                issues?: components["schemas"]["Issue"][];
-            };
-        };
-        /** @enum {string} */
-        DeviceType: "DEVICE_TYPE_UNSPECIFIED" | "DEVICE_TYPE_CPU" | "DEVICE_TYPE_CUDA";
         DeviceInfo: {
-            /** @description 表示用の名前(例 NVIDIA GeForce RTX 4070) */
-            device_name: string;
-            /**
-             * Format: int32
-             * @description 同種デバイスの通し番号。cuda:0 の 0 に対応する
-             */
-            device_index: number;
-            device_type: components["schemas"]["DeviceType"];
+            /** @description StartTrainingRequest.device に渡す文字列(cpu または cuda:0 の形) */
+            id: string;
+            /** @description 表示用の名前。製品名とは限らない(例 cuda:0) */
+            name: string;
         };
         CapabilitiesResponse: {
-            cuda_available: boolean;
             devices: components["schemas"]["DeviceInfo"][];
         };
-        /**
-         * @description 出力ポート 1 つを指す。両方のキーを省いた {} はグラフ入力(画像)を意味する。
-         *     ModelGraph.outputs ではグラフ入力を指定できないため、node_id を空にしてはならない。
-         */
+        /** @description 出力ポート 1 つを指す */
         PortRef: {
-            /** @description 参照先のノードの ID。省略または空文字ならグラフ入力 */
-            node_id?: string;
+            /** @description 参照先のノードの ID */
+            node_id: string;
             /** @description 参照先の出力ポート名(例 y, indices) */
-            port?: string;
+            port: string;
         };
         /** @description このノードの入力ポート port に、source が指す出力をつなぐ */
         NodeInput: {
             /** @description このノードの入力ポート名(例 x, indices) */
             port: string;
-            source: components["schemas"]["PortRef"];
+            /** @description null はグラフ入力(画像)を意味する */
+            source: components["schemas"]["PortRef"] | null;
         };
         Node: {
             /** @description グラフ内で重複しない。英数字と - _ のみ */
@@ -199,27 +173,14 @@ export interface components {
              *     実行順は接続から決まるので、実行順に並べる必要はない。
              */
             nodes: components["schemas"]["Node"][];
-            /** @description モデルの出力。当面 1 つだけ。node_id を空にはできない */
+            /** @description モデルの出力。当面 1 つだけ */
             outputs: components["schemas"]["PortRef"][];
         };
-        /**
-         * @description 層の種類とパラメータ。proto の oneof なので、下記のキーのうちちょうど 1 つを持つ。
-         *     キー名は model_graph.proto の NodeSpec の oneof フィールド名と一致させる。
-         *     Input / Output はエディタ専用のノードであり、ここには含まれない。
-         */
-        NodeSpec: {
-            conv2d?: components["schemas"]["Conv2DSpec"];
-            pooling2d?: components["schemas"]["Pooling2DSpec"];
-            batch_norm?: components["schemas"]["BatchNormSpec"];
-            linear?: components["schemas"]["LinearSpec"];
-            activation?: components["schemas"]["ActivationSpec"];
-            indexed_pooling?: components["schemas"]["IndexedPoolingSpec"];
-            unpooling?: components["schemas"]["UnpoolingSpec"];
-            upsample?: components["schemas"]["UpsampleSpec"];
-            add?: components["schemas"]["AddSpec"];
-            concat?: components["schemas"]["ConcatSpec"];
-        };
+        /** @description 層の種類とパラメータ。Input / Output はエディタ専用のノードであり、ここには含まれない */
+        NodeSpec: components["schemas"]["Conv2DSpec"] | components["schemas"]["Pooling2DSpec"] | components["schemas"]["BatchNormSpec"] | components["schemas"]["LinearSpec"] | components["schemas"]["ActivationSpec"] | components["schemas"]["IndexedPoolingSpec"] | components["schemas"]["UnpoolingSpec"] | components["schemas"]["UpsampleSpec"] | components["schemas"]["AddSpec"] | components["schemas"]["ConcatSpec"];
         Conv2DSpec: {
+            /** @enum {string} */
+            type: "conv2d";
             /** Format: int64 */
             in_channels: number;
             /** Format: int64 */
@@ -234,8 +195,10 @@ export interface components {
             dilation: number;
         };
         /** @enum {string} */
-        PoolingType: "POOLING_TYPE_UNSPECIFIED" | "POOLING_TYPE_MAX" | "POOLING_TYPE_AVERAGE";
+        PoolingType: "max" | "average";
         Pooling2DSpec: {
+            /** @enum {string} */
+            type: "pooling2d";
             pooling_type: components["schemas"]["PoolingType"];
             /** Format: int64 */
             kernel_size: number;
@@ -245,6 +208,8 @@ export interface components {
             padding: number;
         };
         BatchNormSpec: {
+            /** @enum {string} */
+            type: "batch_norm";
             /**
              * Format: int64
              * @description 入力のチャンネル数と一致させる
@@ -262,6 +227,8 @@ export interface components {
             momentum: number;
         };
         LinearSpec: {
+            /** @enum {string} */
+            type: "linear";
             /** Format: int64 */
             in_features: number;
             /** Format: int64 */
@@ -269,8 +236,10 @@ export interface components {
             bias: boolean;
         };
         /** @enum {string} */
-        ActivationType: "ACTIVATION_TYPE_UNSPECIFIED" | "ACTIVATION_TYPE_RELU" | "ACTIVATION_TYPE_SIGMOID" | "ACTIVATION_TYPE_SOFTMAX" | "ACTIVATION_TYPE_TANH";
+        ActivationType: "relu" | "sigmoid" | "softmax" | "tanh";
         ActivationSpec: {
+            /** @enum {string} */
+            type: "activation";
             activation_type: components["schemas"]["ActivationType"];
             /**
              * Format: int32
@@ -280,6 +249,8 @@ export interface components {
         };
         /** @description 最大値の位置(indices)も出力する Max Pooling。Unpooling と対で使う */
         IndexedPoolingSpec: {
+            /** @enum {string} */
+            type: "indexed_pooling";
             /** Format: int64 */
             kernel_size: number;
             /** Format: int64 */
@@ -289,6 +260,8 @@ export interface components {
         };
         /** @description IndexedPooling の indices を使って元の位置に戻す拡大 */
         UnpoolingSpec: {
+            /** @enum {string} */
+            type: "unpooling";
             /** Format: int64 */
             kernel_size: number;
             /** Format: int64 */
@@ -297,23 +270,31 @@ export interface components {
             padding: number;
         };
         /** @enum {string} */
-        UpsampleMode: "UPSAMPLE_MODE_UNSPECIFIED" | "UPSAMPLE_MODE_NEAREST" | "UPSAMPLE_MODE_BILINEAR";
+        UpsampleMode: "nearest" | "bilinear";
         UpsampleSpec: {
+            /** @enum {string} */
+            type: "upsample";
             upsample_mode: components["schemas"]["UpsampleMode"];
             /** Format: int64 */
             scale_factor: number;
         };
         AddSpec: {
+            /** @enum {string} */
+            type: "add";
             /**
              * Format: double
-             * @description 2 番目以降の入力にかける係数。proto 側では 0(未指定)を 1.0 として扱うが、
-             *     この契約では送る側が必ず値を埋める。
+             * @description 2 番目以降の入力にかける係数。送る側が必ず値を埋める
              */
             alpha: number;
         };
         /** @description 入力をチャンネル方向に結合する。結合する次元は固定なのでパラメータはない */
-        ConcatSpec: Record<string, never>;
+        ConcatSpec: {
+            /** @enum {string} */
+            type: "concat";
+        };
         AdamConfig: {
+            /** @enum {string} */
+            type: "adam";
             /** Format: double */
             learning_rate: number;
             /** Format: double */
@@ -326,6 +307,8 @@ export interface components {
             eps: number;
         };
         AdamWConfig: {
+            /** @enum {string} */
+            type: "adam_w";
             /** Format: double */
             learning_rate: number;
             /** Format: double */
@@ -336,6 +319,8 @@ export interface components {
             beta2: number;
         };
         SGDConfig: {
+            /** @enum {string} */
+            type: "sgd";
             /** Format: double */
             learning_rate: number;
             /** Format: double */
@@ -344,16 +329,22 @@ export interface components {
             momentum: number;
             nesterov: boolean;
         };
-        /** @description proto の oneof。adam / adam_w / sgd のうちちょうど 1 つを持つ */
-        OptimizerConfig: {
-            adam?: components["schemas"]["AdamConfig"];
-            adam_w?: components["schemas"]["AdamWConfig"];
-            sgd?: components["schemas"]["SGDConfig"];
+        OptimizerConfig: components["schemas"]["AdamConfig"] | components["schemas"]["AdamWConfig"] | components["schemas"]["SGDConfig"];
+        CrossEntropyConfig: {
+            /** @enum {string} */
+            type: "cross_entropy";
         };
-        CrossEntropyConfig: Record<string, never>;
-        MseLossConfig: Record<string, never>;
-        DiceLossConfig: Record<string, never>;
+        MseLossConfig: {
+            /** @enum {string} */
+            type: "mse";
+        };
+        DiceLossConfig: {
+            /** @enum {string} */
+            type: "dice";
+        };
         FocalLossConfig: {
+            /** @enum {string} */
+            type: "focal";
             /**
              * Format: double
              * @description 易しい例の重みを下げる強さ(慣例は 2.0)
@@ -366,35 +357,31 @@ export interface components {
             alpha: number;
         };
         ComboLossConfig: {
+            /** @enum {string} */
+            type: "combo";
             /**
              * Format: double
-             * @description Cross Entropy 項の重み。(1-alpha) が Dice 項の重みになる。
-             *     proto 側に既定値はないので、送る側が必ず値を埋める。
+             * @description Cross Entropy 項の重み。(1-alpha) が Dice 項の重みになる
              */
             alpha: number;
         };
-        BoundaryLossConfig: Record<string, never>;
-        /**
-         * @description proto の oneof。cross_entropy / mse / dice / focal / combo / boundary のうち
-         *     ちょうど 1 つを持つ。num_classes と ignore_index はデータセット由来なのでここには持たない。
-         */
-        LossConfig: {
-            cross_entropy?: components["schemas"]["CrossEntropyConfig"];
-            mse?: components["schemas"]["MseLossConfig"];
-            dice?: components["schemas"]["DiceLossConfig"];
-            focal?: components["schemas"]["FocalLossConfig"];
-            combo?: components["schemas"]["ComboLossConfig"];
-            boundary?: components["schemas"]["BoundaryLossConfig"];
+        BoundaryLossConfig: {
+            /** @enum {string} */
+            type: "boundary";
         };
+        /** @description num_classes と ignore_index はデータセット由来なのでここには持たない */
+        LossConfig: components["schemas"]["CrossEntropyConfig"] | components["schemas"]["MseLossConfig"] | components["schemas"]["DiceLossConfig"] | components["schemas"]["FocalLossConfig"] | components["schemas"]["ComboLossConfig"] | components["schemas"]["BoundaryLossConfig"];
         PascalVocConfig: {
+            /** @enum {string} */
+            type: "pascal_voc";
             /** @description Pascal VOC の difficult 指定の例を学習に含めるか */
             include_difficult: boolean;
         };
-        /** @description proto の oneof。現在は pascal_voc のみ */
-        ImageAnnotationConfig: {
-            pascal_voc?: components["schemas"]["PascalVocConfig"];
-        };
+        /** @description 現在は pascal_voc のみ */
+        ImageAnnotationConfig: components["schemas"]["PascalVocConfig"];
         SegmentationSpec: {
+            /** @enum {string} */
+            type: "segmentation";
             /**
              * Format: int32
              * @description 損失の計算から除外するラベル値。必ず設定する(既定値 255)
@@ -402,16 +389,16 @@ export interface components {
              */
             ignore_index: number;
         };
-        ObjectDetectionSpec: Record<string, never>;
-        ClassificationSpec: Record<string, never>;
-        /** @description proto の oneof。segmentation / object_detection / classification のうち 1 つ */
-        ImageTaskSpecs: {
-            segmentation?: components["schemas"]["SegmentationSpec"];
-            object_detection?: components["schemas"]["ObjectDetectionSpec"];
-            classification?: components["schemas"]["ClassificationSpec"];
+        ClassificationSpec: {
+            /** @enum {string} */
+            type: "classification";
         };
-        ImageSpec: {
-            annotation: components["schemas"]["ImageAnnotationConfig"];
+        /** @description object_detection は Rust の DTO にないので送れない */
+        ImageTaskSpec: components["schemas"]["SegmentationSpec"] | components["schemas"]["ClassificationSpec"];
+        /** @description 現在は image のみ */
+        DataSpec: {
+            /** @enum {string} */
+            type: "image";
             /**
              * Format: int32
              * @default 256
@@ -422,19 +409,8 @@ export interface components {
              * @default 256
              */
             input_height: number;
-            task_specs: components["schemas"]["ImageTaskSpecs"];
-        };
-        /** @description proto の oneof。現在は image のみ */
-        DataSpec: {
-            image?: components["schemas"]["ImageSpec"];
-        };
-        /**
-         * @description 乱数シード。0 も有効な値なので、メッセージで包んで「未指定」と区別する。
-         *     固定しない場合は StartTrainingRequest から seed のキーごと省略する。
-         */
-        Seed: {
-            /** Format: int64 */
-            value: number;
+            image_task_spec: components["schemas"]["ImageTaskSpec"];
+            image_annotation_config: components["schemas"]["ImageAnnotationConfig"];
         };
         StartTrainingRequest: {
             model_name: string;
@@ -447,7 +423,7 @@ export interface components {
             batch: number;
             /** @description 学習エンジンから見たサーバー上のパス */
             dataset_path: string;
-            /** @description cpu または cuda:0 のような文字列。/capabilities の結果から選ぶ */
+            /** @description /capabilities の devices[].id から選ぶ */
             device: string;
             data_spec: components["schemas"]["DataSpec"];
             /**
@@ -455,22 +431,29 @@ export interface components {
              * @description checkpoint を保存する間隔(エポック)。0 なら毎エポック
              */
             save_last_every: number;
-            /** @description 再開元の checkpoint のパス。空文字なら再開しない */
-            resume_from: string;
-            seed?: components["schemas"]["Seed"];
+            /** @description 再開元の checkpoint のパス。省略・null・空文字なら再開元を指定しない */
+            resume_from?: string | null;
+            /**
+             * Format: int64
+             * @description 乱数シード。0 も有効な値である。固定しない場合はキーごと省略する
+             */
+            seed?: number | null;
         };
-        /** @enum {string} */
-        TrainingStatus: "TRAINING_STATUS_UNSPECIFIED" | "TRAINING_STATUS_RUNNING" | "TRAINING_STATUS_COMPLETED" | "TRAINING_STATUS_FAILED" | "TRAINING_STATUS_STOPPED" | "TRAINING_STATUS_IDLE";
         StartTrainingResponse: {
             job_id: string;
-            status: components["schemas"]["TrainingStatus"];
         };
-        StopTrainingResponse: {
+        /** @enum {string} */
+        TrainingStatus: "idle" | "running" | "completed" | "failed" | "stopped";
+        TrainingStatusResponse: {
             status: components["schemas"]["TrainingStatus"];
+            /** @description status が failed のときの原因 */
+            reason?: string;
         };
         SegmentationMetrics: {
+            /** @enum {string} */
+            type: "segmentation";
             /** Format: double */
-            pixel_acc: number;
+            pixel_accuracy: number;
             /** Format: double */
             miou: number;
             /** Format: double */
@@ -480,33 +463,36 @@ export interface components {
             per_class_iou: number[];
         };
         ClassificationMetrics: {
+            /** @enum {string} */
+            type: "classification";
             /** Format: double */
             accuracy: number;
             /** Format: double */
             macro_f1: number;
             per_class_accuracy: number[];
         };
-        /**
-         * @description proto の oneof(metrics)。タスクに応じて segmentation か classification のどちらか。
-         *     メトリクスをまだ計算していないエポックでは、StreamProgressResponse から metrics ごと省略される。
-         */
-        ProgressMetrics: {
-            segmentation?: components["schemas"]["SegmentationMetrics"];
-            classification?: components["schemas"]["ClassificationMetrics"];
-        };
-        /** @description SSE の各イベントの data に入る JSON 1 件 */
-        StreamProgressResponse: {
+        /** @description 学習プロセス全体の状態。SSE の progress イベントの data に入る JSON 1 件 */
+        TrainingProcess: {
             /**
              * Format: int32
              * @description 終了したエポック数
              */
             epoch: number;
-            /** Format: double */
-            train_loss: number;
-            /** Format: double */
-            val_loss: number;
+            /**
+             * Format: double
+             * @description 値が NaN や inf だと null になる
+             */
+            train_loss: number | null;
+            /**
+             * Format: double
+             * @description 値が NaN や inf だと null になる
+             */
+            val_loss: number | null;
             status: components["schemas"]["TrainingStatus"];
-            metrics?: components["schemas"]["ProgressMetrics"];
+            /** @description status が failed のときの原因 */
+            reason?: string;
+            /** @description メトリクスをまだ計算していないエポックでは null */
+            metrics: components["schemas"]["SegmentationMetrics"] | components["schemas"]["ClassificationMetrics"] | null;
             /**
              * Format: int64
              * @description このエポックにかかった時間(ミリ秒)
@@ -514,49 +500,32 @@ export interface components {
             epoch_elapsed_ms: number;
             /**
              * Format: int64
-             * @description 累計の処理時間(ミリ秒)
+             * @description 累計の処理時間(ミリ秒)。再開すると 0 から数え直す
              */
             total_elapsed_ms: number;
-            /** @description status が TRAINING_STATUS_FAILED のときの原因 */
-            error_message?: string;
-        };
-        ValidateModelGraphRequest: {
-            model_graph: components["schemas"]["ModelGraph"];
-        };
-        ValidateModelGraphResponse: {
-            /** @description severity が error の issue が 1 件もなければ true */
-            ok: boolean;
-            /** @description 見つかった問題のすべて。1 件目で打ち切らない */
-            issues: components["schemas"]["Issue"][];
         };
     };
     responses: {
-        /** @description リクエストの内容が不正 */
-        BadRequest: {
+        /** @description job_id の形が正しくない */
+        InvalidJobId: {
             headers: {
                 [name: string]: unknown;
             };
-            content: {
-                "application/json": components["schemas"]["ErrorResponse"];
-            };
+            content?: never;
         };
         /** @description 指定した job_id が見つからない */
         NotFound: {
             headers: {
                 [name: string]: unknown;
             };
-            content: {
-                "application/json": components["schemas"]["ErrorResponse"];
-            };
+            content?: never;
         };
         /** @description 学習エンジン(C++ / gRPC)との通信に失敗した */
         UpstreamError: {
             headers: {
                 [name: string]: unknown;
             };
-            content: {
-                "application/json": components["schemas"]["ErrorResponse"];
-            };
+            content?: never;
         };
     };
     parameters: {
@@ -590,32 +559,6 @@ export interface operations {
             502: components["responses"]["UpstreamError"];
         };
     };
-    validateModelGraph: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ValidateModelGraphRequest"];
-            };
-        };
-        responses: {
-            /** @description 検証を実行した(ok が false でもこのステータス) */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ValidateModelGraphResponse"];
-                };
-            };
-            400: components["responses"]["BadRequest"];
-            502: components["responses"]["UpstreamError"];
-        };
-    };
     startTraining: {
         parameters: {
             query?: never;
@@ -629,11 +572,8 @@ export interface operations {
             };
         };
         responses: {
-            /**
-             * @description 受理した。学習は非同期に始まるので 200 ではなく 202 Accepted を返す
-             *     (この応答の時点ではまだ完了していない)。
-             */
-            202: {
+            /** @description 受理した */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -641,7 +581,72 @@ export interface operations {
                     "application/json": components["schemas"]["StartTrainingResponse"];
                 };
             };
-            400: components["responses"]["BadRequest"];
+            /** @description すでに学習が実行中 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description リクエストの形が合わない、または C++ が設定を拒否した */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            502: components["responses"]["UpstreamError"];
+        };
+    };
+    getTrainingProcess: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description /trainings の応答で返る学習ジョブの識別子 */
+                job_id: components["parameters"]["JobId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 取得できた */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrainingProcess"];
+                };
+            };
+            400: components["responses"]["InvalidJobId"];
+            404: components["responses"]["NotFound"];
+            502: components["responses"]["UpstreamError"];
+        };
+    };
+    getTrainingStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description /trainings の応答で返る学習ジョブの識別子 */
+                job_id: components["parameters"]["JobId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 取得できた */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrainingStatusResponse"];
+                };
+            };
+            400: components["responses"]["InvalidJobId"];
+            404: components["responses"]["NotFound"];
             502: components["responses"]["UpstreamError"];
         };
     };
@@ -663,10 +668,12 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "text/event-stream": components["schemas"]["StreamProgressResponse"];
+                    "text/event-stream": components["schemas"]["TrainingProcess"];
                 };
             };
+            400: components["responses"]["InvalidJobId"];
             404: components["responses"]["NotFound"];
+            502: components["responses"]["UpstreamError"];
         };
     };
     stopTraining: {
@@ -687,9 +694,10 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["StopTrainingResponse"];
+                    "application/json": components["schemas"]["TrainingStatusResponse"];
                 };
             };
+            400: components["responses"]["InvalidJobId"];
             404: components["responses"]["NotFound"];
             502: components["responses"]["UpstreamError"];
         };

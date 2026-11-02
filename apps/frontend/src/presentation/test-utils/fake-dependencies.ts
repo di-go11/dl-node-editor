@@ -10,7 +10,7 @@ import type { Dependencies } from '../app/dependencies'
  * 既定の偽物をここ 1 か所にまとめ、テストは確かめたいポートだけを上書きする。
  *
  * 既定の振る舞いは「何事もなく成功する」:カタログは MVP のもの、GPU なし、
- * 保存は成功・読込はキャンセル、サーバー側のチェックは問題なし、学習開始は job-1。
+ * 保存は成功・読込はキャンセル、学習開始は job-1、進捗は何も届かない、停止の要求は成功。
  */
 export function fakeDependencies(overrides: Partial<Dependencies> = {}): Dependencies {
   return {
@@ -25,9 +25,10 @@ export function fakeDependencies(overrides: Partial<Dependencies> = {}): Depende
       save: () => Promise.resolve({ ok: true }),
       open: () => Promise.resolve({ kind: 'cancelled' }),
     },
-    validationApi: { validate: () => Promise.resolve(apiOk({ ok: true, issues: [] })) },
     trainingApi: {
       start: () => Promise.resolve(apiOk({ jobId: 'job-1', status: 'running' })),
+      subscribeProgress: () => () => undefined,
+      stop: () => Promise.resolve(apiOk('running')),
     },
     ...overrides,
   }

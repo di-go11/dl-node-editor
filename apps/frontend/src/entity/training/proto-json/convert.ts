@@ -4,23 +4,19 @@ import type { DataSpec } from '../data-spec'
 import { ANNOTATION_TYPES, IMAGE_TASK_TYPES } from '../data-spec'
 import { LOSS_TYPES } from '../loss'
 import { OPTIMIZER_TYPES } from '../optimizer'
-import type { ProgressMetrics, TrainingProgress, TrainingStatus } from '../progress'
 import type { TrainingSettings } from '../training-settings'
 import type { Variant, VariantCatalog } from '../variant'
 import { isVariantKind } from '../variant'
 
 import type {
   DataSpecJson,
-  ProgressMetricsJson,
   StartTrainingRequestJson,
-  StreamProgressJson,
   TrainingSettingsJson,
-  TrainingStatusJson,
   VariantJson,
 } from './schema'
 
 /**
- * 学習設定と進捗の、JSON 表記 ⇄ エンティティの型 の双方向変換。
+ * 学習設定の、JSON 表記 ⇄ エンティティの型 の双方向変換。
  *
  * 入力側(*FromJson)には **schema.ts のスキーマを通した値を渡すこと。**
  * 1a の model-graph/proto-json/convert.ts と同じく、検証済みを前提にしているので、
@@ -148,116 +144,5 @@ export function fromStartTrainingRequestJson(json: StartTrainingRequestJson): {
   return {
     graph: fromProtoJson(model_graph),
     settings: trainingSettingsFromJson(settingsJson),
-  }
-}
-
-// ------------------------------------------------------------
-// 進捗
-// ------------------------------------------------------------
-
-/**
- * エンティティの状態名 → proto の enum 名。
- * Record<TrainingStatus, ...> にしているので、状態を増やして書き忘れると型エラーになる。
- */
-const STATUS_TO_JSON: Readonly<Record<TrainingStatus, TrainingStatusJson>> = {
-  unspecified: 'TRAINING_STATUS_UNSPECIFIED',
-  idle: 'TRAINING_STATUS_IDLE',
-  running: 'TRAINING_STATUS_RUNNING',
-  completed: 'TRAINING_STATUS_COMPLETED',
-  failed: 'TRAINING_STATUS_FAILED',
-  stopped: 'TRAINING_STATUS_STOPPED',
-}
-
-/** 逆向きの対応。上の表から作るので、2 つの表がずれることはない */
-const STATUS_FROM_JSON: ReadonlyMap<TrainingStatusJson, TrainingStatus> = new Map(
-  Object.entries(STATUS_TO_JSON).map(([status, json]) => [json, status as TrainingStatus]),
-)
-
-export function trainingStatusFromJson(json: TrainingStatusJson): TrainingStatus {
-  const status = STATUS_FROM_JSON.get(json)
-  if (status === undefined) throw new Error(`知らない学習の状態です: ${json}`)
-  return status
-}
-
-export function trainingStatusToJson(status: TrainingStatus): TrainingStatusJson {
-  return STATUS_TO_JSON[status]
-}
-
-function metricsFromJson(json: ProgressMetricsJson): ProgressMetrics {
-  if ('segmentation' in json) {
-    const m = json.segmentation
-    return {
-      kind: 'segmentation',
-      pixelAcc: m.pixel_acc,
-      miou: m.miou,
-      fwIou: m.fw_iou,
-      meanClassAccuracy: m.mean_class_accuracy,
-      perClassIou: [...m.per_class_iou],
-    }
-  }
-  const m = json.classification
-  return {
-    kind: 'classification',
-    accuracy: m.accuracy,
-    macroF1: m.macro_f1,
-    perClassAccuracy: [...m.per_class_accuracy],
-  }
-}
-
-function metricsToJson(metrics: ProgressMetrics): ProgressMetricsJson {
-  switch (metrics.kind) {
-    case 'segmentation':
-      return {
-        segmentation: {
-          pixel_acc: metrics.pixelAcc,
-          miou: metrics.miou,
-          fw_iou: metrics.fwIou,
-          mean_class_accuracy: metrics.meanClassAccuracy,
-          per_class_iou: [...metrics.perClassIou],
-        },
-      }
-    case 'classification':
-      return {
-        classification: {
-          accuracy: metrics.accuracy,
-          macro_f1: metrics.macroF1,
-          per_class_accuracy: [...metrics.perClassAccuracy],
-        },
-      }
-  }
-}
-
-export function progressFromJson(json: StreamProgressJson): TrainingProgress {
-  return {
-    epoch: json.epoch,
-    trainLoss: json.train_loss,
-    valLoss: json.val_loss,
-    status: trainingStatusFromJson(json.status),
-    metrics: json.metrics === undefined ? null : metricsFromJson(json.metrics),
-    epochElapsedMs: json.epoch_elapsed_ms,
-    totalElapsedMs: json.total_elapsed_ms,
-    // proto の「空文字 = なし」を null にそろえる(progress.ts の説明を参照)
-    errorMessage:
-      json.error_message === undefined || json.error_message === '' ? null : json.error_message,
-  }
-}
-
-/**
- * 進捗を JSON 表記にする。フロント自身は進捗を送らないが、
- * MSW のモック(infrastructure/mock)が契約どおりのイベントを作るのに使う。
- */
-export function progressToJson(progress: TrainingProgress): StreamProgressJson {
-  const json: StreamProgressJson = {
-    epoch: progress.epoch,
-    train_loss: progress.trainLoss,
-    val_loss: progress.valLoss,
-    status: trainingStatusToJson(progress.status),
-    epoch_elapsed_ms: progress.epochElapsedMs,
-    total_elapsed_ms: progress.totalElapsedMs,
-  }
-  return {
-    ...json,
-    ...(progress.metrics === null ? {} : { metrics: metricsToJson(progress.metrics) }),
-    ...(progress.errorMessage === null ? {} : { error_message: progress.errorMessage }),
   }
 }

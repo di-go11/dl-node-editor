@@ -3,19 +3,23 @@ import { HttpResponse, http } from 'msw'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 
 import { nodeId } from '../../entity/model-graph/node-id'
+import type { ModelGraph } from '../../entity/model-graph/model-graph'
+import { toStartTrainingRequestJson } from '../../entity/training/proto-json/convert'
 import { defaultTrainingSettings } from '../../entity/training/training-settings'
+import { defaultVariant } from '../../entity/training/variant'
+import { IMAGE_TASK_TYPES } from '../../entity/training/data-spec'
 import { validSegnetGraph } from '../../entity/validation/test-fixtures'
+import { GRAPH_INPUT, nodeOutput } from '../../entity/model-graph/port'
 import { TEST_BASE_URL, createMockServer } from '../mock/server'
 
 import { createApiClient } from './api-client'
-import { createHttpModelGraphValidationApi } from './http-model-graph-validation-api'
 import { createHttpTrainingApi } from './http-training-api'
+import { toRustStartTrainingRequest } from './rust-training-request'
 
 /**
- * サーバー側のチェック(POST /model-graphs/validate)と学習開始(POST /trainings)の
- * HTTP 実装を、MSW のモック API に対して動かして確かめる。
+ * 学習開始(POST /trainings)の HTTP 実装を、MSW のモック API に対して動かして確かめる。
  *
- * モックはリクエストの JSON をエンティティ層の Zod(C++ が読む形)で検証するので、
+ * モックはリクエストの JSON を Rust の DTO と同じ形の Zod で検証するので、
  * ここが通れば「送っている JSON が契約の形をしている」ことも同時に確かめられる。
  */
 
@@ -27,84 +31,135 @@ afterAll(() => server.close())
 const client = () => createApiClient(TEST_BASE_URL)
 const settings = { ...defaultTrainingSettings(), datasetPath: '/data/voc', device: 'cpu' }
 
-describe('createHttpModelGraphValidationApi', () => {
-  it('モデル構造を送り、検証の結果を受け取る', async () => {
-    const result = await createHttpModelGraphValidationApi(client()).validate(validSegnetGraph())
-    expect(result).toEqual({ ok: true, value: { ok: true, issues: [] } })
-  })
-
-  it('サーバーの問題を、位置付きのエンティティの Issue にする', async () => {
-    server.use(
-      http.post(`${TEST_BASE_URL}/model-graphs/validate`, () =>
-        HttpResponse.json({
-          ok: false,
-          issues: [
-            { severity: 'error', node_id: 'conv1', port: 'x', message: 'C++ での問題' },
-            { severity: 'warning', node_id: 'bad id', message: '位置の読めない問題' },
-          ],
-        }),
-      ),
-    )
-    const result = await createHttpModelGraphValidationApi(client()).validate(validSegnetGraph())
-    if (!result.ok) throw new Error(result.error.message)
-    expect(result.value.ok).toBe(false)
-    expect(result.value.issues).toEqual([
-      {
-        severity: 'error',
-        code: 'server/reported',
-        message: 'C++ での問題',
-        nodeId: nodeId('conv1'),
-        port: 'x',
-      },
-      // ノード ID として読めない node_id は捨て、メッセージだけを残す
-      { severity: 'warning', code: 'server/reported', message: '位置の読めない問題' },
-    ])
-  })
-})
-
 describe('createHttpTrainingApi', () => {
-  it('StartTrainingRequest の形で送り、job_id を受け取る', async () => {
+  it('Rust の形で送り、job_id を受け取る(状態は running に固定する)', async () => {
     const result = await createHttpTrainingApi(client()).start(validSegnetGraph(), settings)
     expect(result).toEqual({ ok: true, value: { jobId: 'mock-job-1', status: 'running' } })
   })
 
-  it('400 の応答の issues を、ログに出せる Issue にする', async () => {
-    server.use(
-      http.post(`${TEST_BASE_URL}/trainings`, () =>
-        HttpResponse.json(
-          {
-            error: {
-              code: 'INVALID_ARGUMENT',
-              message: '不正なリクエスト',
-              issues: [{ severity: 'error', message: 'dataset_path が空です' }],
-            },
-          },
-          { status: 400 },
-        ),
-      ),
-    )
+  it.each([
+    [409, 'すでに実行中の学習があります。'],
+    [422, '学習設定またはモデル構造が受け付けられませんでした。'],
+    [404, '指定されたジョブが見つかりません。'],
+    [502, '学習サーバーに接続できません。'],
+    [500, 'サーバーがエラーを返しました(HTTP 500)。'],
+  ])('本文が空の %i の応答は、状態コードから説明を作る', async (status, message) => {
+    server.use(http.post(`${TEST_BASE_URL}/trainings`, () => new HttpResponse(null, { status })))
     const result = await createHttpTrainingApi(client()).start(validSegnetGraph(), settings)
-    expect(result).toMatchObject({
-      ok: false,
-      error: {
-        kind: 'http',
-        status: 400,
-        code: 'INVALID_ARGUMENT',
-        issues: [{ severity: 'error', code: 'server/reported', message: 'dataset_path が空です' }],
-      },
+    expect(result).toEqual({ ok: false, error: { kind: 'http', status, message } })
+  })
+
+  it('Rust に対応する値がないタスクは、送らずに失敗する', async () => {
+    let called = false
+    server.use(
+      http.post(`${TEST_BASE_URL}/trainings`, () => {
+        called = true
+        return HttpResponse.json({ job_id: 'x' })
+      }),
+    )
+    const task = defaultVariant(IMAGE_TASK_TYPES, 'object_detection')
+    const result = await createHttpTrainingApi(client()).start(validSegnetGraph(), {
+      ...settings,
+      dataSpec: { ...settings.dataSpec, task },
     })
+    expect(result).toMatchObject({ ok: false, error: { kind: 'invalid-request' } })
+    expect(called).toBe(false)
   })
 })
 
-describe('モックの学習開始は、リクエストの形を検証する', () => {
-  it('形の正しくない JSON には 400 を返す(本物と同じ厳しさ)', async () => {
+describe('toRustStartTrainingRequest', () => {
+  const graph: ModelGraph = {
+    nodes: [
+      {
+        id: nodeId('act'),
+        spec: { kind: 'activation', params: { activation_type: 'ACTIVATION_TYPE_RELU', dim: 1 } },
+        inputs: [{ port: 'x', source: GRAPH_INPUT }],
+      },
+      {
+        id: nodeId('cat'),
+        spec: { kind: 'concat', params: {} },
+        inputs: [{ port: 'x', source: nodeOutput(nodeId('act'), 'y') }],
+      },
+    ],
+    outputs: [nodeOutput(nodeId('cat'), 'y')],
+  }
+  const convert = (patch = {}) =>
+    toRustStartTrainingRequest(toStartTrainingRequestJson(graph, { ...settings, ...patch }))
+
+  it('種類は type に、グラフ入力は null に、enum は短い名前にする', () => {
+    const result = convert()
+    if (!result.ok) throw new Error(result.message)
+    expect(result.value.model_graph).toEqual({
+      nodes: [
+        {
+          id: 'act',
+          spec: { type: 'activation', activation_type: 'relu', dim: 1 },
+          inputs: [{ port: 'x', source: null }],
+        },
+        {
+          id: 'cat',
+          spec: { type: 'concat' },
+          inputs: [{ port: 'x', source: { node_id: 'act', port: 'y' } }],
+        },
+      ],
+      outputs: [{ node_id: 'cat', port: 'y' }],
+    })
+    expect(result.value.optimizer.type).toBe('adam')
+    expect(result.value.loss).toEqual({ type: 'cross_entropy' })
+    expect(result.value.data_spec).toMatchObject({
+      type: 'image',
+      image_task_spec: { type: 'segmentation', ignore_index: 255 },
+      image_annotation_config: { type: 'pascal_voc', include_difficult: false },
+    })
+  })
+
+  it('seed は数値にし、固定しないならキーを省く(0 は「0 に固定する」)', () => {
+    expect(convert({ seed: 0 })).toMatchObject({ ok: true, value: { seed: 0 } })
+    const unset = convert({ seed: null })
+    if (!unset.ok) throw new Error(unset.message)
+    expect(unset.value).not.toHaveProperty('seed')
+  })
+
+  it('UNSPECIFIED は Rust に対応する値がないので失敗する', () => {
+    const json = toStartTrainingRequestJson(graph, settings)
+    const result = toRustStartTrainingRequest({
+      ...json,
+      model_graph: {
+        ...json.model_graph,
+        nodes: [
+          {
+            id: 'act',
+            spec: { activation: { activation_type: 'ACTIVATION_TYPE_UNSPECIFIED', dim: 1 } },
+            inputs: [],
+          },
+        ],
+      },
+    })
+    expect(result.ok).toBe(false)
+  })
+})
+
+describe('モックの学習開始', () => {
+  it('形の正しくない JSON には、本文なしの 422 を返す(本物と同じ厳しさ)', async () => {
     const response = await fetch(`${TEST_BASE_URL}/trainings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model_name: 'x' }),
     })
-    expect(response.status).toBe(400)
-    const body = (await response.json()) as { error: { issues: unknown[] } }
-    expect(body.error.issues.length).toBeGreaterThan(0)
+    expect(response.status).toBe(422)
+    expect(await response.text()).toBe('')
+  })
+
+  it('学習中の開始は 409 を再現できる', async () => {
+    const running = createMockServer({ alreadyRunning: true })
+    server.close()
+    running.listen({ onUnhandledFrame: 'error' })
+    try {
+      const result = await createHttpTrainingApi(client()).start(validSegnetGraph(), settings)
+      expect(result).toMatchObject({ ok: false, error: { kind: 'http', status: 409 } })
+    } finally {
+      running.close()
+      server.listen({ onUnhandledFrame: 'error' })
+    }
   })
 })

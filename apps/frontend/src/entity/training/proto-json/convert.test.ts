@@ -3,25 +3,15 @@ import { describe, expect, it } from 'vitest'
 
 // Vite の ?raw でファイルの中身を文字列として読み込む(src/api/schema.contract.test.ts と同じ手)
 import exampleRaw from '../../../../../backend/ai-engine/modelconfigs/test_segnet_dag.json?raw'
-import type { TrainingProgress } from '../progress'
-import { TRAINING_STATUSES } from '../progress'
 import { defaultTrainingSettings } from '../training-settings'
 
 import {
   fromStartTrainingRequestJson,
-  progressFromJson,
-  progressToJson,
   toStartTrainingRequestJson,
   trainingSettingsFromJson,
   trainingSettingsToJson,
-  trainingStatusFromJson,
-  trainingStatusToJson,
 } from './convert'
-import {
-  startTrainingRequestJsonSchema,
-  streamProgressJsonSchema,
-  trainingSettingsJsonSchema,
-} from './schema'
+import { startTrainingRequestJsonSchema, trainingSettingsJsonSchema } from './schema'
 
 /**
  * フェーズ1d の完了条件:
@@ -131,113 +121,5 @@ describe('trainingSettingsJsonSchema(構造だけを検証する)', () => {
   it('値の制約は見ない(epoch = 0 でも読める。報告は検証層の仕事)', () => {
     const json = { ...validJson(), epoch: 0 }
     expect(trainingSettingsJsonSchema.safeParse(json).success).toBe(true)
-  })
-})
-
-describe('進捗の変換', () => {
-  const runningJson = {
-    epoch: 3,
-    train_loss: 0.52,
-    val_loss: 0.61,
-    status: 'TRAINING_STATUS_RUNNING',
-    metrics: {
-      segmentation: {
-        pixel_acc: 0.9,
-        miou: 0.7,
-        fw_iou: 0.8,
-        mean_class_accuracy: 0.75,
-        per_class_iou: [0.9, 0.5],
-      },
-    },
-    epoch_elapsed_ms: 1200,
-    total_elapsed_ms: 3600,
-  }
-
-  it('JSON から読み込める', () => {
-    const progress = progressFromJson(streamProgressJsonSchema.parse(runningJson))
-    expect(progress).toEqual<TrainingProgress>({
-      epoch: 3,
-      trainLoss: 0.52,
-      valLoss: 0.61,
-      status: 'running',
-      metrics: {
-        kind: 'segmentation',
-        pixelAcc: 0.9,
-        miou: 0.7,
-        fwIou: 0.8,
-        meanClassAccuracy: 0.75,
-        perClassIou: [0.9, 0.5],
-      },
-      epochElapsedMs: 1200,
-      totalElapsedMs: 3600,
-      errorMessage: null,
-    })
-  })
-
-  it('往復しても同じ JSON になる', () => {
-    const json = streamProgressJsonSchema.parse(runningJson)
-    expect(progressToJson(progressFromJson(json))).toEqual(runningJson)
-  })
-
-  it('クラス分類のメトリクスも往復できる', () => {
-    const json = streamProgressJsonSchema.parse({
-      ...runningJson,
-      metrics: { classification: { accuracy: 0.8, macro_f1: 0.7, per_class_accuracy: [1, 0.6] } },
-    })
-    const progress = progressFromJson(json)
-    expect(progress.metrics?.kind).toBe('classification')
-    expect(progressToJson(progress)).toEqual(json)
-  })
-
-  it('metrics がなければ null にする', () => {
-    const { metrics: _omitted, ...withoutMetrics } = runningJson
-    const progress = progressFromJson(streamProgressJsonSchema.parse(withoutMetrics))
-    expect(progress.metrics).toBeNull()
-  })
-
-  it('error_message の空文字は「なし」(null)として扱う', () => {
-    const json = streamProgressJsonSchema.parse({ ...runningJson, error_message: '' })
-    expect(progressFromJson(json).errorMessage).toBeNull()
-  })
-
-  it('FAILED のときの error_message を読める', () => {
-    const json = streamProgressJsonSchema.parse({
-      ...runningJson,
-      status: 'TRAINING_STATUS_FAILED',
-      error_message: 'CUDA out of memory',
-    })
-    expect(progressFromJson(json)).toMatchObject({
-      status: 'failed',
-      errorMessage: 'CUDA out of memory',
-    })
-  })
-
-  it('知らない状態は拒否する', () => {
-    const result = streamProgressJsonSchema.safeParse({ ...runningJson, status: 'RUNNING' })
-    expect(result.success).toBe(false)
-  })
-
-  it('metrics に両方のタスクが入っていたら拒否する(proto の oneof)', () => {
-    const result = streamProgressJsonSchema.safeParse({
-      ...runningJson,
-      metrics: {
-        ...runningJson.metrics,
-        classification: { accuracy: 0.8, macro_f1: 0.7, per_class_accuracy: [] },
-      },
-    })
-    expect(result.success).toBe(false)
-  })
-})
-
-describe('学習の状態の対応表', () => {
-  it('すべての状態が proto の名前と 1 対 1 に対応する', () => {
-    for (const status of TRAINING_STATUSES) {
-      expect(trainingStatusFromJson(trainingStatusToJson(status))).toBe(status)
-    }
-  })
-
-  it('proto の名前の例', () => {
-    expect(trainingStatusToJson('completed')).toBe('TRAINING_STATUS_COMPLETED')
-    expect(trainingStatusFromJson('TRAINING_STATUS_IDLE')).toBe('idle')
   })
 })

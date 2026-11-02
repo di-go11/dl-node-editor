@@ -70,7 +70,7 @@ describe('AppRoutes', () => {
     expect(await screen.findByRole('heading', { name: '学習設定' })).toBeInTheDocument()
   })
 
-  it('/progress/:jobId は進捗画面(仮置き)', async () => {
+  it('/progress/:jobId は進捗画面', async () => {
     renderAt('/progress/job-1')
     expect(await screen.findByRole('heading', { name: '進捗' })).toBeInTheDocument()
   })

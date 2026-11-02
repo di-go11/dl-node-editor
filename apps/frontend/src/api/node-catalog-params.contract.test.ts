@@ -17,7 +17,7 @@ import type {
   linearType,
   unpoolingType,
 } from '../entity/node-catalog/entries'
-import { paramsSchemaOf } from '../entity/param/param-def'
+import { rustNodeSpecSchema, toRustNodeSpec } from '../infrastructure/http/rust-training-request'
 
 import type { components } from './schema'
 
@@ -45,62 +45,74 @@ type Equal<A, B> =
 
 type Schemas = components['schemas']
 
+/** 契約の *Spec のパラメータ名(種類を示す type を除いたキー) */
+type ParamsOf<Spec> = Exclude<keyof Spec, 'type'>
+
 describe('カタログのパラメータ名と契約の *Spec の一致', () => {
   it('Conv2D', () => {
-    const matches: Equal<keyof typeof conv2dType.params, keyof Schemas['Conv2DSpec']> = true
+    const matches: Equal<keyof typeof conv2dType.params, ParamsOf<Schemas['Conv2DSpec']>> = true
     expect(matches).toBe(true)
   })
 
   it('Pooling2D', () => {
-    const matches: Equal<keyof typeof pooling2dType.params, keyof Schemas['Pooling2DSpec']> = true
+    const matches: Equal<
+      keyof typeof pooling2dType.params,
+      ParamsOf<Schemas['Pooling2DSpec']>
+    > = true
     expect(matches).toBe(true)
   })
 
   it('BatchNorm', () => {
-    const matches: Equal<keyof typeof batchNormType.params, keyof Schemas['BatchNormSpec']> = true
+    const matches: Equal<
+      keyof typeof batchNormType.params,
+      ParamsOf<Schemas['BatchNormSpec']>
+    > = true
     expect(matches).toBe(true)
   })
 
   it('Linear', () => {
-    const matches: Equal<keyof typeof linearType.params, keyof Schemas['LinearSpec']> = true
+    const matches: Equal<keyof typeof linearType.params, ParamsOf<Schemas['LinearSpec']>> = true
     expect(matches).toBe(true)
   })
 
   it('Activation', () => {
-    const matches: Equal<keyof typeof activationType.params, keyof Schemas['ActivationSpec']> = true
+    const matches: Equal<
+      keyof typeof activationType.params,
+      ParamsOf<Schemas['ActivationSpec']>
+    > = true
     expect(matches).toBe(true)
   })
 
   it('IndexedPooling', () => {
     const matches: Equal<
       keyof typeof indexedPoolingType.params,
-      keyof Schemas['IndexedPoolingSpec']
+      ParamsOf<Schemas['IndexedPoolingSpec']>
     > = true
     expect(matches).toBe(true)
   })
 
   it('Unpooling', () => {
-    const matches: Equal<keyof typeof unpoolingType.params, keyof Schemas['UnpoolingSpec']> = true
+    const matches: Equal<
+      keyof typeof unpoolingType.params,
+      ParamsOf<Schemas['UnpoolingSpec']>
+    > = true
     expect(matches).toBe(true)
   })
 
   it('Upsample', () => {
-    const matches: Equal<keyof typeof upsampleType.params, keyof Schemas['UpsampleSpec']> = true
+    const matches: Equal<keyof typeof upsampleType.params, ParamsOf<Schemas['UpsampleSpec']>> = true
     expect(matches).toBe(true)
   })
 
   it('Add', () => {
-    const matches: Equal<keyof typeof addType.params, keyof Schemas['AddSpec']> = true
+    const matches: Equal<keyof typeof addType.params, ParamsOf<Schemas['AddSpec']>> = true
     expect(matches).toBe(true)
   })
 
   it('Concat(パラメータなし)', () => {
-    // 契約側は Record<string, never>(キーなしのオブジェクト)として生成されるため、
-    // keyof が string になり型の等値比較ができない。
-    // 代わりに「パラメータが 1 つもない」ことと「空オブジェクトが契約に適合する」ことを確かめる。
-    const empty: Schemas['ConcatSpec'] = {}
+    const matches: Equal<ParamsOf<Schemas['ConcatSpec']>, never> = true
+    expect(matches).toBe(true)
     expect(Object.keys(concatType.params)).toEqual([])
-    expect(paramsSchemaOf(concatType.params).safeParse(empty).success).toBe(true)
   })
 })
 
@@ -109,6 +121,7 @@ describe('カタログの既定値が契約の型として成り立つ', () => {
     // 型注釈が契約側なので、名前や型が違えばコンパイルエラーになる。
     // 上のキーの一致検査と合わせて、名前と値の型の両方を固定している。
     const spec: Schemas['Conv2DSpec'] = {
+      type: 'conv2d',
       in_channels: conv2dType.params.in_channels.default,
       out_channels: conv2dType.params.out_channels.default,
       kernel_size: conv2dType.params.kernel_size.default,
@@ -119,33 +132,40 @@ describe('カタログの既定値が契約の型として成り立つ', () => {
     expect(spec.in_channels).toBe(3)
   })
 
-  it('Activation の enum の既定値が契約の enum に含まれる', () => {
-    const activation: Schemas['ActivationType'] = 'ACTIVATION_TYPE_RELU'
-    expect(activationType.params.activation_type.default).toBe(activation)
-    expect(activationType.params.activation_type.options.map((option) => option.value)).toContain(
-      activation,
+  // カタログの enum は proto の名前のまま持つので、HTTP 用に変換した値を契約と比べる
+
+  it('Activation の enum の選択肢を変換すると、契約の enum の値すべてになる', () => {
+    const allowed: readonly Schemas['ActivationType'][] = ['relu', 'sigmoid', 'softmax', 'tanh']
+    const converted = activationType.params.activation_type.options.map(
+      (option) =>
+        toRustNodeSpec({ activation: { activation_type: option.value } })['activation_type'],
     )
+    expect(converted).toEqual(allowed)
   })
 
-  it('Pooling2D の enum の選択肢が契約の enum の値だけからなる', () => {
-    const allowed: readonly Schemas['PoolingType'][] = [
-      'POOLING_TYPE_UNSPECIFIED',
-      'POOLING_TYPE_MAX',
-      'POOLING_TYPE_AVERAGE',
-    ]
-    for (const option of pooling2dType.params.pooling_type.options) {
-      expect(allowed).toContain(option.value)
-    }
+  it('Pooling2D の enum の選択肢を変換すると、契約の enum の値すべてになる', () => {
+    const allowed: readonly Schemas['PoolingType'][] = ['max', 'average']
+    const converted = pooling2dType.params.pooling_type.options.map(
+      (option) => toRustNodeSpec({ pooling2d: { pooling_type: option.value } })['pooling_type'],
+    )
+    expect(converted).toEqual(allowed)
   })
 
-  it('Upsample の enum の選択肢が契約の enum の値だけからなる', () => {
-    const allowed: readonly Schemas['UpsampleMode'][] = [
-      'UPSAMPLE_MODE_UNSPECIFIED',
-      'UPSAMPLE_MODE_NEAREST',
-      'UPSAMPLE_MODE_BILINEAR',
-    ]
-    for (const option of upsampleType.params.upsample_mode.options) {
-      expect(allowed).toContain(option.value)
-    }
+  it('Upsample の enum の選択肢を変換すると、契約の enum の値すべてになる', () => {
+    const allowed: readonly Schemas['UpsampleMode'][] = ['nearest', 'bilinear']
+    const converted = upsampleType.params.upsample_mode.options.map(
+      (option) => toRustNodeSpec({ upsample: { upsample_mode: option.value } })['upsample_mode'],
+    )
+    expect(converted).toEqual(allowed)
+  })
+
+  it('既定値の層を変換すると、HTTP 用のスキーマを通る', () => {
+    const spec = toRustNodeSpec({
+      activation: {
+        activation_type: activationType.params.activation_type.default,
+        dim: activationType.params.dim.default,
+      },
+    })
+    expect(rustNodeSpecSchema.safeParse(spec).success).toBe(true)
   })
 })

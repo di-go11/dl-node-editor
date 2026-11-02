@@ -2,7 +2,6 @@ import { createContext, useContext } from 'react'
 
 import type { CapabilitiesApi } from '../../application/ports/capabilities-api'
 import type { DocumentStorage } from '../../application/ports/document-storage'
-import type { ModelGraphValidationApi } from '../../application/ports/model-graph-validation-api'
 import type { NodeCatalogSource } from '../../application/ports/node-catalog-source'
 import type { TrainingApi } from '../../application/ports/training-api'
 
@@ -28,7 +27,6 @@ export type Dependencies = {
   readonly nodeCatalogSource: NodeCatalogSource
   readonly capabilitiesApi: CapabilitiesApi
   readonly documentStorage: DocumentStorage
-  readonly validationApi: ModelGraphValidationApi
   readonly trainingApi: TrainingApi
 }
 

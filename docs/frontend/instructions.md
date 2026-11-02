@@ -184,7 +184,7 @@ editing ──[整合性チェック]──▶ checking ──OK──▶ checke
   - epoch の所要時間、累計時間
   - 状態
 - [停止] ボタンで停止 API を呼ぶ。
-- 状態が FAILED になったら `error_message` を目立つ形で表示する。
+- 状態が `failed` になったら `reason` を目立つ形で表示する。
 - 学習が終わったら(COMPLETED / FAILED / STOPPED)ストリームを閉じ、エディタに戻るボタンを出す。
 
 ---
@@ -286,33 +286,27 @@ apps/frontend/
 ### 6.1 共通事項
 
 - ベースパス:`/api/v1`
-- JSON のフィールド名と enum の表記は、**`test_segnet_dag.json` と同じ形**にそろえる。
-  - フィールド名は proto の名前のまま(snake_case)。
-  - enum は proto の名前の文字列(例:`"ACTIVATION_TYPE_RELU"`)。
-  - oneof は、選んだフィールド名をキーにしたオブジェクト(例:`"optimizer": { "adam": { ... } }`)。
-- エラーのレスポンス:`{ "error": { "code": string, "message": string, "issues"?: Issue[] } }`
+- JSON の表記は Rust の DTO に合わせる。C++ の設定ファイルと保存ファイル(`test_segnet_dag.json` の形)とは異なるので、フロントが送る直前に変換する。
+  - フィールド名は snake_case。
+  - enum は短い名前の文字列(例:`"relu"`)。
+  - 種類の選択は `type` キーで示し、パラメータを同じ階層に並べる(例:`"optimizer": { "type": "adam", ... }`)。
+  - グラフ入力につなぐ入力ポートは `"source": null` と書く。
+- エラーのレスポンス:本文なし。状態コードで表す。
 
 ### 6.2 エンドポイント
 
 | メソッド | パス | 内容 | リクエスト / レスポンス |
 |---|---|---|---|
-| GET | `/capabilities` | デバイス一覧 | → `{ cuda_available: bool, devices: [{ device_name, device_index, device_type: "DEVICE_TYPE_CPU" \| "DEVICE_TYPE_CUDA" }] }` |
-| POST | `/model-graphs/validate` | サーバー側の整合性チェック | `{ model_graph }` → `{ ok: bool, issues: Issue[] }` |
-| POST | `/trainings` | 学習開始 | `StartTrainingRequest` の JSON(`test_segnet_dag.json` と同じ形)→ `{ job_id, status }` |
-| GET | `/trainings/{job_id}/progress` | 進捗(**SSE**) | 各イベントの `data` が `StreamProgressResponse` の JSON |
-| POST | `/trainings/{job_id}/stop` | 学習停止 | → `{ status }` |
-
-```ts
-type Issue = {
-  severity: "error" | "warning";
-  node_id?: string;   // 該当ノード(ログのクリックでフォーカスするために使う)
-  port?: string;
-  message: string;
-};
-```
+| GET | `/capabilities` | デバイス一覧 | → `200` `{ devices: [{ id, name }] }`(`id` は `cpu` / `cuda:0` の形) |
+| POST | `/trainings` | 学習開始 | `StartTrainingRequest` の JSON → `200` `{ job_id }`。実行中なら `409`、受け付けられなければ `422` |
+| GET | `/trainings/{job_id}` | 学習プロセス全体の取得 | → SSE の `progress` と同じ形の JSON |
+| GET | `/trainings/{job_id}/status` | 状態の取得 | → `{ status, reason? }` |
+| GET | `/trainings/{job_id}/progress` | 進捗(**SSE**) | イベント名は `progress` と `error`。`progress` の `data` が `TrainingProcess` の JSON |
+| POST | `/trainings/{job_id}/stop` | 学習停止 | → `{ status, reason? }` |
 
 - 進捗を SSE(Server-Sent Events)にする理由:進捗はサーバーからクライアントへの一方向の連続した通知であり、gRPC のサーバーストリーミング(`StreamProgress`)をそのまま HTTP に写せるからである。双方向の通信は要らないので、WebSocket は使わない。
-- C++ の検証は、問題をすべて位置付きで返す(`model_graph.proto` の冒頭のコメントを参照)。`/model-graphs/validate` は Rust 側で未実装だが、MVP ではモックとして契約に含める。
+- `status` は `idle` / `running` / `completed` / `failed` / `stopped`。`failed` のときだけ `reason` が入る。
+- 共通のエラーは、`404`(ジョブがない)と `502`(C++ との通信に失敗)である。
 
 ### 6.3 モック
 
@@ -389,9 +383,7 @@ type Issue = {
 
 - 必須項目が入力されている。数値が範囲内にある。
 
-**(3) サーバー側のチェック**
-
-- `/model-graphs/validate` を呼ぶ(MVP ではモック)。
+サーバー側のチェックはない。C++ だけが検出できる問題は、学習開始の `422` で分かる。
 
 ---
 

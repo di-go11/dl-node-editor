@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 import type { CapabilitiesApi } from '../../application/ports/capabilities-api'
-import type { Capabilities, DeviceType } from '../../entity/capabilities/capabilities'
+import type { Capabilities, DeviceInfo } from '../../entity/capabilities/capabilities'
 
 import type { ApiClient } from './api-client'
 import { callApi } from './api-client'
@@ -16,34 +16,31 @@ import { callApi } from './api-client'
  */
 
 const capabilitiesJsonSchema = z.object({
-  cuda_available: z.boolean(),
   devices: z.array(
     z.object({
-      device_name: z.string(),
-      device_index: z.number().int().nonnegative(),
-      device_type: z.enum(['DEVICE_TYPE_UNSPECIFIED', 'DEVICE_TYPE_CPU', 'DEVICE_TYPE_CUDA']),
+      id: z.string(),
+      name: z.string(),
     }),
   ),
 })
 
 type CapabilitiesJson = z.infer<typeof capabilitiesJsonSchema>
 
-const DEVICE_TYPES: Readonly<
-  Record<CapabilitiesJson['devices'][number]['device_type'], DeviceType>
-> = {
-  DEVICE_TYPE_UNSPECIFIED: 'unspecified',
-  DEVICE_TYPE_CPU: 'cpu',
-  DEVICE_TYPE_CUDA: 'cuda',
+const CUDA_DEVICE_ID = /^cuda:(\d+)$/
+
+/** 応答には id しかないので、種類と番号は id('cpu' / 'cuda:0')から読み取る */
+function deviceFromJson(json: CapabilitiesJson['devices'][number]): DeviceInfo {
+  if (json.id === 'cpu') return { name: json.name, index: 0, type: 'cpu' }
+  const cuda = CUDA_DEVICE_ID.exec(json.id)
+  if (cuda !== null) return { name: json.name, index: Number(cuda[1]), type: 'cuda' }
+  return { name: json.name, index: 0, type: 'unspecified' }
 }
 
 function toCapabilities(json: CapabilitiesJson): Capabilities {
+  const devices = json.devices.map(deviceFromJson)
   return {
-    cudaAvailable: json.cuda_available,
-    devices: json.devices.map((device) => ({
-      name: device.device_name,
-      index: device.device_index,
-      type: DEVICE_TYPES[device.device_type],
-    })),
+    cudaAvailable: devices.some((device) => device.type === 'cuda'),
+    devices,
   }
 }
 
