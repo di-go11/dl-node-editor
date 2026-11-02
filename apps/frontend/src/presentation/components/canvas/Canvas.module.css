@@ -1,0 +1,146 @@
+/* キャンバスとノードの見た目。色はすべて theme.css のトークンを参照する */
+
+.canvas {
+  width: 100%;
+  height: 100%;
+}
+
+/* ---- ノード ---- */
+
+.node {
+  min-width: 150px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 12%);
+  font-size: var(--font-size-small);
+}
+
+.selected {
+  border-color: var(--color-selection);
+  box-shadow: 0 0 0 2px var(--color-selection);
+}
+
+/* Input / Output は、モデルの層ではないことが分かるよう背景を変える */
+.graphIo {
+  background: var(--color-surface-muted);
+}
+
+.hasError {
+  border-color: var(--color-error);
+}
+
+/* 今の条件では使えないノード(指示書 4.3: 赤色で表示し、⚠ を付ける) */
+.unavailable {
+  background: var(--color-error-bg);
+  border-color: var(--color-error);
+  border-width: 2px;
+}
+
+.title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+  font-weight: 600;
+}
+
+.label {
+  flex: 1;
+}
+
+.nodeId {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-weight: 400;
+}
+
+.warningMark {
+  color: var(--color-error);
+}
+
+.badgeError,
+.badgeWarning {
+  min-width: 18px;
+  padding: 0 var(--space-1);
+  border-radius: 9px;
+  color: #fff;
+  font-size: 11px;
+  text-align: center;
+}
+
+.badgeError {
+  background: var(--color-error);
+}
+
+.badgeWarning {
+  background: var(--color-warning);
+}
+
+.summary {
+  padding: var(--space-1) var(--space-2);
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+}
+
+/* ---- ポート ---- */
+
+.ports {
+  padding: var(--space-1) 0;
+}
+
+.portRow {
+  display: flex;
+  justify-content: space-between;
+  min-height: 20px;
+}
+
+/*
+ * Handle(React Flow のポート)は position: absolute で、いちばん近い
+ * position: relative の祖先に対して配置される。セルを relative にすると、
+ * ポートの丸がノード全体の中央ではなく、その行の高さの中央に来る。
+ */
+.portCell {
+  position: relative;
+  display: flex;
+  flex: 1;
+  align-items: center;
+  padding: 0 var(--space-3);
+}
+
+.portCellOut {
+  justify-content: flex-end;
+}
+
+.portName {
+  font-family: var(--font-mono);
+}
+
+.handle {
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--color-surface);
+}
+
+.port_feature {
+  background: var(--port-feature);
+}
+
+.port_tokens {
+  background: var(--port-tokens);
+}
+
+.port_indices {
+  background: var(--port-indices);
+}
+
+.port_any {
+  background: var(--port-any);
+}
+
+/* 複数つなげるポート(Add / Concat の x)は縦長にして、丸の 1 本用ポートと見分けられるようにする */
+.variadic {
+  height: 18px;
+  border-radius: 3px;
+}

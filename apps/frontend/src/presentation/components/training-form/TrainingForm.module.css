@@ -1,0 +1,94 @@
+/* 学習設定のフォーム。項目のまとまりを fieldset で囲み、2 列に並べる */
+.form {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.fieldset {
+  margin: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+
+.legend {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  padding: 0 var(--space-1);
+  font-weight: 600;
+}
+
+/* JSON 表記での名前(model_name など)。C++ のエラーメッセージや設定ファイルと見比べるため */
+.name {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-small);
+  font-weight: 400;
+}
+
+.field {
+  margin-bottom: var(--space-3);
+}
+
+.label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: 2px;
+}
+
+.checkboxLabel {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.input,
+.select {
+  width: 100%;
+  padding: 2px var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+
+.select {
+  margin-bottom: var(--space-2);
+}
+
+.input[aria-invalid='true'],
+.select[aria-invalid='true'] {
+  border-color: var(--color-error);
+}
+
+.description,
+.hint {
+  margin: 0 0 var(--space-2);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-small);
+}
+
+.hint {
+  padding: var(--space-1) var(--space-2);
+  border-left: 3px solid var(--color-accent);
+}
+
+.error {
+  margin: 2px 0 var(--space-2);
+  color: var(--color-error);
+  font-size: var(--font-size-small);
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

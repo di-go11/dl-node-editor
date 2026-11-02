@@ -1,0 +1,57 @@
+.field {
+  margin-bottom: var(--space-3);
+}
+
+.label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: 2px;
+}
+
+/* JSON 表記での名前(kernel_size など)。C++ のエラーメッセージや保存ファイルと見比べるために出す */
+.name {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-small);
+}
+
+.control {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  padding: 2px var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+
+.input[aria-invalid='true'] {
+  border-color: var(--color-error);
+}
+
+.constraint {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-small);
+  white-space: nowrap;
+}
+
+.help,
+.error {
+  margin: 2px 0 0;
+  font-size: var(--font-size-small);
+}
+
+.help {
+  color: var(--color-text-muted);
+}
+
+.error {
+  color: var(--color-error);
+}

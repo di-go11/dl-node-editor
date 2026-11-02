@@ -1,0 +1,99 @@
+/*
+ * デザイントークン - 色や余白を、名前の付いた CSS 変数(カスタムプロパティ)として 1 か所に定義する。
+ *
+ * 各コンポーネントの CSS Modules は、色の値(#3b82f6 など)を直接書かず、ここの変数を参照する。
+ * こうすると、
+ *   - 「Feature のポートは青」という決まりが 1 か所にまとまり、ノード・線・凡例で色がずれない
+ *   - ダークモードは、下の @media で変数の値を差し替えるだけで済む
+ *
+ * このファイルだけはグローバルな CSS(CSS Modules ではない)として main.tsx から読み込む。
+ */
+
+:root {
+  /* ---- ポートの種類ごとの色(指示書 4.2)---- */
+  --port-feature: #3b82f6; /* 青 */
+  --port-tokens: #8b5cf6; /* 紫 */
+  --port-indices: #f59e0b; /* 橙 */
+  --port-any: #9ca3af; /* 灰 */
+
+  /* ---- 面と文字 ---- */
+  --color-bg: #f8fafc;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f1f5f9;
+  --color-border: #d6dde6;
+  --color-text: #1e293b;
+  --color-text-muted: #64748b;
+  --color-accent: #2563eb;
+  --color-accent-text: #ffffff;
+  --color-selection: #2563eb;
+
+  /* ---- 問題の重さ ---- */
+  --color-error: #dc2626;
+  --color-error-bg: #fef2f2;
+  --color-warning: #d97706;
+  --color-warning-bg: #fffbeb;
+
+  /* ---- 形と余白 ---- */
+  --radius: 6px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --font-size-small: 12px;
+  --font-mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+
+  color-scheme: light dark;
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    'Hiragino Sans',
+    'Noto Sans JP',
+    sans-serif;
+  font-size: 14px;
+  color: var(--color-text);
+  background: var(--color-bg);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --port-feature: #60a5fa;
+    --port-tokens: #a78bfa;
+    --port-indices: #fbbf24;
+    --port-any: #9ca3af;
+
+    --color-bg: #0f172a;
+    --color-surface: #1e293b;
+    --color-surface-muted: #273449;
+    --color-border: #3b4a61;
+    --color-text: #e2e8f0;
+    --color-text-muted: #94a3b8;
+    --color-accent: #3b82f6;
+    --color-selection: #60a5fa;
+
+    --color-error: #f87171;
+    --color-error-bg: #3b1d1d;
+    --color-warning: #fbbf24;
+    --color-warning-bg: #3a2c12;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+button,
+select,
+input {
+  font: inherit;
+  color: inherit;
+}
