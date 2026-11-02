@@ -1,6 +1,7 @@
 -- テーブル生成後このファイルは編集不可. テーブルの整合性が保てなくなるため。
 CREATE TABLE training_runs (
     job_id TEXT PRIMARY KEY,
+    training_id TEXT NOT NULL, --再開時に同じid
     model_name TEXT NOT NULL,
     status TEXT NOT NULL,
     failure_reason TEXT,
@@ -8,7 +9,7 @@ CREATE TABLE training_runs (
     finished_at TEXT
 );
 
-CREATE INDEX idx_training_runs_model_name ON training_runs(model_name);
+CREATE INDEX idx_training_runs_model_name ON training_runs(training_id);
 
 CREATE TABLE training_config (
     job_id TEXT PRIMARY KEY REFERENCES training_runs(job_id),

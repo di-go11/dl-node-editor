@@ -59,3 +59,11 @@ pub enum RepositoryError {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum RecordError {
+    // 何らかの理由で保存に失敗した場合のエラー
+    #[error("Failed to record training process: {0}")]
+    RecordFailed(String),
+    // すでに保存されたepochを取り出す際のエラー
+    #[error("Failed to retrieve last saved epoch: {0}")]
+    LastSavedEpochFailed(String),
+}
