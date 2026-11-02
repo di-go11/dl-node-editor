@@ -41,3 +41,21 @@ pub enum TrainingProcessProviderError {
     #[error("training-process-provider returned invalid data: {0}")]
     InvalidData(String),
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum RepositoryError {
+    // データベースの接続に失敗した場合のエラー
+    #[error("Database connection failed: {0}")]
+    ConnectionFailed(String),
+    // データベースのクエリが失敗した場合のエラー
+    #[error("Database query failed: {0}")]
+    QueryFailed(String),
+    // データベースのトランザクションが失敗した場合のエラー
+    #[error("Database transaction failed: {0}")]
+    TransactionFailed(String),
+    // データベースのデータが不正だった場合のエラー
+    #[error("Database returned invalid data: {0}")]
+    InvalidData(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Error)]

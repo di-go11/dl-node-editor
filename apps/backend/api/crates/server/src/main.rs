@@ -2,6 +2,7 @@ use adapters::GrpcCapabilityProvider;
 use adapters::GrpcTrainingProcessProvider;
 use adapters::GrpcTrainingStarter;
 use adapters::GrpcTrainingStopper;
+use adapters::connect_database;
 use adapters::http::AppState;
 use std::sync::Arc;
 use tonic::transport::Channel;
@@ -18,6 +19,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // C++への接続
     let channel = Channel::from_shared(addr)?.connect_lazy();
+    // Databaseへのconnect
+    let database_url = std::env::var("DATABASE_URL")?;
+    let _pool = connect_database(&database_url).await?;
+
     // アダプターをユースケースに渡して、AppStateにまとめる
     let state = AppState {
         get_capabilities: Arc::new(GetCapabilities::new(GrpcCapabilityProvider::new(

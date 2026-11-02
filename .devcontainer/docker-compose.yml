@@ -37,9 +37,12 @@ services:
       - ../:/workspaces:cached
       - ~/.claude:/root/.claude:cached # ホスト側のClaude設定(CLAUDE.md等)を共有
       - cargo-registry:/usr/local/cargo/registry # cargo のキャッシュをコンテナ再作成後も永続化
+      - api-data:/data # DBの永続化用ボリューム
     # VS Code が DevContainer として認識し続けるための設定(base imageのデフォルトCMDはbashで、TTYがないと即終了するため)
     command: /bin/bash -c "while sleep 1000; do :; done"
     working_dir: /workspaces/apps/backend/api
+    environment:
+      - DATABASE_URL=sqlite:/data/training.db?mode=rwc
   web-dev:
     build:
       context: .
@@ -61,3 +64,4 @@ volumes:
   ccache-data:
   cargo-registry:
   web-node-modules: # web-dev の node_modules を永続化し、ホストと分離するための名前付きボリューム
+  api-data: # api-dev の DB データを永続化するための名前付きボリューム

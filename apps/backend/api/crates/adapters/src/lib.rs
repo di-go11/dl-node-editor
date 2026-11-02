@@ -1,8 +1,10 @@
 pub mod capabilities;
-pub mod training;
+pub mod database;
 pub mod http;
+pub mod training;
 
 pub use capabilities::GrpcCapabilityProvider;
+pub use database::connect_database;
 pub use training::GrpcTrainingProcessProvider;
 pub use training::GrpcTrainingStarter;
 pub use training::GrpcTrainingStopper;
