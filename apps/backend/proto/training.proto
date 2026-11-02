@@ -105,7 +105,7 @@ message StopTrainingResponse {
 
 // ---StreamProgress---
 
-message StreamProgressRequest {string job_id = 1;}
+message StreamProgressRequest {string job_id = 1;oneof start_position { uint32 after_epoch = 2; }}
 
 message StreamProgressResponse{
     uint32 epoch = 1; // 終了したエポック数

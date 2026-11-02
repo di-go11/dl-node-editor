@@ -32,6 +32,7 @@ impl TrainingProcessProvider for GrpcTrainingProcessProvider {
     ) -> Result<Self::ProgressStream, TrainingProcessProviderError> {
         let request = StreamProgressRequest {
             job_id: job_id.as_str().to_string(),
+            start_position: None, // 履歴は読まず、最新の状態だけを受け取る
         };
 
         // 接続の可否

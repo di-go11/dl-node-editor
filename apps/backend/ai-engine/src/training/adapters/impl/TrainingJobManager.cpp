@@ -5,6 +5,7 @@
 
 #include <exception>
 #include <utility>
+#include <random>
 
 TrainingJobManager::TrainingJobManager(JobRunner runner)
     : _runner(std::move(runner))
@@ -40,7 +41,7 @@ std::string TrainingJobManager::start(const StartTrainingCommand &command)
         }
     }
 
-    const std::string jobId = "job-" + std::to_string(_nextJobNumber++);
+    const std::string jobId = "job-" + std::to_string(_nextJobNumber++) + "-" + std::to_string(std::random_device{}());
 
     Job job;
     job.store = std::make_shared<TrainingProgressStore>();
