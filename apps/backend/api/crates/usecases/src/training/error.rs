@@ -8,6 +8,12 @@ pub enum StartTrainingError {
     // protoの変換に失敗した場合のエラー
     #[error("Failed to convert to proto: {0}")]
     ConversionToProtoFailed(String),
+    // すでに実行中のジョブがある
+    #[error("Training job is already running: {0}")]
+    AlreadyRunning(String),
+    // 学習設定が不正でC++サーバーからの拒否
+    #[error("Training config was rejected: {0}")]
+    InvalidConfig(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -19,12 +25,18 @@ pub enum StopTrainingError {
     // C++サーバーから返ってきたレスポンスが不正だった場合のエラー
     #[error("Stop training returned invalid response: {0}")]
     InvalidResponse(String),
+    // 指定されたジョブが存在しない
+    #[error("training job was not found: {0}")]
+    NotFound(String),
 }
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum TrainingProcessProviderError {
     // 通信できなかった(C++のサーバーが起動していない. タイムアウトなど)
     #[error("training-process-provider is unavailable: {0}")]
     Unavailable(String),
+    // 指定されたジョブが存在しない
+    #[error("training job was not found: {0}")]
+    NotFound(String),
     // 返ってきたデータが不正
     #[error("training-process-provider returned invalid data: {0}")]
     InvalidData(String),

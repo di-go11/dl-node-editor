@@ -3,7 +3,7 @@ use futures_util::StreamExt; // streamの.mapメソッドを使うための拡�
 use std::pin::Pin;
 
 use entities::training::{JobId, TrainingProcess};
-use tonic::transport::Channel;
+use tonic::{transport::Channel, Code, Status};
 use usecases::training::{TrainingProcessProvider, TrainingProcessProviderError};
 
 use crate::pb::training::v1::StreamProgressRequest;
@@ -40,18 +40,44 @@ impl TrainingProcessProvider for GrpcTrainingProcessProvider {
             .clone()
             .stream_progress(request)
             .await
-            .map_err(|status| TrainingProcessProviderError::Unavailable(status.to_string()))?
+            .map_err(provider_error_from_status)?
             .into_inner(); //Streaming<StreamProgressResponse>
                            // 届く1件ごとの変換
         let stream = stream.map(|item| {
-            let response = item
-                .map_err(|status| TrainingProcessProviderError::Unavailable(status.to_string()))?; // 内側のErr
+            let response = item.map_err(provider_error_from_status)?; // 内側のErr
             TrainingProcess::try_from(response)
                 .map_err(|e| TrainingProcessProviderError::InvalidData(e.to_string()))
             // 内側のOk /Err
         });
 
         Ok(Box::pin(stream)) // 外側のOk(接続に成功したらストリームを返す)
+    }
+}
+
+fn provider_error_from_status(status: Status) -> TrainingProcessProviderError {
+    match status.code() {
+        Code::NotFound => TrainingProcessProviderError::NotFound(status.to_string()),
+        _ => TrainingProcessProviderError::Unavailable(status.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn not_found_status_converts_to_not_found_error() {
+        let error = provider_error_from_status(Status::not_found("job not found"));
+        assert!(matches!(error, TrainingProcessProviderError::NotFound(_)));
+    }
+
+    #[test]
+    fn other_status_converts_to_unavailable_error() {
+        let error = provider_error_from_status(Status::unavailable("server down"));
+        assert!(matches!(
+            error,
+            TrainingProcessProviderError::Unavailable(_)
+        ));
     }
 }
 

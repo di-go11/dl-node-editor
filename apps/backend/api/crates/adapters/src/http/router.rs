@@ -1,4 +1,7 @@
-use super::handler::{get_capabilities, start_training, stop_training};
+use super::handler::{
+    get_capabilities, get_training_process, get_training_status, start_training, stop_training,
+    stream_training_process,
+};
 
 use super::state::AppState;
 use axum::{
@@ -20,6 +23,12 @@ where
     Router::new()
         .route("/capabilities", get(get_capabilities::<C>))
         .route("/trainings", post(start_training::<S>))
+        .route("/trainings/{job_id}", get(get_training_process::<P>))
+        .route(
+            "/trainings/{job_id}/progress",
+            get(stream_training_process::<P>),
+        )
         .route("/trainings/{job_id}/stop", post(stop_training::<T>))
+        .route("/trainings/{job_id}/status", get(get_training_status::<P>))
         .with_state(state)
 }

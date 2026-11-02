@@ -6,6 +6,7 @@ use usecases::training::TrainingStopper;
 use super::from_proto::status_from_proto;
 use crate::pb::training::v1::StopTrainingRequest as StopTrainingRequestPb;
 use crate::pb::training::v1::{self as training_pb};
+use tonic::Code;
 use training_pb::training_service_client::TrainingServiceClient;
 
 pub struct GrpcTrainingStopper {
@@ -31,7 +32,10 @@ impl TrainingStopper for GrpcTrainingStopper {
             .clone()
             .stop_training(request)
             .await
-            .map_err(|status| StopTrainingError::StopOrderFailed(status.to_string()))?
+            .map_err(|status| match status.code() {
+                Code::NotFound => StopTrainingError::NotFound(status.to_string()),
+                _ => StopTrainingError::StopOrderFailed(status.to_string()),
+            })?
             .into_inner(); // StopTrainingResponse
 
         // StopTrainingResponse は error_message を持たないので、Failed の reason は空文字になる
