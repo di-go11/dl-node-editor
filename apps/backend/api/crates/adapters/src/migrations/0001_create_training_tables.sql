@@ -1,25 +1,36 @@
 -- テーブル生成後このファイルは編集不可. テーブルの整合性が保てなくなるため。
-CREATE TABLE training_runs (
-    job_id TEXT PRIMARY KEY,
-    training_id TEXT NOT NULL, --再開時に同じid
-    model_name TEXT NOT NULL,
-    status TEXT NOT NULL,
-    failure_reason TEXT,
-    started_at TEXT NOT NULL,
-    finished_at TEXT
+CREATE TABLE model (
+    model_id TEXT PRIMARY KEY,
+    model_name TEXT NOT NULL UNIQUE,
+    -- TODO: ModelGraphのJSON化を実装するまで保存しない
+    -- model_graph TEXT NOT NULL, --JSONのメタデータ
+    created_at DATETIME NOT NULL
 );
 
-CREATE INDEX idx_training_runs_model_name ON training_runs(training_id);
+
+
+
+-- 一回の学習でINSERTとUPDATEの2回のトランザクションが発生する。一応同時には発生しないため一旦このまま。
+CREATE TABLE training_runs (
+    job_id TEXT PRIMARY KEY,
+    model_id TEXT NOT NULL REFERENCES model(model_id),
+    status TEXT NOT NULL,
+    failure_reason TEXT,
+    started_at TEXT NOT NULL, --学習開始時刻。
+    finished_at TEXT -- 学習終了時刻。終了を記録できなければNULL
+);
+
+CREATE INDEX idx_training_runs_model_id ON training_runs(model_id);
 
 CREATE TABLE training_config (
     job_id TEXT PRIMARY KEY REFERENCES training_runs(job_id),
 
-    epochs INTEGER NOT NULL, -- 学習時の全エポック数
-    batch INTEGER NOT NULL, -- 学習時のバッチサイズ
+    epochs INTEGER NOT NULL, -- 学習時の指定エポック数
+    batch INTEGER NOT NULL, -- 学習時の指定バッチサイズ
     device TEXT NOT NULL, -- 学習時のデバイス（cpu / cuda:0 / cuda:1 ...）
-    dataset_path TEXT NOT NULL,
-    save_last_every INTEGER NOT NULL,
-    resume_from TEXT,
+    dataset_path TEXT NOT NULL, -- データセットのパス
+    save_last_every INTEGER NOT NULL, -- 学習パラメータを保存する周期
+    resume_from TEXT, --学習再開時に参照される.ptファイルパス
     seed INTEGER,
 
     -- optimizer
@@ -52,12 +63,11 @@ CREATE TABLE training_epochs (
     epoch INTEGER NOT NULL, -- プロセス終了したエポックナンバー
     train_loss REAL,
     val_loss REAL,
-    epoch_elapsed_ms INTEGER NOT NULL,
-    total_elapsed_ms INTEGER NOT NULL,
-    recorded_at TEXT NOT NULL,
+    epoch_elapsed_ms INTEGER NOT NULL, --1エポックごとの経過時間(ms)
     PRIMARY KEY (job_id, epoch)
 );
 
+-- タスクごとのメトリクス
 CREATE TABLE segmentation_epoch_metrics (
     job_id TEXT NOT NULL,
     epoch INTEGER NOT NULL, -- プロセス終了したエポックナンバー
