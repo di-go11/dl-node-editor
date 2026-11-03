@@ -4,12 +4,12 @@ use adapters::GrpcTrainingStarter;
 use adapters::GrpcTrainingStopper;
 use adapters::connect_database;
 use adapters::http::AppState;
+use adapters::http::router;
+use adapters::{SqliteTrainingRepository, UuidModelGenerator};
 use std::sync::Arc;
 use tonic::transport::Channel;
 use usecases::capabilities::GetCapabilities;
 use usecases::training::{GetTrainingProcess, StartTraining, StopTraining};
-
-use adapters::http::router;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -21,16 +21,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let channel = Channel::from_shared(addr)?.connect_lazy();
     // Databaseへのconnect
     let database_url = std::env::var("DATABASE_URL")?;
-    let _pool = connect_database(&database_url).await?;
+    let pool = connect_database(&database_url).await?;
 
     // アダプターをユースケースに渡して、AppStateにまとめる
     let state = AppState {
         get_capabilities: Arc::new(GetCapabilities::new(GrpcCapabilityProvider::new(
             channel.clone(),
         ))),
-        start_training: Arc::new(StartTraining::new(GrpcTrainingStarter::new(
-            channel.clone(),
-        ))),
+        start_training: Arc::new(StartTraining::new(
+            GrpcTrainingStarter::new(channel.clone()),
+            SqliteTrainingRepository::new(pool.clone()),
+            UuidModelGenerator,
+        )),
         get_process: Arc::new(GetTrainingProcess::new(GrpcTrainingProcessProvider::new(
             channel.clone(),
         ))),

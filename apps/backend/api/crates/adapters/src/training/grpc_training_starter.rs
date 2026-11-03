@@ -1,11 +1,13 @@
+use entities::training::ModelId;
 use entities::training::{config::TrainingConfig, JobId};
 use tonic::{transport::Channel, Code, Status};
 use usecases::training::StartTrainingError;
-use usecases::training::TrainingStarter;
+use usecases::training::{ModelIdGenerator, TrainingStarter};
 
 use crate::pb::training::v1::StartTrainingRequest as StartTrainingRequestPb;
 use crate::pb::training::v1::{self as training_pb};
 use training_pb::training_service_client::TrainingServiceClient;
+
 pub struct GrpcTrainingStarter {
     client: TrainingServiceClient<Channel>, // gRPC通信をするためのフィールド. Channel型を指定することで、
 }

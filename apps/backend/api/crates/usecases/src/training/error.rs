@@ -14,6 +14,8 @@ pub enum StartTrainingError {
     // 学習設定が不正でC++サーバーからの拒否
     #[error("Training config was rejected: {0}")]
     InvalidConfig(String),
+    #[error("Failed to record training run: {0}")]
+    RecordFailed(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]

@@ -4,8 +4,17 @@ use entities::training::config::TrainingConfig;
 use entities::training::JobId;
 use serde::{Deserialize, Serialize};
 
+use crate::http::dto::training_mode::TrainingModeDto;
+
 use super::data_spec::DataSpecDto;
 use super::model::ModelGraphDto;
+
+#[derive(Debug, Deserialize)]
+pub struct StartTrainingRequestDto {
+    pub mode: TrainingModeDto,
+    #[serde(flatten)] // configの中身をjsonと同じにする
+    pub config: TrainingConfigDto,
+}
 
 // TrainingConfig
 #[derive(Debug, Deserialize)]

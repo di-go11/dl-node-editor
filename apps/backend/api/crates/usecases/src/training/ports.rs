@@ -1,7 +1,7 @@
 use futures_core::Stream;
 
 use entities::training::config::TrainingConfig;
-use entities::training::{JobId, TrainingJobStatus, TrainingProcess};
+use entities::training::{JobId, ModelId, TrainingJobStatus, TrainingProcess};
 
 use super::error::{StartTrainingError, StopTrainingError, TrainingProcessProviderError};
 

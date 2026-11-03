@@ -1,5 +1,5 @@
 use super::dto::{
-    CapabilitiesDto, StartTrainingResponseDto, TrainingConfigDto, TrainingJobStatusDto,
+    CapabilitiesDto, StartTrainingRequestDto, StartTrainingResponseDto, TrainingJobStatusDto,
     TrainingProcessDto,
 };
 use axum::{
@@ -10,8 +10,9 @@ use axum::{
 use entities::training::{config::TrainingConfig, JobId, TrainingProcess};
 use futures_util::StreamExt;
 use usecases::training::{
-    GetTrainingProcess, StartTraining, StopTraining, TrainingProcessProvider,
-    TrainingProcessProviderError, TrainingStarter, TrainingStopper,
+    GetTrainingProcess, ModelIdGenerator, StartTraining, StopTraining, TrainingMode,
+    TrainingProcessProvider, TrainingProcessProviderError, TrainingRunRegistar, TrainingStarter,
+    TrainingStopper,
 };
 use usecases::{
     capabilities::{CapabilityProvider, GetCapabilities},
@@ -24,20 +25,24 @@ use std::convert::Infallible;
 use std::sync::Arc;
 
 // 学習開始POSTリクエストハンドラ
-pub async fn start_training<S>(
-    State(usecase): State<Arc<StartTraining<S>>>,
-    Json(dto): Json<TrainingConfigDto>,
+pub async fn start_training<S, R, G>(
+    State(usecase): State<Arc<StartTraining<S, R, G>>>,
+    Json(dto): Json<StartTrainingRequestDto>,
 ) -> Result<Json<StartTrainingResponseDto>, StatusCode>
 where
     S: TrainingStarter + Send + Sync + 'static,
+    R: TrainingRunRegistar + Send + Sync + 'static,
+    G: ModelIdGenerator + Send + Sync + 'static,
 {
-    let config = TrainingConfig::from(dto);
-    let job_id = usecase.execute(&config).await.map_err(|e| match e {
+    let mode = TrainingMode::try_from(dto.mode).map_err(|_| StatusCode::UNPROCESSABLE_ENTITY)?;
+    let config = TrainingConfig::from(dto.config);
+    let job_id = usecase.execute(&config, &mode).await.map_err(|e| match e {
         StartTrainingError::StartOrderFailed(_) => StatusCode::BAD_GATEWAY,
         StartTrainingError::ConversionToProtoFailed(_) | StartTrainingError::InvalidConfig(_) => {
             StatusCode::UNPROCESSABLE_ENTITY
         }
         StartTrainingError::AlreadyRunning(_) => StatusCode::CONFLICT,
+        StartTrainingError::RecordFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
     })?;
     Ok(Json(job_id.into()))
 }
