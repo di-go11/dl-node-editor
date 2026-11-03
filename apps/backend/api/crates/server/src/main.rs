@@ -9,7 +9,9 @@ use adapters::{SqliteTrainingRepository, UuidModelGenerator};
 use std::sync::Arc;
 use tonic::transport::Channel;
 use usecases::capabilities::GetCapabilities;
-use usecases::training::{GetTrainingProcess, StartTraining, StopTraining};
+use usecases::training::{
+    GetTrainingProcess, StartTraining, StopTraining, ValidateTrainingConfig,
+};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -37,6 +39,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             channel.clone(),
         ))),
         stop_training: Arc::new(StopTraining::new(GrpcTrainingStopper::new(channel.clone()))),
+        validate_training: Arc::new(ValidateTrainingConfig::new(SqliteTrainingRepository::new(
+            pool.clone(),
+        ))),
     };
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await?;

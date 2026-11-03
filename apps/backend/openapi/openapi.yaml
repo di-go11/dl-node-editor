@@ -84,6 +84,30 @@ paths:
         '502':
           $ref: '#/components/responses/UpstreamError'
 
+  /trainings/validate:
+    post:
+      tags: [trainings]
+      operationId: validateTraining
+      summary: 学習開始前の整合性チェック
+      description: |
+        学習開始と同じリクエストを受け取り、DB の状態と矛盾しないかを確認する(C++ には送らない)。
+        現在は新規学習のみ: 同じ model_name のモデルがすでにあれば 409 を返す。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartTrainingRequest'
+      responses:
+        '204':
+          description: 問題なし。学習を開始できる
+        '409':
+          description: model_name がすでに使用されている
+        '422':
+          description: リクエストの形が合わない
+        '500':
+          description: DB の読み取りに失敗した
+
   /trainings/{job_id}:
     get:
       tags: [trainings]

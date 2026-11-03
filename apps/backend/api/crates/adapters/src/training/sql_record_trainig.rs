@@ -12,7 +12,7 @@ use usecases::training::{RepositoryError, TrainingResultRegister, TrainingRunReg
 
 #[derive(Clone)]
 pub struct SqliteTrainingRepository {
-    pool: SqlitePool,
+    pub(super) pool: SqlitePool, // sql/select.rs からも使うため training モジュール内に公開
 }
 
 impl SqliteTrainingRepository {

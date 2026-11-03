@@ -3,6 +3,7 @@ mod from_proto;
 mod grpc_training_process_provider;
 mod grpc_training_starter;
 mod grpc_training_stopper;
+mod sql;
 mod sql_record_trainig;
 mod to_proto;
 mod uuid_generator;

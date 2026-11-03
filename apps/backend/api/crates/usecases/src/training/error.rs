@@ -1,3 +1,5 @@
+use std::error;
+
 use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -68,4 +70,14 @@ pub enum RecordError {
     // すでに保存されたepochを取り出す際のエラー
     #[error("Failed to retrieve last saved epoch: {0}")]
     LastSavedEpochFailed(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum ValidateTrainingConfigError {
+    #[error("model name is already used: {0}")]
+    ModelNameAlreadyUsed(String),
+    #[error("model was not found: {0}")]
+    ModelNotFound(String),
+    #[error("failed to read training record: {0}")]
+    ReadFailed(String),
 }

@@ -53,9 +53,9 @@ mod tests {
     use super::ModelIdGenerator;
     use super::StartTraining;
     use super::StartTrainingError;
+    use super::TrainingMode;
     use super::TrainingRunRegistar;
     use super::TrainingStarter;
-    use super::TrainingMode;
     use crate::training::RepositoryError;
     use entities::model::layer::{ActivationSpec, ActivationType, Conv2DSpec, NodeSpec};
     use entities::model::{ModelGraph, Node, NodeInput, PortRef};
@@ -249,7 +249,9 @@ mod tests {
         let expected = JobId::new("1").unwrap();
         let (usecase, log) = gen_usecase(Ok(expected.clone()), Ok(()), Ok(()));
 
-        let result = usecase.execute(&gen_normal_order(), &TrainingMode::New).await;
+        let result = usecase
+            .execute(&gen_normal_order(), &TrainingMode::New)
+            .await;
 
         assert_eq!(result, Ok(expected));
         // modelはtraining_runsから外部キーで参照されるため、先にinsertされる
@@ -285,7 +287,10 @@ mod tests {
             *log.lock().unwrap(),
             vec!["start_training", "insert_training_run"]
         );
-        assert_eq!(*usecase.repository.run_model_id.lock().unwrap(), Some(model_id));
+        assert_eq!(
+            *usecase.repository.run_model_id.lock().unwrap(),
+            Some(model_id)
+        );
     }
 
     #[tokio::test]
@@ -293,7 +298,9 @@ mod tests {
         let err = StartTrainingError::StartOrderFailed("server down".to_string());
         let (usecase, log) = gen_usecase(Err(err.clone()), Ok(()), Ok(()));
 
-        let result = usecase.execute(&gen_normal_order(), &TrainingMode::New).await;
+        let result = usecase
+            .execute(&gen_normal_order(), &TrainingMode::New)
+            .await;
 
         assert_eq!(result, Err(err));
         // 学習が始まっていないので、training_runsにはinsertしない
@@ -308,7 +315,9 @@ mod tests {
             Ok(()),
         );
 
-        let result = usecase.execute(&gen_normal_order(), &TrainingMode::New).await;
+        let result = usecase
+            .execute(&gen_normal_order(), &TrainingMode::New)
+            .await;
 
         assert!(matches!(result, Err(StartTrainingError::RecordFailed(_))));
         // 保存できない学習は始めない
@@ -323,7 +332,9 @@ mod tests {
             Err(RepositoryError::QueryFailed("db locked".to_string())),
         );
 
-        let result = usecase.execute(&gen_normal_order(), &TrainingMode::New).await;
+        let result = usecase
+            .execute(&gen_normal_order(), &TrainingMode::New)
+            .await;
 
         assert!(matches!(result, Err(StartTrainingError::RecordFailed(_))));
     }

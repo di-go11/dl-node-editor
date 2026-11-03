@@ -1,6 +1,6 @@
 use super::dto::{
-    CapabilitiesDto, StartTrainingRequestDto, StartTrainingResponseDto, TrainingJobStatusDto,
-    TrainingProcessDto,
+    CapabilitiesDto, StartTrainingRequestDto, StartTrainingResponseDto, TrainingConfigDto,
+    TrainingJobStatusDto, TrainingProcessDto,
 };
 use axum::{
     extract::{Path, State},
@@ -11,8 +11,9 @@ use entities::training::{config::TrainingConfig, JobId, TrainingProcess};
 use futures_util::StreamExt;
 use usecases::training::{
     GetTrainingProcess, ModelIdGenerator, StartTraining, StopTraining, TrainingMode,
-    TrainingProcessProvider, TrainingProcessProviderError, TrainingRunRegistar, TrainingStarter,
-    TrainingStopper,
+    TrainingProcessProvider, TrainingProcessProviderError, TrainingRecordReader,
+    TrainingRunRegistar, TrainingStarter, TrainingStopper, ValidateTrainingConfig,
+    ValidateTrainingConfigError,
 };
 use usecases::{
     capabilities::{CapabilityProvider, GetCapabilities},
@@ -45,6 +46,25 @@ where
         StartTrainingError::RecordFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
     })?;
     Ok(Json(job_id.into()))
+}
+
+// 整合性チェックPOSTリクエストハンドラ
+// 学習開始と同じJSONを受け取れる(modeはチェックに使わないため無視される)
+// TODO: Resumeのチェックは後で実装する
+pub async fn validate_training<V>(
+    State(usecase): State<Arc<ValidateTrainingConfig<V>>>,
+    Json(dto): Json<TrainingConfigDto>,
+) -> StatusCode
+where
+    V: TrainingRecordReader + Send + Sync + 'static,
+{
+    let config = TrainingConfig::from(dto);
+    match usecase.execute(&config).await {
+        Ok(()) => StatusCode::NO_CONTENT,
+        Err(ValidateTrainingConfigError::ModelNameAlreadyUsed(_)) => StatusCode::CONFLICT,
+        Err(ValidateTrainingConfigError::ModelNotFound(_)) => StatusCode::NOT_FOUND,
+        Err(ValidateTrainingConfigError::ReadFailed(_)) => StatusCode::INTERNAL_SERVER_ERROR,
+    }
 }
 
 // デバイス情報取得GETリクエストハンドラ
