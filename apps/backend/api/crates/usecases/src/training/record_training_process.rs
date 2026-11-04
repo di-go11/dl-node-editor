@@ -68,8 +68,7 @@ pub struct RecordTrainingProgress<P, R> {
          config: &TrainingConfig,
      ) -> Result<(), RecordError> {
           //すでに保存されているepochについて調べる。
-         let after_epoch = self
-             .repository.
+         let after_epoch = self.repository.last_saved_epoch(job_id).await?;
 
          let mut stream = self
              .provider

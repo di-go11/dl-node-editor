@@ -83,7 +83,7 @@ Optimizer の種類も変えたい(重みだけ引き継いで、optimizer の�
 再開画面の「前回 N エポック完了」の表示にも必要になる。
 
 **作業内容**
-- gRPC で `TrainingEpochProvider` を実装する(`StreamProgressRequest.start_position` に `AfterEpoch(after_epoch)` を入れる。`GrpcTrainingProcessProvider` とほぼ同じ)
+- gRPC で `TrainingEpochHistoryProvider` を実装する(`StreamProgressRequest.start_position` に `AfterEpoch(after_epoch)` を入れる。`GrpcTrainingProcessProvider` とほぼ同じ)
 - 読み取り用のトレイトに `last_saved_epoch` を追加し、SQL で実装する
   - `SELECT COALESCE(MAX(epoch), 0) FROM training_epochs WHERE job_id = ?`
   - C++ の `after_epoch` も「0 = まだ何も完了していない」という意味なので、そのまま渡せる
