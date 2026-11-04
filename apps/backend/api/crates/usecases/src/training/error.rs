@@ -84,6 +84,11 @@ pub enum RecordError {
     // 終了メッセージ前にストリームが閉じた
     #[error("Stream finished before getting finish message: {0}")]
     StreamEnded(String),
+    #[error("Failed to open epoch stream: {0}")]
+    StreamOpenFailed(#[from] StreamError),
+    // 不正なデータの取り出しによるエラー
+    #[error("Invalid data received from training process provider: {0}")]
+    InvalidData(#[from] TrainingProgressProviderError),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]

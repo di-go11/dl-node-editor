@@ -1,6 +1,7 @@
 use crate::training::RecordError;
+use crate::training::TrainingProgressProviderError;
 use crate::training::TrainingRecordReader;
-use crate::training::TrainingRecordStreamer;
+use crate::training::TrainingStreamRecorder;
 
 use super::{RepositoryError, StreamError};
 
@@ -11,7 +12,6 @@ use entities::training::{JobId, ModelId};
 
 // 指定したエポックより後の「全エポック」を飛ばさずに受け取るためのポート(DBへの履歴保存用)。
 // 途中のエポックはRUNNINGで届き、学習が終了したら最後に終了状態が1回だけ届く。
-
 
 pub trait TrainingRunRegistar {
     // 新しいモデルをmodelテーブルにinsertする処理。training_runsが外部キーで参照するため先に呼ぶ。
@@ -53,32 +53,47 @@ pub struct RecordTrainingProgress<S, R> {
 }
 
 // 保存済みエポック数を確認して現在まで送られてきたエポックデータを保存。
- use futures_util::StreamExt;
- use std::pin::pin;
- impl<P: TrainingRecordStreamer, R: TrainingProgressRecorder + TrainingRecordReader> RecordTrainingProgress<P, R> {
-     pub async fn execute(
-         &self,
-         job_id: &JobId,
-         config: &TrainingConfig,
-     ) -> Result<(), RecordError> {
-          //すでに保存されているepochについて調べる。
-          let after_epoch = self.repository.last_saved_epoch(job_id).await.map_err(|e|RepositoryError::QueryFailed(e.to_string()))?;
+use futures_util::StreamExt;
+use std::pin::pin;
+impl<P: TrainingStreamRecorder, R: TrainingProgressRecorder + TrainingRecordReader>
+    RecordTrainingProgress<P, R>
+{
+    pub async fn execute(
+        &self,
+        job_id: &JobId,
+        config: &TrainingConfig,
+    ) -> Result<(), RecordError> {
+        //すでに保存されているepochについて調べる。
+        let after_epoch = self
+            .repository
+            .last_saved_epoch(job_id)
+            .await
+            .map_err(|e| RecordError::LastSavedEpochFailed(e.to_string()))?;
 
-          // c++のサーバーから何らかの方法でStreamをかけられてepoch毎のデータをもらう。
-         let mut stream = self
-             .provider
-             .stream_epoch_after(job_id, after_epoch)
-             .await.map(|e| StreamError::FailedReadStream(e.to_string()))?;
-         let mut stream = pin!(stream);  //StreamExt::next()はSelf:Upin（StreamExtフィールド内としてコンポジットしている)で固定する決まり。pin!()で値ムーブをこのスコープないだけで禁止にする。
+        // c++のサーバーから何らかの方法でStreamをかけられてepoch毎のデータをもらう。
+        let stream = self
+            .provider
+            .stream_epoch_after(job_id, after_epoch)
+            .await
+            .map_err(|e| StreamError::FailedReadStream(e.to_string()))?;
+        let mut stream = pin!(stream); //StreamExt::next()はSelf:Upin（StreamExtフィールド内としてコンポジットしている)で固定する決まり。pin!()で値ムーブをこのスコープないだけで禁止にする。
 
-//         // 届いたらDBに保存するだけの処理
-         while let Some(process) = stream.next().await {
-             let process = process?;
-             let epoch = process.;
-             self.repository.insert_epoch(job_id, epoch, process).await?;
-         }
-
-//         // 学習が終了していればDB::trainig_runsのUpdate
-         Ok(())
-     }
- }
+        // 受け取ったStreamをDBに保存する。
+        while let Some(process) = stream.next().await {
+            let one_process =
+                process.map_err(|e| TrainingProgressProviderError::InvalidData(e.to_string()))?;
+            let epoch = one_process.epoch;
+            self.repository
+                .insert_epoch(job_id, epoch, &one_process)
+                .await
+                .map_err(|e| {
+                    RecordError::RecordFailed(format!(
+                        "Failed to record training process for job_id {}: {}",
+                        job_id.as_str(),
+                        e.to_string()
+                    ))
+                })?;
+        }
+        Ok(())
+    }
+}

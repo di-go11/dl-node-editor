@@ -15,7 +15,7 @@ pub use error::{
     TrainingProgressProviderError, ValidateTrainingConfigError,
 };
 pub use model_id_generator::ModelIdGenerator;
-pub use read_training_record::{TrainingRecordReader, TrainingRecordStreamer};
+pub use read_training_record::{TrainingRecordReader, TrainingStreamRecorder};
 pub use record_training_process::{TrainingProgressRecorder, TrainingRunRegistar};
 pub use start_training::StartTraining;
 pub use stop_training::StopTraining;
