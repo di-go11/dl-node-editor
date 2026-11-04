@@ -1,0 +1,236 @@
+# バックエンド(Rust / DB 保存まわり)の残作業
+
+2026-11-04 時点、`feat/SQL` ブランチ。
+学習開始時の DB 保存(`model` / `training_runs` / `training_config`)と、新規学習の整合性チェック(`POST /api/v1/trainings/validate`)までは動作確認済み。
+ここに挙げるのはその続きの作業。上から順に優先度が高い。
+
+---
+
+## 学習再開の設計方針(2026-11-04 決定)
+
+当初は「学習設定画面で New / Resume を選ぶ」予定だったが、それだと再開なのに `model_name` やモデル構造を入力・編集できてしまう。
+そこで、**新規学習と学習再開を画面・API・ユースケースのすべてで分ける**。
+
+```
+ノードエディタ
+ ├─ [学習設定] → /training            新規専用。名前を入力し、エディタのグラフを使う
+ └─ [学習再開] → /resume              学習済みモデルの一覧(Rust が SQL で取得)
+                  └─ 選択 → /resume/:modelId   再開用フォーム(モデル構造は触らない)
+```
+
+- 再開画面はエディタのドキュメント(`document.training` やグラフ)を使わない。前回の `training_config` を初期値として読み込む
+- 再開リクエストは `model_id` と「変えてよい項目」だけを送る。名前・構造・データ仕様は Rust が DB から組み立てる
+  → 「再開なのに名前を変えられる」「別モデルの `model_id` と別の名前を組み合わせて送れる」が型の上で起きなくなる
+
+再開時に変えられる項目は次のとおり(C++ の現在の実装に合わせる)。
+
+| 項目 | 再開時 | 理由 |
+|---|---|---|
+| `model_name` / `model_graph` | 固定(表示のみ) | C++ は再開時に `.pt` から構造を組み直す(`TrainingJob.cpp`) |
+| `data_spec`(タスク・入力サイズ・アノテーション) | 固定(表示のみ) | 出力チャンネル数・前回の条件との整合性のため |
+| Optimizer の**種類** | 固定 | 種類が違うと C++ は `optimizer type mismatch` で例外を投げる(`CheckpointArchiveIO.cpp`) |
+| Optimizer のハイパーパラメータ(lr など) | 変えられる | C++ 側で load 後に上書きする(作業 6) |
+| `epoch` | 変えられる(**合計**エポック数) | C++ と `training_config.epochs` の意味に合わせる。前回の完了エポック数より大きい値が必要 |
+| `batch` / `device` / `loss` / `save_last_every` / `seed` / `dataset_path` | 変えられる | checkpoint に依存しない |
+| `resume_from` | 送らない | 再開元は `<model_id>_last.pt` に決まる(作業 4) |
+
+Optimizer の種類も変えたい(重みだけ引き継いで、optimizer の状態は捨てる)場合は「再開」ではなく「重みを引き継いだ新しい学習」とみなし、別機能として扱う(新しい `model_id` と `parent_model_id` を持たせる)。今回は対象外。
+
+---
+
+## 1. Resume の途中実装を取り除き、新規学習を React からつなぐ
+
+**背景**
+`StartTraining` の `TrainingMode::Resume` 分岐は、渡された `model_id` を検証せずに使う。DB から構造や前回の設定を読む処理もない。
+上の方針で再開は別のエンドポイント・別のユースケースにするため、この分岐は使われなくなる。残すと、検証のない経路が残るだけになる。
+また、Rust の `StartTrainingRequestDto` は `mode` が必須だが、OpenAPI と React にはまだない。そのため、今は画面から学習を開始すると 422 になる。
+
+**取り除くもの**
+- `usecases/src/training/training_mode.rs`(`TrainingMode` / `TrainingModeKind`)と、`mod.rs` の `pub use`
+- `adapters/src/http/dto/training_mode.rs`(`TrainingModeDto` / `TrainingModeKindDto`)と、`dto/mod.rs` の `mod`
+- `StartTrainingRequestDto` の `mode`。`TrainingConfigDto` をそのまま受け取る形に戻す(`#[serde(flatten)]` のラッパーが不要になれば消す)
+- `StartTraining::execute` の `mode` 引数と `match`。常に `insert_model` → C++ で学習開始 → `insert_training_run` の順に処理する
+- `start_training.rs` のテスト `resume_uses_given_model_id_without_inserting_model`(同じ内容を作業 5 の `ResumeTraining` のテストに移す)
+- `ValidateTrainingConfigError::ModelNotFound` と、ハンドラでの 404 への変換。`validate_training_config.rs` と `handler.rs` の Resume 関連の TODO / コメント
+- `record_training_process.rs` でコメントアウトされている `ensure_model`(名前の重複チェックは `ValidateTrainingConfig` が担当する)
+- 新規学習の `resume_from`: OpenAPI・`TrainingConfigDto`・React の `TrainingSettings` と入力欄から外す。Rust はいつも空で送る。`entities` の `TrainingConfig.resume_from` は再開時にも使わないので削除する。`training_config.resume_from` 列は `0001` を編集できないので残し、`NULL` を入れる
+
+**残すもの**
+- `TrainingRecordReader::find_model_id_by_name` と `ValidateTrainingConfig`(新規学習の名前重複チェック)
+
+**作業内容(React とのつなぎ込み)**
+- `openapi.yaml` の `StartTrainingRequest` を Rust の DTO と一致させる(`mode` は追加しない)
+- フロントエンドの `src/api/schema.d.ts` を生成し直す
+- 整合性チェックのボタンから `POST /api/v1/trainings/validate` を呼ぶ(204 なら学習開始ボタンを有効にする。409 なら「この名前はすでに使用されています」と出す)
+
+**完了条件**
+- `cargo test` と フロントの `npm run verify` が通る(この作業で警告を増やさない。以前からある未使用 import などの警告は作業 10 で扱う)
+- 画面から新規学習を開始でき、DB に保存される
+- 整合性チェックを通すまで学習開始ボタンを押せない
+
+**状況(2026-11-04)**
+コードの変更は完了した(`cargo test` と `npm run verify` は通過済み)。実機での確認(React → Rust → C++ で新規学習を開始し、DB に保存される)はまだしていない。
+- フロントの `resume_from` は、保存ファイル・C++ 設定ファイル(proto-json)の形を変えないため、読み込みでは読み捨て、書き出しでは常に `""` にした
+- 整合性チェックは、手元のチェックが OK のときだけ `POST /trainings/validate` を呼ぶ。409 なら `model_name` を指す error、通信の失敗も error にする(確かめていない内容では実行させない)
+
+---
+
+## 2. エポックごとの保存と、学習終了時の更新
+
+**背景**
+`insert_epoch`(`training_epochs` と各メトリクスのテーブル)と `update_training_run`(`status` / `finished_at`)は adapters に実装済みだが、どこからも呼ばれていない。
+今は学習が終わっても `training_epochs` は空のままで、`training_runs.status` も `running` のまま。
+再開画面の「前回 N エポック完了」の表示にも必要になる。
+
+**作業内容**
+- gRPC で `TrainingEpochProvider` を実装する(`StreamProgressRequest.start_position` に `AfterEpoch(after_epoch)` を入れる。`GrpcTrainingProcessProvider` とほぼ同じ)
+- 読み取り用のトレイトに `last_saved_epoch` を追加し、SQL で実装する
+  - `SELECT COALESCE(MAX(epoch), 0) FROM training_epochs WHERE job_id = ?`
+  - C++ の `after_epoch` も「0 = まだ何も完了していない」という意味なので、そのまま渡せる
+- `record_training_process.rs` でコメントアウトしている `RecordTrainingProgress::execute` を戻す
+  - **終了メッセージかどうかを先に判定すること。** C++ の終了メッセージは `epoch = 0` で、学習結果を持たない。そのまま `insert_epoch` すると、エポック 0 の偽の行ができる
+    ```rust
+    if process.status.is_finished() {
+        update_training_run(...); break;
+    }
+    insert_epoch(job_id, process.epoch, &process);
+    ```
+- 学習の開始に成功したら、`tokio::spawn` で `execute` をバックグラウンドで起動する(ハンドラと `StartTraining` / `ResumeTraining` のどちらで起動するかは要検討。両方の開始経路から起動されるようにする)
+
+**完了条件**
+- 学習を最後まで回すと、全エポックが `training_epochs` に入り、`training_runs.status` が `completed` になり、`finished_at` も入る
+- 途中で Rust を再起動しても、続きのエポックから抜けなく保存される
+
+---
+
+## 3. `model_graph` の保存
+
+**背景**
+再開時はモデル構造を DB から読んで C++ に送る。また、再開画面で構造を表示するためにも必要になる。そのため、再開(作業 5)の前提になる。
+`model.model_graph`(JSON)の列は、マイグレーションでコメントアウトしたまま。
+
+**作業内容**
+- `ModelGraph` を JSON にする変換と、JSON から `ModelGraph` に戻す変換を、adapters に実装する(`entities` に serde は入れない)
+- **`0001_create_training_tables.sql` は編集しない。** `0002_add_model_graph.sql` のような新しいマイグレーションで列を追加する(`0001` を編集すると、既存の DB が `VersionMismatch(1)` で起動しなくなる)
+  - 既存の行があるので、`NOT NULL` にするならデフォルト値が必要になる。または `NULL` を許し、`NULL` のモデルは再開できない扱いにする
+- `insert_model` で `model_graph` も保存する
+
+---
+
+## 4. `.pt` のファイル名を `model_id` に切り替え、再開を明示する(proto / C++)
+
+**背景**
+今の C++ は `<checkpointOutputDir>/<model_name>_last.pt`(`_best.pt`)という名前で保存する。そして `resume_from` が空でも、このファイルがあれば自動で再開する。
+改名に強くし、DB の主キーとファイルを一致させるため、`model_id` で保存するように変える。
+また、Rust からは `.pt` があるかどうかを判定できない(サーバー運用では C++ が別のコンテナにあるため)。そこで、再開できるかどうかは C++ が判定する。
+
+**作業内容**
+- `training.proto` の `StartTrainingRequest` の末尾に、`model_id` と `bool resume` を追加する
+- Rust: `TrainingStarter::start_training` に `model_id` と `resume` を引数で渡し、`GrpcTrainingStarter` でリクエストに詰める(`model_id` は `TrainingConfig` に含めない)
+- C++: マッパー / `StartTrainingCommand` / `TrainingJob` / `TorchCheckpointStore` で、ファイル名に `model_id` を使う
+- C++: `model_id` が空なら `InvalidArgument` で拒否する(空のままだと全学習が `model_last.pt` を共有し、別モデルの重みから黙って再開してしまう)
+- C++: ファイルがあるかどうかによる自動再開をやめ、`resume` フラグで決める
+  - `resume = false` なら、いつも最初から学習する(ファイルがあっても読まない)
+  - `resume = true` で `<model_id>_last.pt` がなければ `FailedPrecondition`
+  - `resume = true` で checkpoint のエポックが指定された合計エポック数以上なら `FailedPrecondition`(今は 0 エポックだけ回して `Completed` を返してしまい、「学習した」と誤解される)
+
+**注意**
+切り替えた後は、既存の `<model_name>_last.pt` が自動再開で読まれなくなる。残したい重みがあれば、事前に退避する。
+
+---
+
+## 5. 学習済みモデルの一覧 API と、学習再開 API(Rust)
+
+**背景**
+上の方針のとおり。前提として、作業 1・3・4 が必要(作業 2 がないと、完了エポック数が出ない)。
+
+**API**
+```
+GET  /api/v1/models                     学習済みモデルの一覧
+GET  /api/v1/models/{model_id}/config   最新の run の training_config(フォームの初期値と固定項目の表示用)
+POST /api/v1/models/{model_id}/resume   学習再開。本体には変えてよい項目だけを入れる
+```
+- 一覧の各要素: `model_id`, `model_name`, `created_at`, `task_type`, 最後の run の `status` / `started_at` / `finished_at`, 完了したエポック数
+  - `training_runs` が 1 件もないモデルは出さない(`insert_model` の後に C++ の学習開始が失敗した場合などにできる。作業 8 を参照)
+- 再開の本体: `epoch`, `batch`, `device`, `dataset_path`, `save_last_every`, `seed`, `optimizer`, `loss`
+- 応答: 新規学習と同じ `{ "job_id": ... }`
+
+**作業内容**
+- 読み取り用のトレイトに `list_models` / `find_model(model_id)` / `find_latest_config(model_id)` を追加し、SQL で実装する
+  - 最新の run は `training_runs` を `started_at DESC` で 1 件取る
+  - 完了エポック数は、そのモデルの全 run について `MAX(training_epochs.epoch)` を取る
+- `ResumeTraining` ユースケースを新しく作る(`StartTraining` は新規専用のまま)
+  1. `find_model` → 見つからなければ `ModelNotFound`(404)
+  2. `find_latest_config` → 見つからなければ `NoPreviousRun`(409)
+  3. Optimizer の種類が前回と違えば `OptimizerTypeChanged`(422)
+  4. 名前・構造・`data_spec` は DB の値、残りはリクエストの値から `TrainingConfig` を組み立てる
+  5. `start_training(config, model_id, resume = true)` → `insert_training_run`(`insert_model` はしない)
+- C++ の `FailedPrecondition`(checkpoint がない・エポック数が足りない)を `StartTrainingError` に足して、409 にする
+- 「そのモデルを学習中か」は DB の `status` では判定しない。C++ は同時に 1 ジョブしか動かさず、`AlreadyRunning` で弾けるため。また、Rust が落ちると `running` のままの行が残り、そのモデルを永久に再開できなくなるため
+
+**注意**
+`save_last_every > 1` だと、`.pt` のエポックが DB の最終エポックより前になることがある。その場合、再開した run で同じエポック番号がもう一度記録される。
+主キーは `(job_id, epoch)` なので保存では衝突しない。ただし、モデル単位で履歴を表示するときは「新しい run の値を優先する」というルールが必要になる。
+
+**完了条件**
+- 新規で学習したモデルが一覧に出て、再開すると前回の続きのエポックから学習が進む
+- 再開した run が同じ `model_id` で `training_runs` に追加される
+
+---
+
+## 6. 再開時に Optimizer のハイパーパラメータを反映する(C++)
+
+**背景**
+`AdamOptimizer::readFrom` などは `_optim->load()` で状態を復元する。libtorch の optimizer の load は param_groups の options(lr など)も復元するので、新しく指定した lr などは checkpoint の値で上書きされて効かないはず(要確認)。
+
+**作業内容**
+- まず、再開時に lr を変えて、実際に使われる lr をログで確認する
+- 上書きされていたら、`readFrom` の後で、`command.optimizer` の値を各 param_group の options に設定し直す(モーメントなどの状態は引き継ぐ)
+
+---
+
+## 7. 学習再開画面(React)
+
+**作業内容**
+- ノードエディタのヘッダーに [学習再開] を追加し、`/resume` に移動する
+- `/resume`: `GET /models` の一覧を表示する(名前・タスク・最終学習日時・状態・完了エポック数)
+- `/resume/:modelId`: `GET /models/{model_id}/config` で初期値を読み込む
+  - 固定項目(名前・構造・`data_spec`・Optimizer の種類)は表示だけにする。フォームの部品は新規画面の `TrainingForm` を再利用し、固定項目を読み取り専用にできるようにする
+  - `epoch` には「前回 N エポック完了」と表示し、N + 1 以上を必須にする
+  - 状態はこの画面の中だけで持つ(エディタのドキュメントを変えない)
+- 整合性チェックは React のフォーム検証だけにする。サーバー側の検証は再開 API の中で行う(チェックと開始の間に DB が変わっても安全なため)
+- 再開に成功したら `/progress/:jobId` に移動する
+
+---
+
+## 8. 学習開始の途中で失敗した場合の扱い
+
+**背景**
+`StartTraining` は「`insert_model` → C++ で学習開始 → `insert_training_run`」の順に処理する。
+- 最後の INSERT が失敗すると、エラーは返すが C++ の学習は走り続け、記録が残らない(`ResumeTraining` も同じ)
+- C++ の学習開始が失敗すると、`model` の行だけが残る。その名前は使用済みになるが、一覧にも出ず、再開もできない
+テスト段階として割り切っている。
+
+**作業内容(案)**
+- `insert_training_run` が失敗したら、`TrainingStopper` で C++ の学習を止める(`StartTraining` が `StopTraining` 相当に依存することになる)
+- C++ の学習開始が失敗したら、`model` の行を削除する。または、`model` の INSERT と `training_runs` の INSERT をまとめて、開始に成功した後に 1 トランザクションで行う(この場合は名前の重複を開始前に確かめられないので、作業 9 の UNIQUE 違反の判別が必須になる)
+
+---
+
+## 9. 409 のエラーを React で区別できるようにする
+
+**背景**
+409 には「すでに学習が実行中」(`AlreadyRunning`)、「名前が使用済み」(整合性チェック)、「再開できない」(作業 5)の 3 種類があり、ステータスコードだけでは区別できない。
+
+**作業内容**
+- エラー応答の本体にエラーコードを入れる(例: `{"error": "model_name_already_used"}` / `"already_running"` / `"checkpoint_not_found"`)
+- `insert_model` の `UNIQUE` 違反を `sqlx::Error::Database(e) if e.is_unique_violation()` で判別し、500 ではなく名前の重複として返す(チェックと学習開始の間に、同じ名前のモデルが登録された場合の安全装置)
+
+---
+
+## 10. リファクタリング(機能の実装が一段落してから)
+
+- ポートのトレイトを `usecases/src/training/ports.rs` にまとめる(`TrainingRunRegistar` / `TrainingResultRegister` / `TrainingEpochProvider` は `record_training_process.rs`、`ModelIdGenerator` は `model_id_generator.rs`、`TrainingRecordReader` は `read_training_record.rs` に散らばっている)。`mod.rs` の `pub use` をまとめれば、外部からのパスは変わらない
+- `adapters/src/http/handler.rs` を機能ごとに分割する(`http/handler/training.rs` / `models.rs` / `capabilities.rs` など)。`http/` 自体は全機能の入口なので、`training/` の下には移さない
+- 未使用の import の警告を消す(`error.rs` の `std::error`、`ports.rs` / `start_training.rs` / `grpc_training_starter.rs` の `ModelId` など)
+- ファイル名の綴りを直す(`sql_record_trainig.rs` の `trainig` → `training`)
