@@ -16,7 +16,7 @@ services:
       resources:
         limits:
           cpus: "4"
-          memory: 5g
+          memory: 10g
         reservations:
           devices:
             - driver: nvidia
