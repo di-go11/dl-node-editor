@@ -36,6 +36,12 @@ pub enum StopTrainingError {
     NotFound(String),
 }
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum StreamError {
+    // Streamの読み込みに失敗
+    #[error("Failed read stream: {0}")]
+    FailedReadStream(String),
+}
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum TrainingProgressProviderError {
     // 通信できなかった(C++のサーバーが起動していない. タイムアウトなど)
     #[error("training-process-provider is unavailable: {0}")]
