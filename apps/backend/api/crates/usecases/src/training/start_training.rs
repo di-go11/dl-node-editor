@@ -2,7 +2,6 @@ use super::ModelIdGenerator;
 use super::TrainingRunRegistar;
 use super::TrainingStarter;
 use super::error::StartTrainingError;
-use super::training_mode::TrainingMode;
 use entities::training::JobId;
 use entities::training::ModelId;
 use entities::training::config::TrainingConfig;
@@ -21,23 +20,14 @@ impl<S: TrainingStarter, R: TrainingRunRegistar, G: ModelIdGenerator> StartTrain
             id_generator,
         }
     }
-    // C++開始後INSERTが失敗した場合にC++が走り続けるため、
-    pub async fn execute(
-        &self,
-        config: &TrainingConfig,
-        mode: &TrainingMode,
-    ) -> Result<JobId, StartTrainingError> {
-        let model_id = match mode {
-            TrainingMode::New => {
-                let model_id = self.id_generator.generate();
-                self.repository
-                    .insert_model(&model_id, &config.model_name)
-                    .await
-                    .map_err(|e| StartTrainingError::RecordFailed(e.to_string()))?;
-                model_id
-            }
-            TrainingMode::Resume { model_id } => model_id.clone(),
-        };
+    // 新規学習を開始する(学習再開は別のユースケースにする)。
+    // C++開始後にinsert_training_runが失敗した場合、C++は走り続ける(issue 作業8)。
+    pub async fn execute(&self, config: &TrainingConfig) -> Result<JobId, StartTrainingError> {
+        let model_id: ModelId = self.id_generator.generate();
+        self.repository
+            .insert_model(&model_id, &config.model_name)
+            .await
+            .map_err(|e| StartTrainingError::RecordFailed(e.to_string()))?;
 
         let job_id = self.starter.start_training(config).await?;
         self.repository
@@ -53,7 +43,6 @@ mod tests {
     use super::ModelIdGenerator;
     use super::StartTraining;
     use super::StartTrainingError;
-    use super::TrainingMode;
     use super::TrainingRunRegistar;
     use super::TrainingStarter;
     use crate::training::RepositoryError;
@@ -143,7 +132,6 @@ mod tests {
                 eps: 1e-8,
             },
             loss: Loss::CrossEntropy,
-            resume_from: None,
             seed: Some(42),
             data_spec: DataSpec::Image(ImageSpec {
                 input_width: 256,
@@ -250,7 +238,7 @@ mod tests {
         let (usecase, log) = gen_usecase(Ok(expected.clone()), Ok(()), Ok(()));
 
         let result = usecase
-            .execute(&gen_normal_order(), &TrainingMode::New)
+            .execute(&gen_normal_order())
             .await;
 
         assert_eq!(result, Ok(expected));
@@ -267,39 +255,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn resume_uses_given_model_id_without_inserting_model() {
-        let expected = JobId::new("2").unwrap();
-        let (usecase, log) = gen_usecase(Ok(expected.clone()), Ok(()), Ok(()));
-        let model_id = ModelId::new("existing-model").unwrap();
-
-        let result = usecase
-            .execute(
-                &gen_normal_order(),
-                &TrainingMode::Resume {
-                    model_id: model_id.clone(),
-                },
-            )
-            .await;
-
-        assert_eq!(result, Ok(expected));
-        // 再学習では既存のモデルを使うため、modelにはinsertしない
-        assert_eq!(
-            *log.lock().unwrap(),
-            vec!["start_training", "insert_training_run"]
-        );
-        assert_eq!(
-            *usecase.repository.run_model_id.lock().unwrap(),
-            Some(model_id)
-        );
-    }
-
-    #[tokio::test]
     async fn returns_error_when_start_fails() {
         let err = StartTrainingError::StartOrderFailed("server down".to_string());
         let (usecase, log) = gen_usecase(Err(err.clone()), Ok(()), Ok(()));
 
         let result = usecase
-            .execute(&gen_normal_order(), &TrainingMode::New)
+            .execute(&gen_normal_order())
             .await;
 
         assert_eq!(result, Err(err));
@@ -316,7 +277,7 @@ mod tests {
         );
 
         let result = usecase
-            .execute(&gen_normal_order(), &TrainingMode::New)
+            .execute(&gen_normal_order())
             .await;
 
         assert!(matches!(result, Err(StartTrainingError::RecordFailed(_))));
@@ -333,7 +294,7 @@ mod tests {
         );
 
         let result = usecase
-            .execute(&gen_normal_order(), &TrainingMode::New)
+            .execute(&gen_normal_order())
             .await;
 
         assert!(matches!(result, Err(StartTrainingError::RecordFailed(_))));

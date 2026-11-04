@@ -85,6 +85,16 @@ describe('学習設定の往復', () => {
     expect(json.seed).toEqual({ value: 0 })
   })
 
+  it('resume_from は読み捨て、書き出しでは常に空にする(再開は学習再開画面で行う)', () => {
+    const saved = {
+      ...trainingSettingsToJson(defaultTrainingSettings()),
+      resume_from: '/checkpoints/old_last.pt',
+    }
+    const settings = trainingSettingsFromJson(trainingSettingsJsonSchema.parse(saved))
+    expect(Object.hasOwn(settings, 'resumeFrom')).toBe(false)
+    expect(trainingSettingsToJson(settings).resume_from).toBe('')
+  })
+
   it('JSON のパラメータを書き換えても、元のエンティティに影響しない', () => {
     const settings = defaultTrainingSettings()
     const json = trainingSettingsToJson(settings)

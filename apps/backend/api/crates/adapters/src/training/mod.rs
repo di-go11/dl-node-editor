@@ -4,12 +4,12 @@ mod grpc_training_process_provider;
 mod grpc_training_starter;
 mod grpc_training_stopper;
 mod sql;
-mod sql_record_trainig;
 mod to_proto;
 mod uuid_generator;
+
 pub use error::TrainingConversionError;
 pub use grpc_training_process_provider::GrpcTrainingProcessProvider;
 pub use grpc_training_starter::GrpcTrainingStarter;
 pub use grpc_training_stopper::GrpcTrainingStopper;
-pub use sql_record_trainig::SqliteTrainingRepository;
+pub use sql::SqliteTrainingRepository;
 pub use uuid_generator::UuidModelGenerator;

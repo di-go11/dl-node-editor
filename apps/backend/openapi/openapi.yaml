@@ -23,7 +23,7 @@ info:
        例: `"optimizer": { "type": "adam", "learning_rate": 0.001 }`
     4. グラフ入力につなぐ入力ポートは `"source": null` と書く。
     5. 送る側は、既定値と同じ値になる項目も省略せずに埋める(`"padding": 0` など)。
-       例外は seed と resume_from だけ。
+       例外は seed だけ。
 
     ## エラー応答
 
@@ -63,7 +63,8 @@ paths:
       summary: 学習を開始する
       description: |
         受理されると job_id が返り、進捗は /trainings/{job_id}/progress で購読する。
-        同じ model_name で開始すると、C++ が `<model_name>_last.pt` から自動で再開する。
+        新規学習専用。同じ model_name のモデルがすでにあるかは /trainings/validate で先に確かめる。
+        学習の再開は別のエンドポイントで行う(未実装)。
       requestBody:
         required: true
         content:
@@ -91,7 +92,7 @@ paths:
       summary: 学習開始前の整合性チェック
       description: |
         学習開始と同じリクエストを受け取り、DB の状態と矛盾しないかを確認する(C++ には送らない)。
-        現在は新規学習のみ: 同じ model_name のモデルがすでにあれば 409 を返す。
+        新規学習のチェック: 同じ model_name のモデルがすでにあれば 409 を返す。
       requestBody:
         required: true
         content:
@@ -821,9 +822,6 @@ components:
           format: int32
           minimum: 0
           description: checkpoint を保存する間隔(エポック)。0 なら毎エポック
-        resume_from:
-          type: [string, 'null']
-          description: 再開元の checkpoint のパス。省略・null・空文字なら再開元を指定しない
         seed:
           type: [integer, 'null']
           format: int64

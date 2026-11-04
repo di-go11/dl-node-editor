@@ -4,19 +4,10 @@ use entities::training::config::TrainingConfig;
 use entities::training::JobId;
 use serde::{Deserialize, Serialize};
 
-use crate::http::dto::training_mode::TrainingModeDto;
-
 use super::data_spec::DataSpecDto;
 use super::model::ModelGraphDto;
 
-#[derive(Debug, Deserialize)]
-pub struct StartTrainingRequestDto {
-    pub mode: TrainingModeDto,
-    #[serde(flatten)] // configの中身をjsonと同じにする
-    pub config: TrainingConfigDto,
-}
-
-// TrainingConfig
+// TrainingConfig(新規学習の開始・整合性チェックのリクエスト)
 #[derive(Debug, Deserialize)]
 pub struct TrainingConfigDto {
     pub model_name: String,
@@ -27,7 +18,6 @@ pub struct TrainingConfigDto {
     pub dataset_path: String,
     pub optimizer: OptimizerConfigDto,
     pub loss: LossConfigDto,
-    pub resume_from: Option<String>,
     pub seed: Option<u64>,
     pub data_spec: DataSpecDto,
     pub save_last_every: u32,
@@ -44,7 +34,6 @@ impl From<TrainingConfigDto> for TrainingConfig {
             dataset_path: value.dataset_path,
             optimizer: value.optimizer.into(),
             loss: value.loss.into(),
-            resume_from: value.resume_from,
             seed: value.seed,
             data_spec: value.data_spec.into(),
             save_last_every: value.save_last_every,
@@ -193,7 +182,6 @@ mod tests {
             "dataset_path": "/data/VOCdevkit/VOC2012",
             "optimizer": { "type": "adam_w", "learning_rate": 0.001, "weight_decay": 0.0, "beta1": 0.9, "beta2": 0.999 },
             "loss": { "type": "focal", "gamma": 2.0, "alpha": 0.25 },
-            "resume_from": null,
             "seed": 42,
             "data_spec": {
                 "type": "image",

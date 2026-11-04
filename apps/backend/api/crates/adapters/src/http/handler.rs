@@ -1,6 +1,6 @@
 use super::dto::{
-    CapabilitiesDto, StartTrainingRequestDto, StartTrainingResponseDto, TrainingConfigDto,
-    TrainingJobStatusDto, TrainingProcessDto,
+    CapabilitiesDto, StartTrainingResponseDto, TrainingConfigDto, TrainingJobStatusDto,
+    TrainingProcessDto,
 };
 use axum::{
     extract::{Path, State},
@@ -10,10 +10,9 @@ use axum::{
 use entities::training::{config::TrainingConfig, JobId, TrainingProcess};
 use futures_util::StreamExt;
 use usecases::training::{
-    GetTrainingProcess, ModelIdGenerator, StartTraining, StopTraining, TrainingMode,
-    TrainingProcessProvider, TrainingProcessProviderError, TrainingRecordReader,
-    TrainingRunRegistar, TrainingStarter, TrainingStopper, ValidateTrainingConfig,
-    ValidateTrainingConfigError,
+    GetTrainingProcess, ModelIdGenerator, StartTraining, StopTraining, TrainingProcessProvider,
+    TrainingProcessProviderError, TrainingRecordReader, TrainingRunRegistar, TrainingStarter,
+    TrainingStopper, ValidateTrainingConfig, ValidateTrainingConfigError,
 };
 use usecases::{
     capabilities::{CapabilityProvider, GetCapabilities},
@@ -25,19 +24,18 @@ use futures_core::Stream;
 use std::convert::Infallible;
 use std::sync::Arc;
 
-// 学習開始POSTリクエストハンドラ
+// 新規学習の開始POSTリクエストハンドラ(学習再開は別のエンドポイントにする)
 pub async fn start_training<S, R, G>(
     State(usecase): State<Arc<StartTraining<S, R, G>>>,
-    Json(dto): Json<StartTrainingRequestDto>,
+    Json(dto): Json<TrainingConfigDto>,
 ) -> Result<Json<StartTrainingResponseDto>, StatusCode>
 where
     S: TrainingStarter + Send + Sync + 'static,
     R: TrainingRunRegistar + Send + Sync + 'static,
     G: ModelIdGenerator + Send + Sync + 'static,
 {
-    let mode = TrainingMode::try_from(dto.mode).map_err(|_| StatusCode::UNPROCESSABLE_ENTITY)?;
-    let config = TrainingConfig::from(dto.config);
-    let job_id = usecase.execute(&config, &mode).await.map_err(|e| match e {
+    let config = TrainingConfig::from(dto);
+    let job_id = usecase.execute(&config).await.map_err(|e| match e {
         StartTrainingError::StartOrderFailed(_) => StatusCode::BAD_GATEWAY,
         StartTrainingError::ConversionToProtoFailed(_) | StartTrainingError::InvalidConfig(_) => {
             StatusCode::UNPROCESSABLE_ENTITY
@@ -48,9 +46,7 @@ where
     Ok(Json(job_id.into()))
 }
 
-// 整合性チェックPOSTリクエストハンドラ
-// 学習開始と同じJSONを受け取れる(modeはチェックに使わないため無視される)
-// TODO: Resumeのチェックは後で実装する
+// 新規学習の整合性チェックPOSTリクエストハンドラ(学習開始と同じJSONを受け取る)
 pub async fn validate_training<V>(
     State(usecase): State<Arc<ValidateTrainingConfig<V>>>,
     Json(dto): Json<TrainingConfigDto>,
@@ -62,7 +58,6 @@ where
     match usecase.execute(&config).await {
         Ok(()) => StatusCode::NO_CONTENT,
         Err(ValidateTrainingConfigError::ModelNameAlreadyUsed(_)) => StatusCode::CONFLICT,
-        Err(ValidateTrainingConfigError::ModelNotFound(_)) => StatusCode::NOT_FOUND,
         Err(ValidateTrainingConfigError::ReadFailed(_)) => StatusCode::INTERNAL_SERVER_ERROR,
     }
 }

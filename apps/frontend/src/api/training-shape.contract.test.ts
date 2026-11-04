@@ -152,9 +152,9 @@ describe('学習開始リクエスト', () => {
     expect(matches).toBe(true)
   })
 
-  it('省略できるキー(resume_from と seed)が一致する', () => {
+  it('省略できるキー(seed)が一致する', () => {
     const matches: Equal<OptionalKeys<RustStartTrainingRequest>, OptionalKeys<Request>> = true
-    const expected: Equal<OptionalKeys<Request>, 'resume_from' | 'seed'> = true
+    const expected: Equal<OptionalKeys<Request>, 'seed'> = true
     expect([matches, expected]).toEqual([true, true])
   })
 })

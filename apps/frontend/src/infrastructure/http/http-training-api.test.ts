@@ -67,6 +67,40 @@ describe('createHttpTrainingApi', () => {
   })
 })
 
+describe('createHttpTrainingApi の整合性チェック(POST /trainings/validate)', () => {
+  // モックは学習を始めた名前を使用済みとして覚えるので、テストごとに別の名前にする
+  const named = (modelName: string) => ({ ...settings, modelName })
+
+  it('204 なら OK', async () => {
+    const result = await createHttpTrainingApi(client()).validate(
+      validSegnetGraph(),
+      named('validate_fresh'),
+    )
+    expect(result).toEqual({ ok: true, value: { kind: 'ok' } })
+  })
+
+  it('409 は通信の失敗ではなく「名前が使用済み」という結果になる', async () => {
+    const api = createHttpTrainingApi(client())
+    await api.start(validSegnetGraph(), named('validate_used'))
+    const result = await api.validate(validSegnetGraph(), named('validate_used'))
+    expect(result).toEqual({ ok: true, value: { kind: 'model-name-used' } })
+  })
+
+  it('それ以外のエラーの状態コードは http のエラーになる', async () => {
+    server.use(
+      http.post(
+        `${TEST_BASE_URL}/trainings/validate`,
+        () => new HttpResponse(null, { status: 500 }),
+      ),
+    )
+    const result = await createHttpTrainingApi(client()).validate(
+      validSegnetGraph(),
+      named('validate_500'),
+    )
+    expect(result).toMatchObject({ ok: false, error: { kind: 'http', status: 500 } })
+  })
+})
+
 describe('toRustStartTrainingRequest', () => {
   const graph: ModelGraph = {
     nodes: [

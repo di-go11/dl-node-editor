@@ -5,13 +5,13 @@ import type { StartedTraining, TrainingApi } from '../../application/ports/train
 import { toStartTrainingRequestJson } from '../../entity/training/proto-json/convert'
 
 import type { ApiClient } from './api-client'
-import { API_BASE_PATH, callApi } from './api-client'
+import { API_BASE_PATH, callApi, callApiByStatus } from './api-client'
 import type { ProgressEventSource } from './http-training-progress'
 import { listenTrainingProgress, trainingStatusResponseSchema } from './http-training-progress'
 import { toRustStartTrainingRequest } from './rust-training-request'
 
 /**
- * TrainingApi の HTTP 実装(POST /trainings、進捗の SSE、停止)。
+ * TrainingApi の HTTP 実装(POST /trainings/validate、POST /trainings、進捗の SSE、停止)。
  */
 
 const startResponseSchema = z.object({
@@ -38,6 +38,15 @@ export function createHttpTrainingApi(
   const createEventSource = options.createEventSource ?? ((url) => new EventSource(url))
 
   return {
+    validate: async (graph, settings) => {
+      const request = toRustStartTrainingRequest(toStartTrainingRequestJson(graph, settings))
+      if (!request.ok) return apiError({ kind: 'invalid-request', message: request.message })
+      return callApiByStatus(() => client.POST('/trainings/validate', { body: request.value }), {
+        204: { kind: 'ok' },
+        409: { kind: 'model-name-used' },
+      })
+    },
+
     start: async (graph, settings) => {
       const request = toRustStartTrainingRequest(toStartTrainingRequestJson(graph, settings))
       if (!request.ok) return apiError({ kind: 'invalid-request', message: request.message })

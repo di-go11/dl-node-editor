@@ -29,7 +29,18 @@ export type ProgressListener = {
   readonly onProblem: (problem: ProgressProblem) => void
 }
 
+/**
+ * サーバーでの整合性チェック(DB の状態との矛盾)の結果。
+ * 問題が見つかったことは通信の失敗ではないので、ApiError ではなく値で返す。
+ */
+export type ServerCheck =
+  | { readonly kind: 'ok' }
+  /** 同じ model_name のモデルがすでにある(新規学習では使えない) */
+  | { readonly kind: 'model-name-used' }
+
 export type TrainingApi = {
+  /** 学習開始の前に、DB の状態と矛盾しないかを確かめる(C++ には送られない) */
+  validate(graph: ModelGraph, settings: TrainingSettings): Promise<ApiResult<ServerCheck>>
   start(graph: ModelGraph, settings: TrainingSettings): Promise<ApiResult<StartedTraining>>
   /**
    * 進捗の受信を始める。学習が終わると(完了・失敗・停止)受信は自動で閉じる。

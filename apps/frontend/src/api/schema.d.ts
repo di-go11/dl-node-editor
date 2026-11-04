@@ -36,9 +36,31 @@ export interface paths {
         /**
          * 学習を開始する
          * @description 受理されると job_id が返り、進捗は /trainings/{job_id}/progress で購読する。
-         *     同じ model_name で開始すると、C++ が `<model_name>_last.pt` から自動で再開する。
+         *     新規学習専用。同じ model_name のモデルがすでにあるかは /trainings/validate で先に確かめる。
+         *     学習の再開は別のエンドポイントで行う(未実装)。
          */
         post: operations["startTraining"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/trainings/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 学習開始前の整合性チェック
+         * @description 学習開始と同じリクエストを受け取り、DB の状態と矛盾しないかを確認する(C++ には送らない)。
+         *     新規学習のチェック: 同じ model_name のモデルがすでにあれば 409 を返す。
+         */
+        post: operations["validateTraining"];
         delete?: never;
         options?: never;
         head?: never;
@@ -431,8 +453,6 @@ export interface components {
              * @description checkpoint を保存する間隔(エポック)。0 なら毎エポック
              */
             save_last_every: number;
-            /** @description 再開元の checkpoint のパス。省略・null・空文字なら再開元を指定しない */
-            resume_from?: string | null;
             /**
              * Format: int64
              * @description 乱数シード。0 も有効な値である。固定しない場合はキーごと省略する
@@ -596,6 +616,49 @@ export interface operations {
                 content?: never;
             };
             502: components["responses"]["UpstreamError"];
+        };
+    };
+    validateTraining: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartTrainingRequest"];
+            };
+        };
+        responses: {
+            /** @description 問題なし。学習を開始できる */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description model_name がすでに使用されている */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description リクエストの形が合わない */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description DB の読み取りに失敗した */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     getTrainingProcess: {

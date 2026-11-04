@@ -54,6 +54,9 @@ export type IssueCode =
   | 'training/task-unavailable'
   | 'training/loss-task-mismatch'
   | 'training/output-activation'
+  // サーバーでの整合性チェック(POST /trainings/validate)
+  | 'training/model-name-used'
+  | 'training/server-check-failed'
   // 保存ファイル(指示書 7 章)
   | 'document/invalid-json'
   | 'document/not-a-document'

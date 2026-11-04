@@ -150,7 +150,6 @@ export const rustStartTrainingRequestSchema = z.object({
   device: z.string(),
   data_spec: rustDataSpecSchema,
   save_last_every: nonNegativeInteger,
-  resume_from: z.string().nullable().optional(),
   seed: nonNegativeInteger.nullable().optional(),
 })
 
@@ -225,7 +224,6 @@ export function toRustStartTrainingRequest(json: StartTrainingRequestJson): Rust
       image_annotation_config: tagged(annotation),
     },
     save_last_every: json.save_last_every,
-    resume_from: json.resume_from,
     // 固定しないときは、キーごと省く
     ...(json.seed === undefined ? {} : { seed: json.seed.value }),
   })

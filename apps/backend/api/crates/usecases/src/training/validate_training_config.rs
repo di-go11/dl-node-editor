@@ -11,8 +11,11 @@ impl<R: TrainingRecordReader> ValidateTrainingConfig<R> {
         Self { reader }
     }
     // 新規学習の整合性チェック: 同じmodel_nameのモデルがすでにあればNG
-    // TODO: Resumeのチェックは後で実装する(TrainingModeKindを受け取る形にする)
-    pub async fn execute(&self, config: &TrainingConfig) -> Result<(), ValidateTrainingConfigError> {
+    // (学習再開は別のユースケースで、再開APIの中でmodel_idを検証する)
+    pub async fn execute(
+        &self,
+        config: &TrainingConfig,
+    ) -> Result<(), ValidateTrainingConfigError> {
         let found = self
             .reader
             .find_model_id_by_name(&config.model_name)
@@ -32,8 +35,10 @@ mod tests {
     use super::ValidateTrainingConfig;
     use super::ValidateTrainingConfigError;
     use crate::training::RepositoryError;
+    use crate::training::read_training_record::TrainingProgressReader;
     use crate::training::read_training_record::TrainingRecordReader;
     use entities::model::ModelGraph;
+    use entities::training::JobId;
     use entities::training::ModelId;
     use entities::training::config::{
         DataSpec, ImageAnnotationConfig, ImageSpec, ImageTaskSpec, Loss, Optimizer,
@@ -59,7 +64,6 @@ mod tests {
                 nesterov: false,
             },
             loss: Loss::CrossEntropy,
-            resume_from: None,
             seed: None,
             data_spec: DataSpec::Image(ImageSpec {
                 input_width: 32,
@@ -78,12 +82,24 @@ mod tests {
     struct FakeReader {
         result: Result<Option<ModelId>, RepositoryError>,
     }
+    struct FakeProgressReader {
+        result_last_saved_epoch: Result<u32, RepositoryError>,
+        result_find_running_job_ids: Result<Vec<JobId>, RepositoryError>,
+    }
     impl TrainingRecordReader for FakeReader {
         async fn find_model_id_by_name(
             &self,
             _model_name: &str,
         ) -> Result<Option<ModelId>, RepositoryError> {
             self.result.clone()
+        }
+    }
+    impl TrainingProgressReader for FakeProgressReader {
+        async fn last_saved_epoch(&self, _job_id: &JobId) -> Result<u32, RepositoryError> {
+            unimplemented!()
+        }
+        async fn find_running_job_ids(&self) -> Result<Vec<JobId>, RepositoryError> {
+            unimplemented!()
         }
     }
 
@@ -120,6 +136,9 @@ mod tests {
 
         let result = usecase.execute(&gen_config("any")).await;
 
-        assert!(matches!(result, Err(ValidateTrainingConfigError::ReadFailed(_))));
+        assert!(matches!(
+            result,
+            Err(ValidateTrainingConfigError::ReadFailed(_))
+        ));
     }
 }

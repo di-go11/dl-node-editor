@@ -221,13 +221,6 @@ export function TrainingForm({ settings, onChange, issues, deviceIds }: Training
           settings.saveLastEvery,
           (s, saveLastEvery) => ({ ...s, saveLastEvery }),
         )}
-        <TextField
-          label="再開元の checkpoint(空なら最初から)"
-          name="resume_from"
-          value={settings.resumeFrom}
-          onChange={(resumeFrom) => onChange((s) => ({ ...s, resumeFrom }))}
-          messages={messagesFor(issues, 'resume_from')}
-        />
         <div className={styles.field}>
           <label htmlFor={seedId} className={styles.checkboxLabel}>
             <input

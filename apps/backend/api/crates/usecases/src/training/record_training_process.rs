@@ -1,9 +1,9 @@
-use super::TrainingProcessProviderError;
 use super::RepositoryError;
-use entities::training::{JobId, ModelId};
+use super::TrainingProcessProviderError;
 use entities::training::TrainingJobStatus;
 use entities::training::TrainingProcess;
 use entities::training::config::TrainingConfig;
+use entities::training::{JobId, ModelId};
 use futures_core::Stream;
 
 pub trait TrainingEpochProvider {
@@ -15,12 +15,6 @@ pub trait TrainingEpochProvider {
     ) -> impl Future<Output = Result<Self::EpochStream, TrainingProcessProviderError>> + Send;
 }
 pub trait TrainingRunRegistar {
-    //学習開始時同じモデルグラフ名があると.ptを上書きしてしまうため。名前検索を行い存在しているか確認.存在する場合はmodel_idで返す。
-    // TODO: SELECT処理なのでGetトレイトを作るときに実装する。
-    // fn ensure_model(
-    //     &self,
-    //     model_name: &str,
-    // ) -> impl Future<Output = Result<ModelId, RepositoryError>> + Send;
     // 新しいモデルをmodelテーブルにinsertする処理。training_runsが外部キーで参照するため先に呼ぶ。
     fn insert_model(
         &self,
@@ -34,13 +28,14 @@ pub trait TrainingRunRegistar {
         config: &TrainingConfig,
         model_id: &ModelId,
     ) -> impl Future<Output = Result<(), RepositoryError>> + Send;
+    // 学習終了時にupdateする処理
     fn update_training_run(
         &self,
         job_id: &JobId,
-        status: &TrainingJobStatus
-    ) -> impl Future<Output = Result<(),RepositoryError>> + Send;
+        status: &TrainingJobStatus,
+    ) -> impl Future<Output = Result<(), RepositoryError>> + Send;
 }
-pub trait TrainingResultRegister {
+pub trait TrainingProgressRecorder {
     fn insert_epoch(
         &self,
         job_id: &JobId,

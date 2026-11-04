@@ -46,6 +46,11 @@ export type MockOptions = {
   readonly capabilities?: Schemas['CapabilitiesResponse']
   /** true なら、学習が実行中のときと同じく、学習開始に 409 を返す */
   readonly alreadyRunning?: boolean
+  /**
+   * すでに使われているモデル名。整合性チェック(/trainings/validate)はこの名前に 409 を返す。
+   * モックで学習を始めたモデル名も、本物の DB と同じく使用済みになる
+   */
+  readonly usedModelNames?: readonly string[]
   /** 進捗のイベントの間隔(ミリ秒) */
   readonly progressIntervalMs?: number
   /** 学習が完了するまでのエポック数 */
@@ -125,15 +130,24 @@ export function createHandlers(options: MockOptions = {}) {
   const epochs = options.epochs ?? 5
   const intervalMs = options.progressIntervalMs ?? 1000
   const jobs = new Map<string, MockJob>()
+  const usedModelNames = new Set(options.usedModelNames ?? [])
   let jobCount = 0
 
   return [
     http.get(`${base}/capabilities`, () => HttpResponse.json(capabilities)),
 
+    http.post(`${base}/trainings/validate`, async ({ request }) => {
+      const parsed = rustStartTrainingRequestSchema.safeParse(await request.json())
+      if (!parsed.success) return new HttpResponse(null, { status: 422 })
+      if (usedModelNames.has(parsed.data.model_name)) return new HttpResponse(null, { status: 409 })
+      return new HttpResponse(null, { status: 204 })
+    }),
+
     http.post(`${base}/trainings`, async ({ request }) => {
       if (options.alreadyRunning === true) return new HttpResponse(null, { status: 409 })
       const parsed = rustStartTrainingRequestSchema.safeParse(await request.json())
       if (!parsed.success) return new HttpResponse(null, { status: 422 })
+      usedModelNames.add(parsed.data.model_name)
       jobCount += 1
       const response: Schemas['StartTrainingResponse'] = { job_id: `mock-job-${jobCount}` }
       jobs.set(response.job_id, {

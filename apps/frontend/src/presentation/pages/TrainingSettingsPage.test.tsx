@@ -134,6 +134,35 @@ describe('整合性チェックと実行ボタン(フェーズ 5 の完了条件
     store.getState().addNode('linear', { x: 0, y: 0 })
     await waitFor(() => expect(runButton()).toBeDisabled())
   })
+
+  it('モデル名がすでに使われていれば NG になり、実行できない', async () => {
+    const validate = vi.fn<TrainingApi['validate']>(() =>
+      Promise.resolve(apiOk({ kind: 'model-name-used' })),
+    )
+    renderSettings({
+      dependencies: { trainingApi: { ...fakeDependencies().trainingApi, validate } },
+    })
+    await screen.findByLabelText(/モデル名/)
+    await fillRequiredFields()
+    await checkAndWait()
+
+    expect(validate).toHaveBeenCalledOnce()
+    expect(status()).toHaveTextContent('NG')
+    expect(log()).toHaveTextContent('モデル名「segnet」はすでに使われています')
+    expect(runButton()).toBeDisabled()
+  })
+
+  it('手元のチェックで NG なら、サーバーには問い合わせない', async () => {
+    const validate = vi.fn<TrainingApi['validate']>(() => Promise.resolve(apiOk({ kind: 'ok' })))
+    renderSettings({
+      dependencies: { trainingApi: { ...fakeDependencies().trainingApi, validate } },
+    })
+    await screen.findByLabelText(/モデル名/)
+    await checkAndWait()
+
+    expect(status()).toHaveTextContent('NG')
+    expect(validate).not.toHaveBeenCalled()
+  })
 })
 
 describe('学習実行', () => {

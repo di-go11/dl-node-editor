@@ -112,7 +112,6 @@ const expected: StartTrainingRequest = {
     image_annotation_config: { type: 'pascal_voc', include_difficult: false },
   },
   save_last_every: 0,
-  resume_from: '',
   seed: 0,
 }
 

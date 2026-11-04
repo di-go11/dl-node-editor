@@ -14,7 +14,6 @@ pub struct TrainingConfig {
     pub dataset_path: String,
     pub optimizer: Optimizer,
     pub loss: Loss,
-    pub resume_from: Option<String>,
     pub seed: Option<u64>,
     pub data_spec: DataSpec,
     pub save_last_every: u32,

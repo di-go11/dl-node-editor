@@ -20,7 +20,10 @@ import { defaultVariant } from './variant'
  * 対応は proto-json/ に閉じ込める(1a の ModelGraph と同じ方針)。
  */
 export type TrainingSettings = {
-  /** checkpoint のファイル名(<model_name>_last.pt)に使われる */
+  /**
+   * モデルの名前。checkpoint のファイル名(<model_name>_last.pt)にも使われる。
+   * すでに使われている名前は、整合性チェックでサーバーに確かめて弾く(POST /trainings/validate)
+   */
   readonly modelName: string
   readonly optimizer: OptimizerConfig
   readonly loss: LossConfig
@@ -33,8 +36,6 @@ export type TrainingSettings = {
   readonly dataSpec: DataSpec
   /** checkpoint を保存する間隔(エポック)。0 なら毎エポック */
   readonly saveLastEvery: number
-  /** 再開元の checkpoint のパス。空文字なら再開しない */
-  readonly resumeFrom: string
   /**
    * 乱数シード。null なら固定しない。
    *
@@ -120,7 +121,6 @@ export function defaultTrainingSettings(): TrainingSettings {
     device: '',
     dataSpec: defaultImageDataSpec(),
     saveLastEvery: TRAINING_NUMBER_DEFS.save_last_every.default,
-    resumeFrom: '',
     seed: null,
   }
 }

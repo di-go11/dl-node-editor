@@ -96,7 +96,8 @@ export function trainingSettingsFromJson(json: TrainingSettingsJson): TrainingSe
     device: json.device,
     dataSpec: dataSpecFromJson(json.data_spec),
     saveLastEvery: json.save_last_every,
-    resumeFrom: json.resume_from,
+    // resume_from は読み捨てる。学習設定画面は新規学習専用で、再開は学習再開画面で
+    // 学習済みのモデルを選んで行う(再開元の checkpoint はサーバーが決める)
     // seed のキーがない = 乱数を固定しない。{ "value": 0 } は「0 に固定する」で別の意味
     seed: json.seed === undefined ? null : json.seed.value,
   }
@@ -113,7 +114,8 @@ export function trainingSettingsToJson(settings: TrainingSettings): TrainingSett
     device: settings.device,
     data_spec: dataSpecToJson(settings.dataSpec),
     save_last_every: settings.saveLastEvery,
-    resume_from: settings.resumeFrom,
+    // C++ の設定ファイル・保存ファイルの形にそろえるため、キーは残して常に空(再開しない)にする
+    resume_from: '',
   }
   // 固定しないときは、キーごと省く(契約の Seed の説明のとおり)。
   // { "seed": null } にすると、Rust 側で「null の Seed」という余計な場合が増える。

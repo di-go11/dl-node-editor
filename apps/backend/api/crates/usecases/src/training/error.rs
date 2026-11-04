@@ -2,6 +2,8 @@ use std::error;
 
 use thiserror::Error;
 
+use crate::capabilities::ProviderError;
+
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum StartTrainingError {
     // C++サーバーに対して学習プロセスを開始するための命令を送る関数が失敗した場合のエラー
@@ -70,14 +72,18 @@ pub enum RecordError {
     // すでに保存されたepochを取り出す際のエラー
     #[error("Failed to retrieve last saved epoch: {0}")]
     LastSavedEpochFailed(String),
+    // C++からの学習プロセスの渡しに失敗したときにRecordでもエラーとしてだすためのエラー
+    #[error("Failed to record training process by failing provider error: {0}")]
+    ProviderError(ProviderError),
+    // 終了メッセージ前にストリームが閉じた
+    #[error("Stream finished before getting finish message: {0}")]
+    StreamEnded(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ValidateTrainingConfigError {
     #[error("model name is already used: {0}")]
     ModelNameAlreadyUsed(String),
-    #[error("model was not found: {0}")]
-    ModelNotFound(String),
     #[error("failed to read training record: {0}")]
     ReadFailed(String),
 }

@@ -25,6 +25,7 @@ function fakeTrainingApi(ok = true) {
   return {
     api: {
       start,
+      validate: () => Promise.resolve({ ok: true, value: { kind: 'ok' } }),
       subscribeProgress: () => () => undefined,
       stop: () => Promise.resolve({ ok: true, value: 'running' }),
     } satisfies TrainingApi,

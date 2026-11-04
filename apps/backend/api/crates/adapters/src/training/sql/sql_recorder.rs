@@ -1,3 +1,4 @@
+use super::SqliteTrainingRepository;
 use chrono::Utc;
 use entities::training::config::{
     DataSpec, ImageAnnotationConfig, ImageTaskSpec, Loss, Optimizer, TrainingConfig,
@@ -8,18 +9,9 @@ use entities::training::ModelId;
 use entities::training::TrainingJobStatus;
 use entities::training::TrainingProcess;
 use sqlx::SqlitePool;
-use usecases::training::{RepositoryError, TrainingResultRegister, TrainingRunRegistar};
-
-#[derive(Clone)]
-pub struct SqliteTrainingRepository {
-    pub(super) pool: SqlitePool, // sql/select.rs からも使うため training モジュール内に公開
-}
-
-impl SqliteTrainingRepository {
-    pub fn new(pool: SqlitePool) -> Self {
-        Self { pool }
-    }
-}
+use usecases::training::{
+    RepositoryError, TrainingProgressRecorder, TrainingResultRegister, TrainingRunRegistar,
+};
 // 学習実行情報をDBへ保存する処理3つ
 impl TrainingRunRegistar for SqliteTrainingRepository {
     async fn insert_model(
@@ -135,7 +127,8 @@ impl TrainingRunRegistar for SqliteTrainingRepository {
         .bind(&config.device)
         .bind(&config.dataset_path)
         .bind(config.save_last_every)
-        .bind(config.resume_from.as_deref())
+        // resume_from列は0001で作成済みのため残すが、再開は.ptのファイル名で決まるため常にNULL
+        .bind(None::<&str>)
         .bind(config.seed.map(|seed| seed as i64)) // SQLiteのINTEGERは符号付きのためi64で保存する。読み出し時はu64に戻す
         .bind(optimizer_type)
         .bind(learning_rate)
@@ -201,7 +194,7 @@ impl TrainingRunRegistar for SqliteTrainingRepository {
 }
 
 // エポックごとの学習結果をDBへ保存する処理
-impl TrainingResultRegister for SqliteTrainingRepository {
+impl TrainingProgressRecorder for SqliteTrainingRepository {
     async fn insert_epoch(
         &self,
         job_id: &JobId,

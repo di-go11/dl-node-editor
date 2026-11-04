@@ -41,7 +41,7 @@ type FetchResult = {
 
 /**
  * 状態コードごとの説明。契約のエラー応答には本文がないので、状態コードから文言を決める。
- * 409 と 422 を返すのは今のところ学習開始だけである。
+ * 409 と 422 は学習開始の意味で書いている(整合性チェックの 409 は callApiByStatus で先に結果にする)。
  */
 const HTTP_ERROR_MESSAGES: Readonly<Record<number, string>> = {
   404: '指定されたジョブが見つかりません。',
@@ -58,6 +58,34 @@ function httpError(response: Response): ApiError {
       HTTP_ERROR_MESSAGES[response.status] ??
       `サーバーがエラーを返しました(HTTP ${response.status})。`,
   }
+}
+
+/**
+ * 本文のない応答を返す API(POST /trainings/validate の 204 など)の呼び出しを、ApiResult に包む。
+ *
+ * 同じ状態コードでも意味が API ごとに違う(validate の 409 は「名前が使用済み」で、
+ * 学習開始の 409 は「実行中の学習がある」)。そこで、結果として受け取る状態コードと
+ * その値の対応(byStatus)は呼び出し側が渡す。対応にないエラーの状態コードは kind: 'http' にする。
+ */
+export async function callApiByStatus<T>(
+  call: () => Promise<FetchResult>,
+  byStatus: Readonly<Record<number, T>>,
+): Promise<ApiResult<T>> {
+  let response: Response
+  try {
+    response = (await call()).response
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    return apiError({ kind: 'network', message: `サーバーに接続できません: ${detail}` })
+  }
+
+  const value = byStatus[response.status]
+  if (value !== undefined) return apiOk(value)
+  if (!response.ok) return apiError(httpError(response))
+  return apiError({
+    kind: 'invalid-response',
+    message: `サーバーが契約にない状態コードを返しました(HTTP ${response.status})。`,
+  })
 }
 
 /**

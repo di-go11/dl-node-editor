@@ -12,7 +12,7 @@ import {
   finishStart,
   isStaleResult,
 } from '../../application/run-state/run-state'
-import { checkIntegrity } from '../../application/usecases/check-integrity'
+import { checkIntegrityWithServer } from '../../application/usecases/check-integrity'
 import { startTraining } from '../../application/usecases/start-training'
 import type { Issue } from '../../entity/validation/issue'
 import { useDependencies } from '../app/dependencies'
@@ -20,7 +20,7 @@ import { useEditorStore, useEditorStoreApi } from '../stores/editor-store-contex
 
 /**
  * [整合性チェック] と [学習実行] の操作。状態機械(application/run-state)の遷移と、
- * ユースケース(checkIntegrity / startTraining)の呼び出しをつなぐ。
+ * ユースケース(checkIntegrityWithServer / startTraining)の呼び出しをつなぐ。
  *
  * 状態の遷移の規則はすべて run-state.ts にあり、ここでは
  *   遷移関数で次の状態を計算する → ストアに入れる → ユースケースを待つ → 結果で次の状態を計算する
@@ -39,7 +39,7 @@ export type TrainingRun = {
   readonly issues: readonly Issue[]
   /** 表示している結果が、その後の変更で古くなっているか */
   readonly stale: boolean
-  readonly check: () => void
+  readonly check: () => Promise<void>
   readonly start: () => Promise<void>
 }
 
@@ -53,22 +53,29 @@ export function useTrainingRun(availableDevices: readonly string[] | undefined):
   const target = checkTargetOf(document)
   const state = effectiveRunState(runState, target)
 
-  const check = useCallback(() => {
+  const check = useCallback(async () => {
     const before = store.getState()
     const checkTarget = checkTargetOf(before.document)
     if (checkTarget === null) return
-    before.setRunState(beginCheck(before.runState, checkTarget))
+    const checking = beginCheck(before.runState, checkTarget)
+    // 学習を始めている最中・学習中はチェックしない(サーバーにも問い合わせない)
+    if (checking.kind !== 'checking') return
+    before.setRunState(checking)
 
-    const result = checkIntegrity({
-      graph: checkTarget.graph,
-      context: checkTarget.context,
-      catalog: before.catalog,
-      settings: checkTarget.training,
-      ...(availableDevices === undefined ? {} : { availableDevices }),
-    })
+    // サーバーの応答を待つ間に利用者が編集していれば、finishCheck が結果を捨てる
+    const result = await checkIntegrityWithServer(
+      { trainingApi },
+      {
+        graph: checkTarget.graph,
+        context: checkTarget.context,
+        catalog: before.catalog,
+        settings: checkTarget.training,
+        ...(availableDevices === undefined ? {} : { availableDevices }),
+      },
+    )
     const after = store.getState()
     after.setRunState(finishCheck(after.runState, checkTarget, result))
-  }, [store, availableDevices])
+  }, [store, trainingApi, availableDevices])
 
   const start = useCallback(async () => {
     const before = store.getState()

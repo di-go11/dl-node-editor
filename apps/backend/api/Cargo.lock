@@ -16,6 +16,7 @@ dependencies = [
  "serde_json",
  "sqlx",
  "thiserror",
+ "tokio",
  "tonic",
  "tonic-prost",
  "tonic-prost-build",

@@ -31,8 +31,9 @@ impl From<&TrainingConfig> for training_pb::StartTrainingRequest {
             device: value.device.clone(),
             data_spec: Some((&value.data_spec).into()),
             save_last_every: value.save_last_every,
-            // proto 側は「空文字列なら再開しない」なので、None を "" にする
-            resume_from: value.resume_from.clone().unwrap_or_default(),
+            // 新規学習では再開しないので空にする(proto 側は「空文字列なら再開しない」)。
+            // 学習再開は proto の resume フラグと <model_id>_last.pt で行う予定のため、resume_from は使わない
+            resume_from: String::new(),
             // proto 側は Seed で包んで「未指定」と 0 を区別するので、Some の中身だけ包む
             seed: value.seed.map(|v| training_pb::Seed { value: v }),
         }
