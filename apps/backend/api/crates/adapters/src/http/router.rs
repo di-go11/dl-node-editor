@@ -11,7 +11,7 @@ use axum::{
 use usecases::{
     capabilities::CapabilityProvider,
     training::{
-        ModelIdGenerator, TrainingProcessProvider, TrainingRecordReader, TrainingRunRegistar,
+        ModelIdGenerator, TrainingProgressProvider, TrainingRecordReader, TrainingRunRegistar,
         TrainingStarter,
         TrainingStopper,
     },
@@ -24,7 +24,7 @@ where
     R: TrainingRunRegistar + Send + Sync + 'static,
     G: ModelIdGenerator + Send + Sync + 'static,
     V: TrainingRecordReader + Send + Sync + 'static,
-    P: TrainingProcessProvider + Send + Sync + 'static,
+    P: TrainingProgressProvider + Send + Sync + 'static,
     T: TrainingStopper + Send + Sync + 'static,
 {
     Router::new().nest(

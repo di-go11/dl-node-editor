@@ -1,5 +1,5 @@
 use adapters::GrpcCapabilityProvider;
-use adapters::GrpcTrainingProcessProvider;
+use adapters::GrpcTrainingProgressProvider;
 use adapters::GrpcTrainingStarter;
 use adapters::GrpcTrainingStopper;
 use adapters::connect_database;
@@ -35,7 +35,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             SqliteTrainingRepository::new(pool.clone()),
             UuidModelGenerator,
         )),
-        get_process: Arc::new(GetTrainingProcess::new(GrpcTrainingProcessProvider::new(
+        get_process: Arc::new(GetTrainingProcess::new(GrpcTrainingProgressProvider::new(
             channel.clone(),
         ))),
         stop_training: Arc::new(StopTraining::new(GrpcTrainingStopper::new(channel.clone()))),

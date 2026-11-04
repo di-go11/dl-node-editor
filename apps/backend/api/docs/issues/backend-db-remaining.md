@@ -97,6 +97,11 @@ Optimizer の種類も変えたい(重みだけ引き継いで、optimizer の�
     ```
 - 学習の開始に成功したら、`tokio::spawn` で `execute` をバックグラウンドで起動する(ハンドラと `StartTraining` / `ResumeTraining` のどちらで起動するかは要検討。両方の開始経路から起動されるようにする)
 
+**状況(2026-11-04)**
+- `TrainingEpochProvider` は `TrainingEpochHistoryProvider` に改名した。`GrpcTrainingProgressProvider`(旧 `GrpcTrainingProcessProvider`)で実装済み(`AfterEpoch(after_epoch)` を送る)
+- `last_saved_epoch` は `TrainingProgressReader` に追加し、SQL で実装済み
+- `RecordTrainingProgress::execute` は書きかけ。この保存結果をフロントの進捗表示にも使う方針にした(作業 11)
+
 **完了条件**
 - 学習を最後まで回すと、全エポックが `training_epochs` に入り、`training_runs.status` が `completed` になり、`finished_at` も入る
 - 途中で Rust を再起動しても、続きのエポックから抜けなく保存される
@@ -230,7 +235,114 @@ POST /api/v1/models/{model_id}/resume   学習再開。本体には変えてよ�
 
 ## 10. リファクタリング(機能の実装が一段落してから)
 
-- ポートのトレイトを `usecases/src/training/ports.rs` にまとめる(`TrainingRunRegistar` / `TrainingResultRegister` / `TrainingEpochProvider` は `record_training_process.rs`、`ModelIdGenerator` は `model_id_generator.rs`、`TrainingRecordReader` は `read_training_record.rs` に散らばっている)。`mod.rs` の `pub use` をまとめれば、外部からのパスは変わらない
+- ポートのトレイトを `usecases/src/training/ports.rs` にまとめる(`TrainingRunRegistar` / `TrainingResultRegister` / `TrainingEpochHistoryProvider` は `record_training_process.rs`、`ModelIdGenerator` は `model_id_generator.rs`、`TrainingRecordReader` は `read_training_record.rs` に散らばっている)。`mod.rs` の `pub use` をまとめれば、外部からのパスは変わらない
 - `adapters/src/http/handler.rs` を機能ごとに分割する(`http/handler/training.rs` / `models.rs` / `capabilities.rs` など)。`http/` 自体は全機能の入口なので、`training/` の下には移さない
 - 未使用の import の警告を消す(`error.rs` の `std::error`、`ports.rs` / `start_training.rs` / `grpc_training_starter.rs` の `ModelId` など)
 - ファイル名の綴りを直す(`sql_record_trainig.rs` の `trainig` → `training`)
+
+---
+
+## 11. 学習の進捗表示を C++ 直結から DB 経由に切り替える(2026-11-04 提案・未決定あり)
+
+**背景**
+今の HTTP の進捗取得(`GET /trainings/{job_id}` / `/status` / `/progress` の SSE)は、`TrainingProgressProvider` で C++ から「最新の状態だけ」を受け取って返している(`start_position: None`)。
+このモードは、待っている間に複数の更新があると**途中の更新を飛ばす**。そのため、フロントのグラフでは次の問題が起きる。
+- エポックが速く進むと、グラフの点が抜ける
+- 途中から画面を開いた・リロードした・接続が切れて戻ったとき、それまでの履歴が取れない
+- 学習が終わった後や C++ を再起動した後は、何も表示できない
+
+作業 2 で全エポックを DB に保存するようになるので、フロントには DB の内容を返せば足りる。
+
+**方針**
+```
+[書き込み側]  C++ ──gRPC(AfterEpoch)──▶ RecordTrainingProgress ──▶ SQLite
+                                         (裏で常に動くタスク)
+[読み出し側]  フロント ◀──HTTP/SSE── GetTrainingHistory ◀── SQLite
+```
+フロントは C++ と直接つながらず、DB だけを見る。
+- データの出どころが DB に一本化される
+- 何人が見ても、C++ への接続は Recorder の 1 本だけで済む
+- 学習が終わった後でも、同じ API で履歴を見られる
+
+### 書き込み側: `RecordTrainingProgress`(作業 2 の続き)
+```rust
+impl<P, R> RecordTrainingProgress<P, R>
+where
+    P: TrainingEpochHistoryProvider,
+    R: TrainingProgressReader + TrainingProgressRecorder + TrainingRunRegistar,
+{
+    pub async fn execute(&self, job_id: &JobId) -> Result<(), RecordError> {
+        // 1. last_saved_epoch で続きの位置を調べる
+        // 2. stream_epoch_after(job_id, after_epoch)
+        // 3. status が Running なら insert_epoch
+        //    status が終了系なら update_training_run を呼んで終了
+        //    (C++ は最後に epoch=0 の終了メッセージを1回だけ送るので、insert してはいけない)
+    }
+}
+```
+- 起動するタイミングは次の 2 つ。`tokio::spawn` は adapters / server 側の責務にする
+  1. `StartTraining`(と作業 5 の `ResumeTraining`)が成功した直後
+  2. サーバーの起動時。`find_running_job_ids` で `running` のジョブを取り出し、それぞれの記録を再開する
+- 停止したときは C++ が `Stopped` を流してくるので、`stop_training` 側で DB を更新する必要はない
+
+### 読み出し側: `GetTrainingHistory`
+```rust
+// entities に追加
+pub struct EpochRecord {
+    pub epoch: u32,
+    pub train_loss: f64,
+    pub val_loss: f64,
+    pub metrics: Option<Metrics>,
+    pub epoch_elapsed_time: Duration,
+}
+pub struct TrainingHistory {
+    pub status: TrainingJobStatus,  // training_runs から取得
+    pub epochs: Vec<EpochRecord>,   // training_epochs と metrics 系のテーブルから取得
+}
+
+// usecases に追加するポート
+pub trait TrainingHistoryReader {
+    fn find_status(&self, job_id: &JobId)
+        -> impl Future<Output = Result<Option<TrainingJobStatus>, RepositoryError>> + Send;
+    fn find_epochs_after(&self, job_id: &JobId, after_epoch: u32)
+        -> impl Future<Output = Result<Vec<EpochRecord>, RepositoryError>> + Send;
+}
+
+// ユースケースは1つで、3つのエンドポイントすべてに使う
+GetTrainingHistory::execute(job_id, after_epoch) -> Result<TrainingHistory, ...>
+```
+
+| エンドポイント | 使い方 |
+|---|---|
+| `GET /trainings/{job_id}` | `after_epoch = 0` で全履歴を返す(グラフの初期表示用) |
+| `GET /trainings/{job_id}/status` | `history.status` だけを返す(`find_status` を直接呼ぶ軽量版でもよい) |
+| `GET /trainings/{job_id}/progress`(SSE) | ハンドラが 1 秒ごとに `after_epoch = 最後に送ったepoch` で呼ぶ。新しいエポックを送り、status が終了系で新しいエポックもなければ終える |
+
+- ポーリングの待機(`tokio::time`)はハンドラ側に置き、ユースケースは「1 回取得する」だけにする(ユースケースのテストを簡単にするため)
+- まずは DB のポーリングで作る。遅延が気になるようになったら、Recorder が insert した後に `tokio::sync::broadcast` で通知する方式にする
+
+### 削除するもの
+- `TrainingProgressProvider` / `GetTrainingProcess`(`get_training_progress.rs`)
+- `GrpcTrainingProgressProvider` の `TrainingProgressProvider` 実装(`start_position: None` の経路)。`TrainingEpochHistoryProvider` の実装は残す
+- `handler.rs` の `fetch_current_process`
+
+### 未決定(決めてから着手する)
+1. **`total_elapsed_time` の扱い**: `TrainingProcess` にはあるが、`training_epochs` テーブルに列がない
+   - (a) `0002` 以降のマイグレーションで `total_elapsed_ms` 列を追加する
+   - (b) 読み出すときに `epoch_elapsed_ms` を累積して計算する(再開をまたぐと実際の経過時間とずれる)
+   - (c) API から外す
+2. **C++ との接続が切れたとき**(C++ が落ちた、ジョブが `NotFound` など)の扱い
+   - (a) `failed` に更新する
+   - (b) `running` のまま、一定間隔で再接続を試みる
+   - (c) まずはログを出すだけにする
+3. **NULL の扱い**: DB の `train_loss` / `val_loss` は NULL を許す。`EpochRecord` も `Option<f64>` にするか、NULL を `RepositoryError::InvalidData` として扱うか
+4. **進め方**
+   - (a) まず読み出し側から作る(Recorder がまだないので、テストデータを手で入れて確認する)
+   - (b) 書き込み側の Recorder(作業 2)を先に完成させる
+
+提案: 1-(a)、2-(c)、3 は `Option<f64>`、4-(b)(Recorder が動かないと、読み出し側を実データで確認できないため)。
+
+**完了条件**
+- 学習中に画面を開き直しても、1 エポック目からのグラフが表示される
+- エポックが速く進んでも、グラフの点が抜けない
+- 学習が終わった後、または C++ を再起動した後でも、同じ API で履歴と最終ステータスが取れる

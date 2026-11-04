@@ -1,7 +1,7 @@
 use usecases::{
     capabilities::{CapabilityProvider, GetCapabilities},
     training::{
-        GetTrainingProcess, ModelIdGenerator, StartTraining, StopTraining, TrainingProcessProvider,
+        GetTrainingProcess, ModelIdGenerator, StartTraining, StopTraining, TrainingProgressProvider,
         TrainingRecordReader, TrainingRunRegistar, TrainingStarter, TrainingStopper,
         ValidateTrainingConfig,
     },
@@ -11,14 +11,14 @@ use axum::extract::FromRef;
 use std::sync::Arc;
 
 pub struct AppState<C, S, R, G, V, P, T>
-// pub struct AppState<C: CapabilityProvider, S: TrainingStarter, P: TrainingProcessProvider, T: TrainingStopper>と同じ
+// pub struct AppState<C: CapabilityProvider, S: TrainingStarter, P: TrainingProgressProvider, T: TrainingStopper>と同じ
 where
     C: CapabilityProvider,
     S: TrainingStarter,
     R: TrainingRunRegistar,
     G: ModelIdGenerator,
     V: TrainingRecordReader,
-    P: TrainingProcessProvider,
+    P: TrainingProgressProvider,
     T: TrainingStopper,
 {
     // Arcを使用すして複数の変数で共有するためのスマートポインタにする
@@ -36,7 +36,7 @@ where
     R: TrainingRunRegistar,
     G: ModelIdGenerator,
     V: TrainingRecordReader,
-    P: TrainingProcessProvider,
+    P: TrainingProgressProvider,
     T: TrainingStopper,
 {
     fn clone(&self) -> Self {
@@ -57,7 +57,7 @@ where
     R: TrainingRunRegistar,
     G: ModelIdGenerator,
     V: TrainingRecordReader,
-    P: TrainingProcessProvider,
+    P: TrainingProgressProvider,
     T: TrainingStopper,
 {
     fn from_ref(app_state: &AppState<C, S, R, G, V, P, T>) -> Self {
@@ -72,7 +72,7 @@ where
     R: TrainingRunRegistar,
     G: ModelIdGenerator,
     V: TrainingRecordReader,
-    P: TrainingProcessProvider,
+    P: TrainingProgressProvider,
     T: TrainingStopper,
 {
     fn from_ref(app_state: &AppState<C, S, R, G, V, P, T>) -> Self {
@@ -87,7 +87,7 @@ where
     R: TrainingRunRegistar,
     G: ModelIdGenerator,
     V: TrainingRecordReader,
-    P: TrainingProcessProvider,
+    P: TrainingProgressProvider,
     T: TrainingStopper,
 {
     fn from_ref(app_state: &AppState<C, S, R, G, V, P, T>) -> Self {
@@ -102,7 +102,7 @@ where
     R: TrainingRunRegistar,
     G: ModelIdGenerator,
     V: TrainingRecordReader,
-    P: TrainingProcessProvider,
+    P: TrainingProgressProvider,
     T: TrainingStopper,
 {
     fn from_ref(app_state: &AppState<C, S, R, G, V, P, T>) -> Self {
@@ -117,7 +117,7 @@ where
     R: TrainingRunRegistar,
     G: ModelIdGenerator,
     V: TrainingRecordReader,
-    P: TrainingProcessProvider,
+    P: TrainingProgressProvider,
     T: TrainingStopper,
 {
     fn from_ref(app_state: &AppState<C, S, R, G, V, P, T>) -> Self {

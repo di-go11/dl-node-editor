@@ -10,8 +10,8 @@ use axum::{
 use entities::training::{config::TrainingConfig, JobId, TrainingProcess};
 use futures_util::StreamExt;
 use usecases::training::{
-    GetTrainingProcess, ModelIdGenerator, StartTraining, StopTraining, TrainingProcessProvider,
-    TrainingProcessProviderError, TrainingRecordReader, TrainingRunRegistar, TrainingStarter,
+    GetTrainingProcess, ModelIdGenerator, StartTraining, StopTraining, TrainingProgressProvider,
+    TrainingProgressProviderError, TrainingRecordReader, TrainingRunRegistar, TrainingStarter,
     TrainingStopper, ValidateTrainingConfig, ValidateTrainingConfigError,
 };
 use usecases::{
@@ -99,7 +99,7 @@ pub async fn get_training_status<T>(
     Path(job_id): Path<String>,
 ) -> Result<Json<TrainingJobStatusDto>, StatusCode>
 where
-    T: TrainingProcessProvider + Send + Sync + 'static,
+    T: TrainingProgressProvider + Send + Sync + 'static,
 {
     let process = fetch_current_process(&usecase, job_id).await?;
     Ok(Json(process.status.into()))
@@ -111,7 +111,7 @@ pub async fn get_training_process<T>(
     Path(job_id): Path<String>,
 ) -> Result<Json<TrainingProcessDto>, StatusCode>
 where
-    T: TrainingProcessProvider + Send + Sync + 'static,
+    T: TrainingProgressProvider + Send + Sync + 'static,
 {
     let process = fetch_current_process(&usecase, job_id).await?;
     Ok(Json(process.into()))
@@ -123,7 +123,7 @@ async fn fetch_current_process<T>(
     job_id: String,
 ) -> Result<TrainingProcess, StatusCode>
 where
-    T: TrainingProcessProvider + Send + Sync + 'static,
+    T: TrainingProgressProvider + Send + Sync + 'static,
 {
     let job_id = JobId::new(job_id).map_err(|_| StatusCode::BAD_REQUEST)?;
     let stream = usecase
@@ -138,11 +138,11 @@ where
         .map_err(status_code_from_provider_error)
 }
 
-fn status_code_from_provider_error(error: TrainingProcessProviderError) -> StatusCode {
+fn status_code_from_provider_error(error: TrainingProgressProviderError) -> StatusCode {
     match error {
-        TrainingProcessProviderError::NotFound(_) => StatusCode::NOT_FOUND,
-        TrainingProcessProviderError::Unavailable(_)
-        | TrainingProcessProviderError::InvalidData(_) => StatusCode::BAD_GATEWAY,
+        TrainingProgressProviderError::NotFound(_) => StatusCode::NOT_FOUND,
+        TrainingProgressProviderError::Unavailable(_)
+        | TrainingProgressProviderError::InvalidData(_) => StatusCode::BAD_GATEWAY,
     }
 }
 
@@ -152,7 +152,7 @@ pub async fn stream_training_process<T>(
     Path(job_id): Path<String>,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, StatusCode>
 where
-    T: TrainingProcessProvider + Send + Sync + 'static,
+    T: TrainingProgressProvider + Send + Sync + 'static,
 {
     let job_id = JobId::new(job_id).map_err(|_| StatusCode::BAD_REQUEST)?;
     let stream = usecase
@@ -185,7 +185,7 @@ mod tests {
 
     #[test]
     fn not_found_error_converts_to_404() {
-        let error = TrainingProcessProviderError::NotFound("job not found".to_string());
+        let error = TrainingProgressProviderError::NotFound("job not found".to_string());
         assert_eq!(
             status_code_from_provider_error(error),
             StatusCode::NOT_FOUND
@@ -194,8 +194,8 @@ mod tests {
 
     #[test]
     fn unavailable_and_invalid_data_errors_convert_to_502() {
-        let unavailable = TrainingProcessProviderError::Unavailable("server down".to_string());
-        let invalid_data = TrainingProcessProviderError::InvalidData("bad data".to_string());
+        let unavailable = TrainingProgressProviderError::Unavailable("server down".to_string());
+        let invalid_data = TrainingProgressProviderError::InvalidData("bad data".to_string());
         assert_eq!(
             status_code_from_provider_error(unavailable),
             StatusCode::BAD_GATEWAY

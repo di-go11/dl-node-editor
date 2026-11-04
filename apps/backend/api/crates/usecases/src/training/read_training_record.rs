@@ -17,5 +17,3 @@ pub trait TrainingProgressReader {
     // 学習中のジョブIDを取り出す。
     fn find_running_job_ids(&self) -> Result<Vec<JobId>, RepositoryError>;
 }
-
-impl 

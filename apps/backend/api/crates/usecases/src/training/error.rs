@@ -36,7 +36,7 @@ pub enum StopTrainingError {
     NotFound(String),
 }
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
-pub enum TrainingProcessProviderError {
+pub enum TrainingProgressProviderError {
     // 通信できなかった(C++のサーバーが起動していない. タイムアウトなど)
     #[error("training-process-provider is unavailable: {0}")]
     Unavailable(String),

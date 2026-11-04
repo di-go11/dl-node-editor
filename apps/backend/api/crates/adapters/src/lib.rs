@@ -5,7 +5,7 @@ pub mod training;
 
 pub use capabilities::GrpcCapabilityProvider;
 pub use database::connect_database;
-pub use training::GrpcTrainingProcessProvider;
+pub use training::GrpcTrainingProgressProvider;
 pub use training::GrpcTrainingStarter;
 pub use training::GrpcTrainingStopper;
 pub use training::SqliteTrainingRepository;

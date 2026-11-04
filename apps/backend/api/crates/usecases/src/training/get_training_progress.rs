@@ -1,13 +1,25 @@
+use super::error::TrainingProgressProviderError;
 use entities::training::JobId;
+use entities::training::TrainingProcess;
+use futures_core::Stream;
 
-use super::TrainingProcessProvider;
-use super::error::TrainingProcessProviderError;
+// 学習の「最新の状態」だけを受け取るためのポート(HTTPの状態取得・SSE用)。
+// 待っている間に複数の更新があった場合、途中の更新は飛ばされる。
+pub trait TrainingProgressProvider {
+    type ProgressStream: Stream<Item = Result<TrainingProcess, TrainingProgressProviderError>> + Send; // c++から何度も届く通信(Stream) ItemはStreamが持つ関連型で通信で届く1件ごとの型をvariantなどで決めることができる今回のように。
+    // Sendはその値を別スレッドに移しても安全であるということを示す。c++では原則スレッド内のものを移すことは禁止だったがこっちではOK
+    // typeはエイリアスみたいなもの. このtraitを実装しているものでその型が定義される、
+    fn stream_progress(
+        &self,
+        job_id: &JobId,
+    ) -> impl Future<Output = Result<Self::ProgressStream, TrainingProgressProviderError>> + Send; // C++サーバーとのストリームを開くための関数(一回の通信だからFuture) OutputはFutureによる何らかのアクションで届く値こっちもvariantで動的に決めることができる。
+}
 
-pub struct GetTrainingProcess<P: TrainingProcessProvider> {
+pub struct GetTrainingProcess<P: TrainingProgressProvider> {
     provider: P,
 }
 
-impl<P: TrainingProcessProvider> GetTrainingProcess<P> {
+impl<P: TrainingProgressProvider> GetTrainingProcess<P> {
     pub fn new(provider: P) -> Self {
         Self { provider }
     }
@@ -15,7 +27,7 @@ impl<P: TrainingProcessProvider> GetTrainingProcess<P> {
     pub async fn execute(
         &self,
         job_id: &JobId,
-    ) -> Result<P::ProgressStream, TrainingProcessProviderError> {
+    ) -> Result<P::ProgressStream, TrainingProgressProviderError> {
         self.provider.stream_progress(job_id).await
     }
 }
@@ -31,22 +43,22 @@ mod tests {
     use super::*;
 
     // テスト用の偽Provider。 c++サーバーを必要としない。
-    // TrainingPRocessProviderを実装した偽物
+    // TrainingProgressProviderを実装した偽物
     struct FakeProvider {
         result: Result<
-            Vec<Result<TrainingProcess, TrainingProcessProviderError>>,
-            TrainingProcessProviderError,
+            Vec<Result<TrainingProcess, TrainingProgressProviderError>>,
+            TrainingProgressProviderError,
         >,
     }
 
-    impl TrainingProcessProvider for FakeProvider {
+    impl TrainingProgressProvider for FakeProvider {
         type ProgressStream = futures_util::stream::Iter<
-            std::vec::IntoIter<Result<TrainingProcess, TrainingProcessProviderError>>,
+            std::vec::IntoIter<Result<TrainingProcess, TrainingProgressProviderError>>,
         >;
         async fn stream_progress(
             &self,
             _job_id: &JobId,
-        ) -> Result<Self::ProgressStream, TrainingProcessProviderError> {
+        ) -> Result<Self::ProgressStream, TrainingProgressProviderError> {
             self.result.clone().map(futures_util::stream::iter)
         }
     }
@@ -71,9 +83,9 @@ mod tests {
         }
     }
 
-    fn server_unavailable() -> TrainingProcessProviderError {
+    fn server_unavailable() -> TrainingProgressProviderError {
         let errormessage: String = "TimeOut".to_string();
-        TrainingProcessProviderError::Unavailable(errormessage)
+        TrainingProgressProviderError::Unavailable(errormessage)
     }
 
     fn running_status_epoch2() -> TrainingProcess {
