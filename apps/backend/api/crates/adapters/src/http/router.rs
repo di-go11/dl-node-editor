@@ -11,17 +11,18 @@ use axum::{
 use usecases::{
     capabilities::CapabilityProvider,
     training::{
-        ModelIdGenerator, TrainingProgressProvider, TrainingProgressRecorder, TrainingRecordReader,
+        ModelIdGenerator, ProgressRecordingScheduler, TrainingProgressProvider, TrainingProgressRecorder, TrainingRecordReader,
         TrainingRunRegistar, TrainingStarter, TrainingStopper,
     },
 };
 
-pub fn router<C, S, R, G, V, P, T, D>(state: AppState<C, S, R, G, V, P, T, D>) -> Router
+pub fn router<C, S, R, G, K, V, P, T, D>(state: AppState<C, S, R, G, K, V, P, T, D>) -> Router
 where
     C: CapabilityProvider + Send + Sync + 'static,
     S: TrainingStarter + Send + Sync + 'static,
     R: TrainingRunRegistar + Send + Sync + 'static,
     G: ModelIdGenerator + Send + Sync + 'static,
+    K: ProgressRecordingScheduler + Send + Sync + 'static,
     V: TrainingRecordReader + Send + Sync + 'static,
     P: TrainingProgressProvider + Send + Sync + 'static,
     T: TrainingStopper + Send + Sync + 'static,
@@ -36,7 +37,7 @@ where
         "/api/v1",
         Router::new()
             .route("/capabilities", get(get_capabilities::<C>))
-            .route("/trainings", post(start_training::<S, R, G, P, D>))
+            .route("/trainings", post(start_training::<S, R, G, K>))
             .route("/trainings/validate", post(validate_training::<V>))
             .route("/trainings/{job_id}", get(get_training_process::<P>))
             .route(

@@ -10,8 +10,8 @@ use axum::{
 use entities::training::{config::TrainingConfig, JobId, TrainingProcess};
 use futures_util::StreamExt;
 use usecases::training::{
-    GetTrainingProcess, ModelIdGenerator, RecordTrainingProgress, StartTraining, StopTraining,
-    TrainingProgressProvider, TrainingProgressProviderError, TrainingProgressRecorder,
+    GetTrainingProcess, ModelIdGenerator, ProgressRecordingScheduler, StartTraining, StopTraining,
+    TrainingProgressProvider, TrainingProgressProviderError,
     TrainingRecordReader, TrainingRunRegistar, TrainingStarter, TrainingStopper,
     ValidateTrainingConfig, ValidateTrainingConfigError,
 };
@@ -26,32 +26,18 @@ use std::sync::Arc;
 use std::{convert::Infallible, eprint};
 
 // 新規学習の開始POSTリクエストハンドラ(学習再開は別のエンドポイントにする)
-//
-// TODO(設計改善): 「学習を開始したら進捗記録も始める」は業務ルールなので、HTTPハンドラで
-// 2つのユースケースを組み合わせるべきではない。以下のようにリファクタする予定。
-//   1. usecases に ProgressRecordingScheduler トレイト(fn schedule(&self, job_id: JobId))を定義する
-//   2. StartTraining がこのポートを持ち、開始に成功したら scheduler.schedule(job_id) を呼ぶ
-//   3. adapters 側で mpsc::Sender<JobId> を包んだ実装を作る
-//   4. main(composition root)で受信ワーカーを1つ立ち上げ、job_idごとに
-//      RecordTrainingProgress::execute を spawn する。起動時の RUNNING ジョブ再開も同じ Sender に流す
-// これで AppState / router / このハンドラから RecordTrainingProgress と型パラメータ P, D を削除できる。
-// (StartTraining が RecordTrainingProgress を直接持つ案は、ユースケースが tokio に依存するため採用しない)
-pub async fn start_training<S, R, G, P, D>(
-    State(start): State<Arc<StartTraining<S, R, G>>>,
-    State(record): State<Arc<RecordTrainingProgress<P, D>>>,
+// 進捗記録の開始は StartTraining が ProgressRecordingScheduler ポート経由で行うため、ハンドラは関与しない。
+// TODO(設計改善): 型パラメータ S, R, G, K は StartTraining の内部依存が漏れたもの。
+// 入力ポート(StartTrainingUseCase)を導入して U 1つにする(docs/issues/backend-db-remaining.md 作業12)。
+pub async fn start_training<S, R, G, K>(
+    State(start): State<Arc<StartTraining<S, R, G, K>>>,
     Json(dto): Json<TrainingConfigDto>,
 ) -> Result<Json<StartTrainingResponseDto>, StatusCode>
 where
     S: TrainingStarter + Send + Sync + 'static,
     R: TrainingRunRegistar + Send + Sync + 'static,
     G: ModelIdGenerator + Send + Sync + 'static,
-    P: TrainingProgressProvider + Send + Sync + 'static,
-    D: TrainingProgressRecorder
-        + TrainingRecordReader
-        + TrainingRunRegistar
-        + Send
-        + Sync
-        + 'static,
+    K: ProgressRecordingScheduler + Send + Sync + 'static,
 {
     let config = TrainingConfig::from(dto);
     let job_id = start.execute(&config).await.map_err(|e| match e {
@@ -62,18 +48,6 @@ where
         StartTrainingError::AlreadyRunning(_) => StatusCode::CONFLICT,
         StartTrainingError::RecordFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
     })?;
-    // 記録はバックグラウンドで動かす(学習が終わるまで続くため、awaitしない)
-    // spawnするタスクは'staticである必要があるため、ArcとJobIdをcloneしてmoveで渡す。
-    let record = Arc::clone(&record);
-    let record_job_id = job_id.clone();
-    tokio::spawn(async move {
-        if let Err(e) = record.execute(&record_job_id).await {
-            eprintln!(
-                "failed to record training progress ({}): {e}",
-                record_job_id.as_str()
-            );
-        }
-    });
     Ok(Json(job_id.into()))
 }
 

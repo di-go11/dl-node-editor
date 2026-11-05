@@ -6,15 +6,17 @@ use adapters::connect_database;
 use adapters::http::AppState;
 use adapters::http::router;
 use adapters::pb::training::v1::TrainingStatus::Running;
+use adapters::training::{recording_channel, run_recording_worker};
 use adapters::{SqliteTrainingRepository, UuidModelGenerator};
+use entities::training::JobId;
 use std::eprintln;
 use std::sync::Arc;
 use tonic::transport::Channel;
 use usecases::capabilities::GetCapabilities;
 use usecases::training::RecordError;
 use usecases::training::{
-    GetTrainingProcess, RecordTrainingProgress, StartTraining, StopTraining, TrainingRecordReader,
-    ValidateTrainingConfig,
+    GetTrainingProcess, ProgressRecordingScheduler, RecordTrainingProgress, StartTraining,
+    StopTraining, TrainingRecordReader, ValidateTrainingConfig,
 };
 
 #[tokio::main]
@@ -34,21 +36,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         GrpcTrainingProgressProvider::new(channel.clone()),
         SqliteTrainingRepository::new(pool.clone()),
     ));
+    // 記録の起動依頼を受け取る mpsc チャネル。送信側(scheduler)は StartTraining と起動時の再開で共有する。
+    let (scheduler, recording_rx) = recording_channel();
+    // 受信ワーカーはサーバーと同じ寿命で動かす(ワーカーが drop されると JoinSet 内の記録タスクも abort されるため)。
+    let recorder = Arc::clone(&training_progress_recorder);
+    tokio::spawn(run_recording_worker(recording_rx, move |job_id: JobId| {
+        // spawnするタスクは'staticである必要があるため、Arcをcloneしてmoveで渡す。
+        let recorder = Arc::clone(&recorder);
+        async move {
+            if let Err(e) = recorder.execute(&job_id).await {
+                eprintln!("record failed for {}: {:?}", job_id.as_str(), e);
+            }
+        }
+    }));
+
+    // 起動時に RUNNING のジョブの記録を再開する(新規開始と同じ経路に流すので、二重起動もワーカーが防ぐ)。
     let runnning_jobs = SqliteTrainingRepository::new(pool.clone())
         .find_running_job_ids()
         .await?;
-    // TODO(設計改善): ここで mpsc チャネルの受信ワーカーを立ち上げ、起動時の再開と新規開始の両方を
-    // Sender<JobId> 経由で流す形に統一する(handler.rs の start_training のコメント参照)。
-    // job_idごとに非同期タスクを生成して、学習進捗を記録する。
     for job_id in runnning_jobs {
-        let record = Arc::clone(&training_progress_recorder);
-        // 非同期タスク内に、job_idの所有権をmoveすることで、タスクが終了するまでjob_idが保持される。
-        tokio::spawn(async move {
-            // record.executeが終了して中身が返った段階でタスクは終了する。
-            if let Err(e) = record.execute(&job_id).await {
-                eprintln!("record failed for {}: {:?}", job_id.as_str(), e);
-            }
-        });
+        scheduler.schedule(job_id);
     }
 
     // アダプターをユースケースに渡して、AppStateにまとめる
@@ -60,6 +67,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             GrpcTrainingStarter::new(channel.clone()),
             SqliteTrainingRepository::new(pool.clone()),
             UuidModelGenerator,
+            scheduler.clone(),
         )),
         get_process: Arc::new(GetTrainingProcess::new(GrpcTrainingProgressProvider::new(
             channel.clone(),

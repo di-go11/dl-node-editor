@@ -346,3 +346,58 @@ GetTrainingHistory::execute(job_id, after_epoch) -> Result<TrainingHistory, ...>
 - 学習中に画面を開き直しても、1 エポック目からのグラフが表示される
 - エポックが速く進んでも、グラフの点が抜けない
 - 学習が終わった後、または C++ を再起動した後でも、同じ API で履歴と最終ステータスが取れる
+
+---
+
+## 12. 入力ポートを導入し、HTTP 層からユースケースの内部依存を隠す(2026-11-05 提案)
+
+**背景**
+- いまの HTTP ハンドラは、ユースケースの具体的な構造体(例: `StartTraining<S, R, G, K>`)を直接受け取っている
+- ジェネリクス(静的ディスパッチ)で依存を注入しているため、ユースケースの**内部依存がそのまま型名に出てしまう**
+  - `StartTraining` を保持・受け渡しする handler / state / router のすべてが `S, R, G, K` を並べる必要がある
+  - `StartTraining` が使う出力ポートを 1 つ増やしただけで、それを使わない HTTP 層まで修正が必要になる(`ProgressRecordingScheduler` の `K` を足したときに実際に起きた)
+- 依存性の方向(adapters → usecases)は守られているが、カプセル化が破れている。HTTP 層が知りたいのは「設定を渡すと `JobId` が返る」ことだけである
+
+**方針**
+- クリーンアーキテクチャの**入力ポート**(コントローラがユースケースを呼ぶための抽象)をトレイトとして定義する
+  - 出力ポート: ユースケースが外部に依頼するもの(`TrainingStarter` / `TrainingStopper` / `ProgressRecordingScheduler` など)
+  - 入力ポート: 外部(HTTP ハンドラ)がユースケースを呼ぶもの(今回追加する)
+- `usecases/src/training/ports.rs` の中で、コメントで「入力ポート」と「出力ポート」に分けて置く(新規ファイルは作らない)
+- 静的ディスパッチのジェネリクス `U` で受け取る(新しい crate が不要で、実行時コストもない)。`Arc<dyn ...>` にすると `AppState` からジェネリクスを完全に消せるが、`async-trait` か `Pin<Box<dyn Future>>` が必要になるため、今回は採用しない
+
+```rust
+// usecases/src/training/ports.rs
+// ===== 入力ポート(HTTP などの外部 → ユースケース) =====
+pub trait StartTrainingUseCase {
+    fn execute(&self, config: &TrainingConfig)
+        -> impl Future<Output = Result<JobId, StartTrainingError>> + Send;
+}
+
+// ===== 出力ポート(ユースケース → インフラ) =====
+pub trait TrainingStarter { ... }
+pub trait TrainingStopper { ... }
+pub trait ProgressRecordingScheduler { ... }
+
+// start_training.rs
+impl<S, R, G, K> StartTrainingUseCase for StartTraining<S, R, G, K> where /* 各出力ポートの境界 + Sync */ { ... }
+
+// adapters/src/http/handler.rs
+pub async fn start_training<U>(State(start): State<Arc<U>>, Json(dto): Json<TrainingConfigDto>) -> ...
+where
+    U: StartTrainingUseCase + Send + Sync + 'static,
+```
+
+**手順**
+1. `StartTraining` だけで入力ポートを導入する(`StartTrainingUseCase`)。handler / state / router の `S, R, G, K` を `U` 1 つに置き換える
+2. 問題がなければ、他のユースケース(`GetCapabilities` / `GetTrainingProcess` / `StopTraining` / `ValidateTrainingConfig`)にも広げる
+3. `AppState` の型パラメータを「ユースケース 1 つにつき 1 つ」にする(現状の 9 個から 5 個程度)
+4. 同時に、`AppState.record_training` と型パラメータ `D` を削除する(進捗記録はワーカー経由になり、HTTP 層では使わないため)
+5. 作業 10 の「ポートのトレイトを `ports.rs` にまとめる」と合わせて進めてもよい
+
+**注意点**
+- 返す Future に `+ Send` を付けるため、`StartTraining` の中身(`S, R, G, K`)は `Sync` である必要がある(`&self` を `.await` をまたいで保持するため)
+- ハンドラのテストで、ユースケースのフェイク(`StartTrainingUseCase` を実装した小さな構造体)を直接差し込めるようになる
+
+**完了条件**
+- `StartTraining` に出力ポートを追加・削除しても、`adapters/src/http/` 以下を修正せずにビルドが通る
+- `AppState` / `router` の型パラメータがユースケースの数と一致している

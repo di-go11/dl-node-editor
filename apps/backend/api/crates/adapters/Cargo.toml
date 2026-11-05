@@ -22,3 +22,6 @@ tokio = {version = "1.53.1", features = ["rt","time"]}
 
 [build-dependencies]
 tonic-prost-build = "0.14.6"
+
+[dev-dependencies]
+tokio = { version = "1.53.1", features = ["test-util", "macros", "rt"] }

@@ -227,7 +227,7 @@ mod tests {
         insert_model_result: Result<(), RecordError>,
         insert_training_run_result: Result<(), RecordError>,
     ) -> (
-        StartTraining<FakeStarter, FakeRepository, FakeIdGenerator>,
+        StartTraining<FakeStarter, FakeRepository, FakeIdGenerator, FakeScheduler>,
         CallLog,
     ) {
         let log = CallLog::default();
@@ -243,6 +243,9 @@ mod tests {
                 run_model_id: Mutex::new(None),
             },
             FakeIdGenerator,
+            FakeScheduler {
+                job_ids: Mutex::new(vec![]),
+            },
         );
         (usecase, log)
     }
