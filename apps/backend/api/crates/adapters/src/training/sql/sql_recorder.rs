@@ -9,14 +9,16 @@ use entities::training::ModelId;
 use entities::training::TrainingJobStatus;
 use entities::training::TrainingProcess;
 use sqlx::SqlitePool;
-use usecases::training::{RepositoryError, TrainingProgressRecorder, TrainingRunRegistar};
+use usecases::training::{
+    RecordError, RepositoryError, TrainingProgressRecorder, TrainingRunRegistar,
+};
 // 学習実行情報をDBへ保存する処理3つ
 impl TrainingRunRegistar for SqliteTrainingRepository {
     async fn insert_model(
         &self,
         model_id: &ModelId,
         model_name: &str,
-    ) -> Result<(), RepositoryError> {
+    ) -> Result<(), RecordError> {
         // TODO: ModelGraphのJSON化を実装したらmodel_graphもinsertする
         sqlx::query("INSERT INTO model (model_id,model_name,created_at)VALUES (?,?,?)")
             .bind(model_id.as_str())
@@ -32,7 +34,7 @@ impl TrainingRunRegistar for SqliteTrainingRepository {
         job_id: &JobId,
         config: &TrainingConfig,
         model_id: &ModelId,
-    ) -> Result<(), RepositoryError> {
+    ) -> Result<(), RecordError> {
         let mut connect = self
             .pool
             .begin()
@@ -160,7 +162,7 @@ impl TrainingRunRegistar for SqliteTrainingRepository {
         &self,
         job_id: &JobId,
         status: &TrainingJobStatus,
-    ) -> Result<(), RepositoryError> {
+    ) -> Result<(), RecordError> {
         let mut connect = self
             .pool
             .begin()
@@ -198,7 +200,7 @@ impl TrainingProgressRecorder for SqliteTrainingRepository {
         job_id: &JobId,
         epoch: u32,
         process: &TrainingProcess,
-    ) -> Result<(), RepositoryError> {
+    ) -> Result<(), RecordError> {
         let epoch_elapsed_ms = i64::try_from(process.epoch_elapsed_time.as_millis())
             .map_err(|e| RepositoryError::InvalidData(e.to_string()))?;
         let mut connect = self

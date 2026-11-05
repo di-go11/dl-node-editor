@@ -45,6 +45,7 @@ mod tests {
     use super::StartTrainingError;
     use super::TrainingRunRegistar;
     use super::TrainingStarter;
+    use crate::training::RecordError;
     use crate::training::RepositoryError;
     use entities::model::layer::{ActivationSpec, ActivationType, Conv2DSpec, NodeSpec};
     use entities::model::{ModelGraph, Node, NodeInput, PortRef};
@@ -164,8 +165,8 @@ mod tests {
     }
 
     struct FakeRepository {
-        insert_model_result: Result<(), RepositoryError>,
-        insert_training_run_result: Result<(), RepositoryError>,
+        insert_model_result: Result<(), RecordError>,
+        insert_training_run_result: Result<(), RecordError>,
         log: CallLog,
         // training_runsに紐づけられたmodel_idを記録する
         run_model_id: Mutex<Option<ModelId>>,
@@ -175,7 +176,7 @@ mod tests {
             &self,
             _model_id: &ModelId,
             _model_name: &str,
-        ) -> Result<(), RepositoryError> {
+        ) -> Result<(), RecordError> {
             self.log.lock().unwrap().push("insert_model");
             self.insert_model_result.clone()
         }
@@ -184,7 +185,7 @@ mod tests {
             _job_id: &JobId,
             _config: &TrainingConfig,
             model_id: &ModelId,
-        ) -> Result<(), RepositoryError> {
+        ) -> Result<(), RecordError> {
             self.log.lock().unwrap().push("insert_training_run");
             *self.run_model_id.lock().unwrap() = Some(model_id.clone());
             self.insert_training_run_result.clone()
@@ -193,7 +194,7 @@ mod tests {
             &self,
             _job_id: &JobId,
             _status: &TrainingJobStatus,
-        ) -> Result<(), RepositoryError> {
+        ) -> Result<(), RecordError> {
             self.log.lock().unwrap().push("update_training_run");
             Ok(())
         }
@@ -209,8 +210,8 @@ mod tests {
 
     fn gen_usecase(
         start_result: Result<JobId, StartTrainingError>,
-        insert_model_result: Result<(), RepositoryError>,
-        insert_training_run_result: Result<(), RepositoryError>,
+        insert_model_result: Result<(), RecordError>,
+        insert_training_run_result: Result<(), RecordError>,
     ) -> (
         StartTraining<FakeStarter, FakeRepository, FakeIdGenerator>,
         CallLog,
@@ -237,9 +238,7 @@ mod tests {
         let expected = JobId::new("1").unwrap();
         let (usecase, log) = gen_usecase(Ok(expected.clone()), Ok(()), Ok(()));
 
-        let result = usecase
-            .execute(&gen_normal_order())
-            .await;
+        let result = usecase.execute(&gen_normal_order()).await;
 
         assert_eq!(result, Ok(expected));
         // modelはtraining_runsから外部キーで参照されるため、先にinsertされる
@@ -259,9 +258,7 @@ mod tests {
         let err = StartTrainingError::StartOrderFailed("server down".to_string());
         let (usecase, log) = gen_usecase(Err(err.clone()), Ok(()), Ok(()));
 
-        let result = usecase
-            .execute(&gen_normal_order())
-            .await;
+        let result = usecase.execute(&gen_normal_order()).await;
 
         assert_eq!(result, Err(err));
         // 学習が始まっていないので、training_runsにはinsertしない
@@ -272,13 +269,11 @@ mod tests {
     async fn does_not_start_when_insert_model_fails() {
         let (usecase, log) = gen_usecase(
             Ok(JobId::new("1").unwrap()),
-            Err(RepositoryError::QueryFailed("unique".to_string())),
+            Err(RecordError::RecordFailed("unique".to_string())),
             Ok(()),
         );
 
-        let result = usecase
-            .execute(&gen_normal_order())
-            .await;
+        let result = usecase.execute(&gen_normal_order()).await;
 
         assert!(matches!(result, Err(StartTrainingError::RecordFailed(_))));
         // 保存できない学習は始めない
@@ -290,12 +285,10 @@ mod tests {
         let (usecase, _log) = gen_usecase(
             Ok(JobId::new("1").unwrap()),
             Ok(()),
-            Err(RepositoryError::QueryFailed("db locked".to_string())),
+            Err(RecordError::RecordFailed("db locked".to_string())),
         );
 
-        let result = usecase
-            .execute(&gen_normal_order())
-            .await;
+        let result = usecase.execute(&gen_normal_order()).await;
 
         assert!(matches!(result, Err(StartTrainingError::RecordFailed(_))));
     }
