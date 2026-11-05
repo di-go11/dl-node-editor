@@ -4,12 +4,10 @@ use std::pin::Pin;
 
 use entities::training::{JobId, TrainingProcess};
 use tonic::{transport::Channel, Code, Status};
-use usecases::training::{
-    TrainingEpochHistoryProvider, TrainingProgressProvider, TrainingProgressProviderError,
-};
+use usecases::training::{TrainingProgressProvider, TrainingProgressProviderError};
 
-use crate::pb::training::v1::StreamProgressRequest;
 use crate::pb::training::v1::stream_progress_request::StartPosition;
+use crate::pb::training::v1::StreamProgressRequest;
 
 use crate::pb::training::v1::training_service_client::TrainingServiceClient;
 
@@ -38,9 +36,7 @@ impl TrainingProgressProvider for GrpcTrainingProgressProvider {
         // 履歴は読まず、最新の状態だけを受け取る
         self.open_stream(job_id, None).await
     }
-}
 
-impl TrainingEpochHistoryProvider for GrpcTrainingProgressProvider {
     type EpochStream = ProcessStream;
     async fn stream_epoch_after(
         &self,

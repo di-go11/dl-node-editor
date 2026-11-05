@@ -34,8 +34,7 @@ impl<R: TrainingRecordReader> ValidateTrainingConfig<R> {
 mod tests {
     use super::ValidateTrainingConfig;
     use super::ValidateTrainingConfigError;
-    use crate::training::RepositoryError;
-    use crate::training::read_training_record::TrainingProgressReader;
+    use crate::training::RecordError;
     use crate::training::read_training_record::TrainingRecordReader;
     use entities::model::ModelGraph;
     use entities::training::JobId;
@@ -79,27 +78,23 @@ mod tests {
         }
     }
 
+    // ValidateTrainingConfigが呼ぶのはfind_model_id_by_nameだけなので、
+    // その戻り値だけを持たせる。他のメソッドは呼ばれたらテスト失敗にする
     struct FakeReader {
-        result: Result<Option<ModelId>, RepositoryError>,
-    }
-    struct FakeProgressReader {
-        result_last_saved_epoch: Result<u32, RepositoryError>,
-        result_find_running_job_ids: Result<Vec<JobId>, RepositoryError>,
+        result: Result<Option<ModelId>, RecordError>,
     }
     impl TrainingRecordReader for FakeReader {
         async fn find_model_id_by_name(
             &self,
             _model_name: &str,
-        ) -> Result<Option<ModelId>, RepositoryError> {
+        ) -> Result<Option<ModelId>, RecordError> {
             self.result.clone()
         }
-    }
-    impl TrainingProgressReader for FakeProgressReader {
-        async fn last_saved_epoch(&self, _job_id: &JobId) -> Result<u32, RepositoryError> {
-            unimplemented!()
+        async fn last_saved_epoch(&self, _job_id: &JobId) -> Result<u32, RecordError> {
+            unimplemented!("ValidateTrainingConfig does not call last_saved_epoch")
         }
-        async fn find_running_job_ids(&self) -> Result<Vec<JobId>, RepositoryError> {
-            unimplemented!()
+        async fn find_running_job_ids(&self) -> Result<Vec<JobId>, RecordError> {
+            unimplemented!("ValidateTrainingConfig does not call find_running_job_ids")
         }
     }
 
@@ -131,7 +126,7 @@ mod tests {
     #[tokio::test]
     async fn returns_read_failed_when_select_fails() {
         let usecase = ValidateTrainingConfig::new(FakeReader {
-            result: Err(RepositoryError::QueryFailed("db locked".to_string())),
+            result: Err(RecordError::RecordFailed("db locked".to_string())),
         });
 
         let result = usecase.execute(&gen_config("any")).await;

@@ -9,9 +9,7 @@ use entities::training::ModelId;
 use entities::training::TrainingJobStatus;
 use entities::training::TrainingProcess;
 use sqlx::SqlitePool;
-use usecases::training::{
-    RepositoryError, TrainingProgressRecorder, TrainingResultRegister, TrainingRunRegistar,
-};
+use usecases::training::{RepositoryError, TrainingProgressRecorder, TrainingRunRegistar};
 // 学習実行情報をDBへ保存する処理3つ
 impl TrainingRunRegistar for SqliteTrainingRepository {
     async fn insert_model(

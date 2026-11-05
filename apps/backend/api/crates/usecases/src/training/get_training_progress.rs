@@ -2,17 +2,24 @@ use super::error::TrainingProgressProviderError;
 use entities::training::JobId;
 use entities::training::TrainingProcess;
 use futures_core::Stream;
-
 // 学習の「最新の状態」だけを受け取るためのポート(HTTPの状態取得・SSE用)。
 // 待っている間に複数の更新があった場合、途中の更新は飛ばされる。
 pub trait TrainingProgressProvider {
-    type ProgressStream: Stream<Item = Result<TrainingProcess, TrainingProgressProviderError>> + Send; // c++から何度も届く通信(Stream) ItemはStreamが持つ関連型で通信で届く1件ごとの型をvariantなどで決めることができる今回のように。
+    type ProgressStream: Stream<Item = Result<TrainingProcess, TrainingProgressProviderError>>
+        + Send; // c++から何度も届く通信(Stream) ItemはStreamが持つ関連型で通信で届く1件ごとの型をvariantなどで決めることができる今回のように。
     // Sendはその値を別スレッドに移しても安全であるということを示す。c++では原則スレッド内のものを移すことは禁止だったがこっちではOK
     // typeはエイリアスみたいなもの. このtraitを実装しているものでその型が定義される、
     fn stream_progress(
         &self,
         job_id: &JobId,
     ) -> impl Future<Output = Result<Self::ProgressStream, TrainingProgressProviderError>> + Send; // C++サーバーとのストリームを開くための関数(一回の通信だからFuture) OutputはFutureによる何らかのアクションで届く値こっちもvariantで動的に決めることができる。
+    // Straem<Item=Result<TrainingProcess,TrainingProgressProviderError>>+Sendを満たす何らかの型を実装側が決める。
+    type EpochStream: Stream<Item = Result<TrainingProcess, TrainingProgressProviderError>> + Send;
+    fn stream_epoch_after(
+        &self,
+        job_id: &JobId,
+        after_epoch: u32,
+    ) -> impl Future<Output = Result<Self::EpochStream, TrainingProgressProviderError>> + Send;
 }
 
 pub struct GetTrainingProcess<P: TrainingProgressProvider> {
@@ -59,6 +66,16 @@ mod tests {
             &self,
             _job_id: &JobId,
         ) -> Result<Self::ProgressStream, TrainingProgressProviderError> {
+            self.result.clone().map(futures_util::stream::iter)
+        }
+        type EpochStream = futures_util::stream::Iter<
+            std::vec::IntoIter<Result<TrainingProcess, TrainingProgressProviderError>>,
+        >;
+        async fn stream_epoch_after(
+            &self,
+            _job_id: &JobId,
+            _after_epoch: u32,
+        ) -> Result<Self::EpochStream, TrainingProgressProviderError> {
             self.result.clone().map(futures_util::stream::iter)
         }
     }

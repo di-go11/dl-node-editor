@@ -36,12 +36,6 @@ pub enum StopTrainingError {
     NotFound(String),
 }
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
-pub enum StreamError {
-    // Streamの読み込みに失敗
-    #[error("Failed read stream: {0}")]
-    FailedReadStream(String),
-}
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum TrainingProgressProviderError {
     // 通信できなかった(C++のサーバーが起動していない. タイムアウトなど)
     #[error("training-process-provider is unavailable: {0}")]
@@ -84,11 +78,19 @@ pub enum RecordError {
     // 終了メッセージ前にストリームが閉じた
     #[error("Stream finished before getting finish message: {0}")]
     StreamEnded(String),
+    // C++とのストリームを開けなかった(ジョブが存在しない・サーバーに繋がらないなど)
+    // InvalidDataと同じ型を持つため#[from]は付けられない。map_errで明示的に変換する
     #[error("Failed to open epoch stream: {0}")]
-    StreamOpenFailed(#[from] StreamError),
-    // 不正なデータの取り出しによるエラー
+    StreamOpenFailed(TrainingProgressProviderError),
+    // c++からの不正データ取り出しによるエラー
     #[error("Invalid data received from training process provider: {0}")]
-    InvalidData(#[from] TrainingProgressProviderError),
+    InvalidProgressProvidedData(#[from] TrainingProgressProviderError),
+    // 不正データ書き込みによるエラー
+    #[error("Invalid data received: {0}")]
+    InvalidData(String),
+    // リポジトリ操作のミスによるエラー
+    #[error("Failed to operate repository: {0}")]
+    FailedOperateRepository(#[from] RepositoryError),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]

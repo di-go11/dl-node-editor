@@ -1,4 +1,3 @@
-use std::fmt;
 use thiserror::Error;
 
 #[derive(Debug, PartialEq, Eq, Error)]
@@ -22,7 +21,6 @@ impl JobId {
         &self.0
     }
 }
-
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TrainingJobStatus {
