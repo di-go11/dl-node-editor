@@ -2,8 +2,6 @@ use crate::training::RecordError;
 use crate::training::TrainingProgressProvider;
 use crate::training::TrainingRecordReader;
 
-use super::RepositoryError;
-
 use entities::training::TrainingJobStatus;
 use entities::training::TrainingProcess;
 use entities::training::config::TrainingConfig;
@@ -97,7 +95,7 @@ impl<
                             e.to_string()
                         ))
                     })?;
-            } else if (status == TrainingJobStatus::Stopped) {
+            } else if (status.is_finished()) {
                 self.repository
                     .update_training_run(job_id, &status)
                     .await
@@ -108,6 +106,7 @@ impl<
                             e.to_string()
                         ))
                     })?;
+                break;
             }
         }
         Ok(())
