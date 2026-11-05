@@ -1,8 +1,7 @@
-use entities::training::ModelId;
 use entities::training::{config::TrainingConfig, JobId};
 use tonic::{transport::Channel, Code, Status};
 use usecases::training::StartTrainingError;
-use usecases::training::{ModelIdGenerator, TrainingStarter};
+use usecases::training::TrainingStarter;
 
 use crate::pb::training::v1::StartTrainingRequest as StartTrainingRequestPb;
 use crate::pb::training::v1::{self as training_pb};

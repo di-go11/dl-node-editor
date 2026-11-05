@@ -5,12 +5,15 @@ use adapters::GrpcTrainingStopper;
 use adapters::connect_database;
 use adapters::http::AppState;
 use adapters::http::router;
+use adapters::pb::training::v1::TrainingStatus::Running;
 use adapters::{SqliteTrainingRepository, UuidModelGenerator};
 use std::sync::Arc;
 use tonic::transport::Channel;
 use usecases::capabilities::GetCapabilities;
+use usecases::training::RecordError;
 use usecases::training::{
-    GetTrainingProcess, StartTraining, StopTraining, ValidateTrainingConfig,
+    GetTrainingProcess, RecordTrainingProgress, StartTraining, StopTraining, TrainingRecordReader,
+    ValidateTrainingConfig,
 };
 
 #[tokio::main]
@@ -24,6 +27,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Databaseへのconnect
     let database_url = std::env::var("DATABASE_URL")?;
     let pool = connect_database(&database_url).await?;
+
+    // 記録済み学習process
+    let record_process = Arc::new(RecordTrainingProgress::new(
+        GrpcCapabilityProvider::new(channel.clone()),
+        SqliteTrainingRepository::new(pool.clone()),
+    ));
+    let runnning_jobs = SqliteTrainingRepository::new(pool.clone())
+        .find_running_job_ids()
+        .await?;
+    for job_id in runnning_jobs {
+        let record = Arc::clone(&record_process);
+        tokio::spawn(async move {})
+    }
 
     // アダプターをユースケースに渡して、AppStateにまとめる
     let state = AppState {

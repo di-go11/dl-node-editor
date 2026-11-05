@@ -10,9 +10,10 @@ use axum::{
 use entities::training::{config::TrainingConfig, JobId, TrainingProcess};
 use futures_util::StreamExt;
 use usecases::training::{
-    GetTrainingProcess, ModelIdGenerator, StartTraining, StopTraining, TrainingProgressProvider,
-    TrainingProgressProviderError, TrainingRecordReader, TrainingRunRegistar, TrainingStarter,
-    TrainingStopper, ValidateTrainingConfig, ValidateTrainingConfigError,
+    GetTrainingProcess, ModelIdGenerator, RecordTrainingProgress, StartTraining, StopTraining,
+    TrainingProgressProvider, TrainingProgressProviderError, TrainingProgressRecorder,
+    TrainingRecordReader, TrainingRunRegistar, TrainingStarter, TrainingStopper,
+    ValidateTrainingConfig, ValidateTrainingConfigError,
 };
 use usecases::{
     capabilities::{CapabilityProvider, GetCapabilities},
@@ -21,21 +22,29 @@ use usecases::{
 
 use axum::response::sse::{Event, KeepAlive, Sse};
 use futures_core::Stream;
-use std::convert::Infallible;
 use std::sync::Arc;
+use std::{convert::Infallible, eprint};
 
 // 新規学習の開始POSTリクエストハンドラ(学習再開は別のエンドポイントにする)
-pub async fn start_training<S, R, G>(
-    State(usecase): State<Arc<StartTraining<S, R, G>>>,
+pub async fn start_training<S, R, G, P, D>(
+    State(start): State<Arc<StartTraining<S, R, G>>>,
+    State(record): State<Arc<RecordTrainingProgress<P, D>>>,
     Json(dto): Json<TrainingConfigDto>,
 ) -> Result<Json<StartTrainingResponseDto>, StatusCode>
 where
     S: TrainingStarter + Send + Sync + 'static,
     R: TrainingRunRegistar + Send + Sync + 'static,
     G: ModelIdGenerator + Send + Sync + 'static,
+    P: TrainingProgressProvider + Send + Sync + 'static,
+    D: TrainingProgressRecorder
+        + TrainingRecordReader
+        + TrainingRunRegistar
+        + Send
+        + Sync
+        + 'static,
 {
     let config = TrainingConfig::from(dto);
-    let job_id = usecase.execute(&config).await.map_err(|e| match e {
+    let job_id = start.execute(&config).await.map_err(|e| match e {
         StartTrainingError::StartOrderFailed(_) => StatusCode::BAD_GATEWAY,
         StartTrainingError::ConversionToProtoFailed(_) | StartTrainingError::InvalidConfig(_) => {
             StatusCode::UNPROCESSABLE_ENTITY
@@ -43,6 +52,18 @@ where
         StartTrainingError::AlreadyRunning(_) => StatusCode::CONFLICT,
         StartTrainingError::RecordFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
     })?;
+    // 記録はバックグラウンドで動かす(学習が終わるまで続くため、awaitしない)
+    // spawnするタスクは'staticである必要があるため、ArcとJobIdをcloneしてmoveで渡す。
+    let record = Arc::clone(&record);
+    let record_job_id = job_id.clone();
+    tokio::spawn(async move {
+        if let Err(e) = record.execute(&record_job_id).await {
+            eprintln!(
+                "failed to record training progress ({}): {e}",
+                record_job_id.as_str()
+            );
+        }
+    });
     Ok(Json(job_id.into()))
 }
 

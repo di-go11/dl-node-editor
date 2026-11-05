@@ -16,7 +16,9 @@ pub use get_training_progress::{GetTrainingProcess, TrainingProgressProvider};
 pub use model_id_generator::ModelIdGenerator;
 pub use ports::{TrainingStarter, TrainingStopper};
 pub use read_training_record::TrainingRecordReader;
-pub use record_training_process::{TrainingProgressRecorder, TrainingRunRegistar};
+pub use record_training_process::{
+    RecordTrainingProgress, TrainingProgressRecorder, TrainingRunRegistar,
+};
 pub use start_training::StartTraining;
 pub use stop_training::StopTraining;
 pub use validate_training_config::ValidateTrainingConfig;

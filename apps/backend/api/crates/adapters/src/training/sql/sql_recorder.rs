@@ -8,17 +8,13 @@ use entities::training::Metrics;
 use entities::training::ModelId;
 use entities::training::TrainingJobStatus;
 use entities::training::TrainingProcess;
-use sqlx::SqlitePool;
+
 use usecases::training::{
     RecordError, RepositoryError, TrainingProgressRecorder, TrainingRunRegistar,
 };
 // 学習実行情報をDBへ保存する処理3つ
 impl TrainingRunRegistar for SqliteTrainingRepository {
-    async fn insert_model(
-        &self,
-        model_id: &ModelId,
-        model_name: &str,
-    ) -> Result<(), RecordError> {
+    async fn insert_model(&self, model_id: &ModelId, model_name: &str) -> Result<(), RecordError> {
         // TODO: ModelGraphのJSON化を実装したらmodel_graphもinsertする
         sqlx::query("INSERT INTO model (model_id,model_name,created_at)VALUES (?,?,?)")
             .bind(model_id.as_str())

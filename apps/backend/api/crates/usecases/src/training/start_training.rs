@@ -46,7 +46,6 @@ mod tests {
     use super::TrainingRunRegistar;
     use super::TrainingStarter;
     use crate::training::RecordError;
-    use crate::training::RepositoryError;
     use entities::model::layer::{ActivationSpec, ActivationType, Conv2DSpec, NodeSpec};
     use entities::model::{ModelGraph, Node, NodeInput, PortRef};
     use entities::training::config::{
