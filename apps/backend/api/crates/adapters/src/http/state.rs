@@ -1,16 +1,16 @@
 use usecases::{
     capabilities::{CapabilityProvider, GetCapabilities},
     training::{
-        GetTrainingProcess, ModelIdGenerator, StartTraining, StopTraining, TrainingProgressProvider,
-        TrainingRecordReader, TrainingRunRegistar, TrainingStarter, TrainingStopper,
-        ValidateTrainingConfig,
+        GetTrainingProcess, ModelIdGenerator, RecordTrainingProgress, StartTraining, StopTraining,
+        TrainingProgressProvider, TrainingProgressRecorder, TrainingRecordReader,
+        TrainingRunRegistar, TrainingStarter, TrainingStopper, ValidateTrainingConfig,
     },
 };
 
 use axum::extract::FromRef;
 use std::sync::Arc;
 
-pub struct AppState<C, S, R, G, V, P, T>
+pub struct AppState<C, S, R, G, V, P, T, D>
 // pub struct AppState<C: CapabilityProvider, S: TrainingStarter, P: TrainingProgressProvider, T: TrainingStopper>と同じ
 where
     C: CapabilityProvider,
@@ -20,6 +20,7 @@ where
     V: TrainingRecordReader,
     P: TrainingProgressProvider,
     T: TrainingStopper,
+    D: TrainingProgressRecorder + TrainingRecordReader + TrainingRunRegistar,
 {
     // Arcを使用すして複数の変数で共有するためのスマートポインタにする
     pub get_capabilities: Arc<GetCapabilities<C>>,
@@ -27,9 +28,13 @@ where
     pub get_process: Arc<GetTrainingProcess<P>>,
     pub stop_training: Arc<StopTraining<T>>,
     pub validate_training: Arc<ValidateTrainingConfig<V>>,
+    // TODO(設計改善): AppStateはHTTPハンドラが使うユースケースだけを持つべき。
+    // 記録の起動をProgressRecordingSchedulerポート経由にしたら、このフィールドと型パラメータDを削除する。
+    // 詳細は handler.rs の start_training のコメントを参照。
+    pub record_training: Arc<RecordTrainingProgress<P, D>>,
 }
 
-impl<C, S, R, G, V, P, T> Clone for AppState<C, S, R, G, V, P, T>
+impl<C, S, R, G, V, P, T, D> Clone for AppState<C, S, R, G, V, P, T, D>
 where
     C: CapabilityProvider,
     S: TrainingStarter,
@@ -38,6 +43,7 @@ where
     V: TrainingRecordReader,
     P: TrainingProgressProvider,
     T: TrainingStopper,
+    D: TrainingProgressRecorder + TrainingRecordReader + TrainingRunRegistar,
 {
     fn clone(&self) -> Self {
         Self {
@@ -46,11 +52,12 @@ where
             get_process: Arc::clone(&self.get_process),
             stop_training: Arc::clone(&self.stop_training),
             validate_training: Arc::clone(&self.validate_training),
+            record_training: Arc::clone(&self.record_training),
         }
     }
 }
 
-impl<C, S, R, G, V, P, T> FromRef<AppState<C, S, R, G, V, P, T>> for Arc<GetCapabilities<C>>
+impl<C, S, R, G, V, P, T, D> FromRef<AppState<C, S, R, G, V, P, T, D>> for Arc<GetCapabilities<C>>
 where
     C: CapabilityProvider,
     S: TrainingStarter,
@@ -59,13 +66,15 @@ where
     V: TrainingRecordReader,
     P: TrainingProgressProvider,
     T: TrainingStopper,
+    D: TrainingProgressRecorder + TrainingRecordReader + TrainingRunRegistar,
 {
-    fn from_ref(app_state: &AppState<C, S, R, G, V, P, T>) -> Self {
+    fn from_ref(app_state: &AppState<C, S, R, G, V, P, T, D>) -> Self {
         Arc::clone(&app_state.get_capabilities)
     }
 }
 
-impl<C, S, R, G, V, P, T> FromRef<AppState<C, S, R, G, V, P, T>> for Arc<StartTraining<S, R, G>>
+impl<C, S, R, G, V, P, T, D> FromRef<AppState<C, S, R, G, V, P, T, D>>
+    for Arc<StartTraining<S, R, G>>
 where
     C: CapabilityProvider,
     S: TrainingStarter,
@@ -74,13 +83,15 @@ where
     V: TrainingRecordReader,
     P: TrainingProgressProvider,
     T: TrainingStopper,
+    D: TrainingProgressRecorder + TrainingRecordReader + TrainingRunRegistar,
 {
-    fn from_ref(app_state: &AppState<C, S, R, G, V, P, T>) -> Self {
+    fn from_ref(app_state: &AppState<C, S, R, G, V, P, T, D>) -> Self {
         Arc::clone(&app_state.start_training)
     }
 }
 
-impl<C, S, R, G, V, P, T> FromRef<AppState<C, S, R, G, V, P, T>> for Arc<GetTrainingProcess<P>>
+impl<C, S, R, G, V, P, T, D> FromRef<AppState<C, S, R, G, V, P, T, D>>
+    for Arc<GetTrainingProcess<P>>
 where
     C: CapabilityProvider,
     S: TrainingStarter,
@@ -89,13 +100,14 @@ where
     V: TrainingRecordReader,
     P: TrainingProgressProvider,
     T: TrainingStopper,
+    D: TrainingProgressRecorder + TrainingRecordReader + TrainingRunRegistar,
 {
-    fn from_ref(app_state: &AppState<C, S, R, G, V, P, T>) -> Self {
+    fn from_ref(app_state: &AppState<C, S, R, G, V, P, T, D>) -> Self {
         Arc::clone(&app_state.get_process)
     }
 }
 
-impl<C, S, R, G, V, P, T> FromRef<AppState<C, S, R, G, V, P, T>> for Arc<StopTraining<T>>
+impl<C, S, R, G, V, P, T, D> FromRef<AppState<C, S, R, G, V, P, T, D>> for Arc<StopTraining<T>>
 where
     C: CapabilityProvider,
     S: TrainingStarter,
@@ -104,13 +116,15 @@ where
     V: TrainingRecordReader,
     P: TrainingProgressProvider,
     T: TrainingStopper,
+    D: TrainingProgressRecorder + TrainingRecordReader + TrainingRunRegistar,
 {
-    fn from_ref(app_state: &AppState<C, S, R, G, V, P, T>) -> Self {
+    fn from_ref(app_state: &AppState<C, S, R, G, V, P, T, D>) -> Self {
         Arc::clone(&app_state.stop_training)
     }
 }
 
-impl<C, S, R, G, V, P, T> FromRef<AppState<C, S, R, G, V, P, T>> for Arc<ValidateTrainingConfig<V>>
+impl<C, S, R, G, V, P, T, D> FromRef<AppState<C, S, R, G, V, P, T, D>>
+    for Arc<ValidateTrainingConfig<V>>
 where
     C: CapabilityProvider,
     S: TrainingStarter,
@@ -119,8 +133,26 @@ where
     V: TrainingRecordReader,
     P: TrainingProgressProvider,
     T: TrainingStopper,
+    D: TrainingProgressRecorder + TrainingRecordReader + TrainingRunRegistar,
 {
-    fn from_ref(app_state: &AppState<C, S, R, G, V, P, T>) -> Self {
+    fn from_ref(app_state: &AppState<C, S, R, G, V, P, T, D>) -> Self {
         Arc::clone(&app_state.validate_training)
+    }
+}
+
+impl<C, S, R, G, V, P, T, D> FromRef<AppState<C, S, R, G, V, P, T, D>>
+    for Arc<RecordTrainingProgress<P, D>>
+where
+    C: CapabilityProvider,
+    S: TrainingStarter,
+    R: TrainingRunRegistar,
+    G: ModelIdGenerator,
+    V: TrainingRecordReader,
+    P: TrainingProgressProvider,
+    T: TrainingStopper,
+    D: TrainingProgressRecorder + TrainingRecordReader + TrainingRunRegistar,
+{
+    fn from_ref(app_state: &AppState<C, S, R, G, V, P, T, D>) -> Self { 
+        Arc::clone(&app_state.record_training)
     }
 }

@@ -94,7 +94,7 @@ impl<
                         RecordError::RecordFailed(format!(
                             "Failed to record training process for job_id {}: {}",
                             job_id.as_str(),
-                            e.to_string()
+                            e
                         ))
                     })?;
             } else if status.is_finished() {
@@ -105,7 +105,7 @@ impl<
                         RecordError::RecordFailed(format!(
                             "Failed to update training_run for job_id {}: {}",
                             job_id.as_str(),
-                            e.to_string()
+                            e
                         ))
                     })?;
                 return Ok(());

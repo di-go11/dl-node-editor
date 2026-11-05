@@ -26,6 +26,16 @@ use std::sync::Arc;
 use std::{convert::Infallible, eprint};
 
 // 新規学習の開始POSTリクエストハンドラ(学習再開は別のエンドポイントにする)
+//
+// TODO(設計改善): 「学習を開始したら進捗記録も始める」は業務ルールなので、HTTPハンドラで
+// 2つのユースケースを組み合わせるべきではない。以下のようにリファクタする予定。
+//   1. usecases に ProgressRecordingScheduler トレイト(fn schedule(&self, job_id: JobId))を定義する
+//   2. StartTraining がこのポートを持ち、開始に成功したら scheduler.schedule(job_id) を呼ぶ
+//   3. adapters 側で mpsc::Sender<JobId> を包んだ実装を作る
+//   4. main(composition root)で受信ワーカーを1つ立ち上げ、job_idごとに
+//      RecordTrainingProgress::execute を spawn する。起動時の RUNNING ジョブ再開も同じ Sender に流す
+// これで AppState / router / このハンドラから RecordTrainingProgress と型パラメータ P, D を削除できる。
+// (StartTraining が RecordTrainingProgress を直接持つ案は、ユースケースが tokio に依存するため採用しない)
 pub async fn start_training<S, R, G, P, D>(
     State(start): State<Arc<StartTraining<S, R, G>>>,
     State(record): State<Arc<RecordTrainingProgress<P, D>>>,
