@@ -1,3 +1,5 @@
+use crate::training::ProgressRecordingScheduler;
+
 use super::ModelIdGenerator;
 use super::TrainingRunRegistar;
 use super::TrainingStarter;
@@ -6,18 +8,22 @@ use entities::training::JobId;
 use entities::training::ModelId;
 use entities::training::config::TrainingConfig;
 
-pub struct StartTraining<S: TrainingStarter, R: TrainingRunRegistar, G: ModelIdGenerator> {
+pub struct StartTraining<S, R, G, K> {
     starter: S,
     repository: R,
     id_generator: G,
+    scheduler: K,
 }
 
-impl<S: TrainingStarter, R: TrainingRunRegistar, G: ModelIdGenerator> StartTraining<S, R, G> {
-    pub fn new(starter: S, repository: R, id_generator: G) -> Self {
+impl<S: TrainingStarter, R: TrainingRunRegistar, G: ModelIdGenerator, K: ProgressRecordingScheduler>
+    StartTraining<S, R, G, K>
+{
+    pub fn new(starter: S, repository: R, id_generator: G, scheduler: K) -> Self {
         Self {
             starter,
             repository,
             id_generator,
+            scheduler,
         }
     }
     // 新規学習を開始する(学習再開は別のユースケースにする)。
@@ -34,6 +40,7 @@ impl<S: TrainingStarter, R: TrainingRunRegistar, G: ModelIdGenerator> StartTrain
             .insert_training_run(&job_id, config, &model_id)
             .await
             .map_err(|e| StartTrainingError::RecordFailed(e.to_string()))?;
+        self.scheduler.schedule(job_id.clone()); // insert_training_runが成功したときだけ呼ぶ、
         Ok(job_id)
     }
 }
@@ -45,6 +52,7 @@ mod tests {
     use super::StartTrainingError;
     use super::TrainingRunRegistar;
     use super::TrainingStarter;
+    use crate::training::ProgressRecordingScheduler;
     use crate::training::RecordError;
     use entities::model::layer::{ActivationSpec, ActivationType, Conv2DSpec, NodeSpec};
     use entities::model::{ModelGraph, Node, NodeInput, PortRef};
@@ -205,6 +213,13 @@ mod tests {
         fn generate(&self) -> ModelId {
             ModelId::new("model-1").unwrap()
         }
+    }
+    // TODO ProgressRecordingSchedukerの内部処理が決まったらテストも作る。
+    struct FakeScheduler {
+        job_ids: Mutex<Vec<JobId>>,
+    }
+    impl ProgressRecordingScheduler for FakeScheduler {
+        fn schedule(&self, job_id: JobId) {}
     }
 
     fn gen_usecase(
