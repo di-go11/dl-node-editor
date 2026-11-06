@@ -11,9 +11,9 @@ use entities::training::{config::TrainingConfig, JobId, TrainingProcess};
 use futures_util::StreamExt;
 use usecases::training::{
     GetTrainingProcess, ModelIdGenerator, ProgressRecordingScheduler, StartTraining, StopTraining,
-    TrainingProgressProvider, TrainingProgressProviderError,
-    TrainingRecordReader, TrainingRunRegistar, TrainingStarter, TrainingStopper,
-    ValidateTrainingConfig, ValidateTrainingConfigError,
+    TrainingProgressProvider, TrainingProgressProviderError, TrainingRecordReader,
+    TrainingRunRegistar, TrainingStarter, TrainingStopper, ValidateTrainingConfig,
+    ValidateTrainingConfigError,
 };
 use usecases::{
     capabilities::{CapabilityProvider, GetCapabilities},
@@ -42,9 +42,9 @@ where
     let config = TrainingConfig::from(dto);
     let job_id = start.execute(&config).await.map_err(|e| match e {
         StartTrainingError::StartOrderFailed(_) => StatusCode::BAD_GATEWAY,
-        StartTrainingError::ConversionToProtoFailed(_) | StartTrainingError::InvalidConfig(_) => {
-            StatusCode::UNPROCESSABLE_ENTITY
-        }
+        StartTrainingError::ConversionToProtoFailed(_)
+        | StartTrainingError::InvalidConfig(_)
+        | StartTrainingError::ResumePreconditionFailed(_) => StatusCode::CONFLICT,
         StartTrainingError::AlreadyRunning(_) => StatusCode::CONFLICT,
         StartTrainingError::RecordFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
     })?;
@@ -80,6 +80,10 @@ where
         .map_err(|_| StatusCode::BAD_GATEWAY)?;
     Ok(Json(capabilities.into()))
 }
+
+pub async fn get_models<M>(
+    State(state): State<Arc<>>
+)
 
 // 学習停止POSTリクエストハンドラ
 pub async fn stop_training<T>(

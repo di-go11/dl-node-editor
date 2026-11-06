@@ -6,7 +6,7 @@ use entities::model::ModelGraph;
 use entities::training::TrainingJobStatus;
 use entities::training::TrainingProcess;
 use entities::training::config::TrainingConfig;
-use entities::training::{JobId, ModelId};
+use entities::{model::ModelId, training::JobId};
 use futures_util::StreamExt; // stream.next()を使うための拡張トレイト
 use std::pin::pin;
 

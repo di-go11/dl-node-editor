@@ -1,4 +1,4 @@
-use entities::training::{JobId, ModelId};
+use entities::{model::ModelId, training::JobId};
 use usecases::training::{RecordError, RepositoryError, TrainingRecordReader};
 
 use super::SqliteTrainingRepository;

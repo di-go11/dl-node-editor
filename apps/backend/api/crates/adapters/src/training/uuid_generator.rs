@@ -1,4 +1,4 @@
-use entities::training::ModelId;
+use entities::model::ModelId;
 use usecases::training::ModelIdGenerator;
 use uuid::Uuid;
 

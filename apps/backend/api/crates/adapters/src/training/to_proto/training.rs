@@ -2,7 +2,7 @@ use crate::pb::training::v1::{self as training_pb};
 
 use entities::training::config::TrainingConfig;
 use entities::training::config::{Loss, Optimizer};
-use entities::training::{JobId, ModelId};
+use entities::{model::ModelId, training::JobId};
 
 use crate::pb::training::v1::optimizer_config::Config as OptimizerConfig;
 

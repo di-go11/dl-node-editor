@@ -7,7 +7,7 @@ use entities::training::config::{
 };
 use entities::training::JobId;
 use entities::training::Metrics;
-use entities::training::ModelId;
+use entities::model::ModelId;
 use entities::training::TrainingJobStatus;
 use entities::training::TrainingProcess;
 

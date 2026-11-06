@@ -37,7 +37,8 @@ where
         "/api/v1",
         Router::new()
             .route("/capabilities", get(get_capabilities::<C>))
-            .route("/trainings", post(start_training::<S, R, G, K>))
+            .route("/trainings", post(start_training::<S, R, G, K>))// 学習開始
+            .route("/models")get(get_models::)
             .route("/trainings/validate", post(validate_training::<V>))
             .route("/trainings/{job_id}", get(get_training_process::<P>))
             .route(

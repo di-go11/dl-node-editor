@@ -38,7 +38,7 @@ mod tests {
     use crate::training::read_training_record::TrainingRecordReader;
     use entities::model::ModelGraph;
     use entities::training::JobId;
-    use entities::training::ModelId;
+    use entities::model::ModelId;
     use entities::training::config::{
         DataSpec, ImageAnnotationConfig, ImageSpec, ImageTaskSpec, Loss, Optimizer,
         PascalVocConfig, SegmentationSpec, TrainingConfig,
