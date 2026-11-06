@@ -7,8 +7,8 @@
 #include <utility>
 #include <random>
 
-TrainingJobManager::TrainingJobManager(JobRunner runner)
-    : _runner(std::move(runner))
+TrainingJobManager::TrainingJobManager(JobRunner runner, JobPreflight preflight)
+    : _runner(std::move(runner)), _preflight(std::move(preflight))
 {
 }
 
@@ -39,6 +39,13 @@ std::string TrainingJobManager::start(const StartTrainingCommand &command)
         {
             throw TrainingJobBusyError("TrainingJobManager: ジョブ " + jobId + " が実行中です");
         }
+    }
+
+    // 実行中のジョブがないことを確かめてから検査する(実行中なら Busy を優先して返す)。
+    // checkpoint の読み込みを含むので少し時間がかかるが、その間に別の start が割り込まないよう、ロックを持ったまま行う。
+    if (_preflight)
+    {
+        _preflight(command);
     }
 
     const std::string jobId = "job-" + std::to_string(_nextJobNumber++) + "-" + std::to_string(std::random_device{}());

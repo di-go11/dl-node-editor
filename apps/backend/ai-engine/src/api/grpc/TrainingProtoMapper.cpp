@@ -43,19 +43,20 @@ namespace
         }
     }
 
-    // model_name は checkpoint のファイル名(<model_name>_last.pt)に使われるため、
-    // 保存先の外に書き込めないよう、英数字・'-'・'_' だけを許す。
-    void validateModelName(const std::string &modelName)
+    // model_id は checkpoint のファイル名(<model_id>_last.pt)に使われる。
+    // 空だと全学習が同じファイルを共有し、別モデルの重みから黙って再開してしまうため拒否する。
+    // また、保存先の外に書き込めないよう、英数字・'-'・'_' だけを許す(UUID はこの範囲に収まる)。
+    void validateModelId(const std::string &modelId)
     {
-        if (modelName.empty())
+        if (modelId.empty())
         {
-            invalid("model_name が空です");
+            invalid("model_id が空です");
         }
-        for (const char c : modelName)
+        for (const char c : modelId)
         {
             if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '_'))
             {
-                invalid("model_name に使えない文字が含まれています(英数字・'-'・'_' のみ): " + modelName);
+                invalid("model_id に使えない文字が含まれています(英数字・'-'・'_' のみ): " + modelId);
             }
         }
     }
@@ -475,8 +476,10 @@ StartTrainingCommand toStartTrainingCommand(const training::v1::StartTrainingReq
 {
     StartTrainingCommand command;
 
-    validateModelName(request.model_name());
-    command.modelName = request.model_name();
+    // model_name は表示用の名前で、C++ 側では使わない(ファイル名には model_id を使う)。
+    validateModelId(request.model_id());
+    command.modelId = request.model_id();
+    command.resume = request.resume();
 
     command.modelGraph = toValidatedModelGraph(request.model_graph());
     command.optimizer = toOptimizer(request.optimizer());
@@ -493,7 +496,12 @@ StartTrainingCommand toStartTrainingCommand(const training::v1::StartTrainingReq
         invalid("dataset_path が空です");
     }
     command.datasetPath = request.dataset_path();
-    command.resumeFrom = request.resume_from();
+    // 再開は resume と model_id で決める。任意のパスから再開する経路は廃止したので、
+    // 値が入っていたら黙って無視せずに拒否する。
+    if (!request.resume_from().empty())
+    {
+        invalid("resume_from は使えません。再開するには resume = true を指定してください(再開元は <model_id>_last.pt)");
+    }
     if (request.has_seed())
     {
         command.seed = request.seed().value();

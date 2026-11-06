@@ -49,6 +49,14 @@ grpc::Status TrainingServiceImpl::StartTraining(grpc::ServerContext * /*context*
     {
         return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, e.what());
     }
+    catch (const TrainingPreconditionError &e)
+    {
+        return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, e.what());
+    }
+    catch (const std::invalid_argument &e)
+    {
+        return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, e.what());
+    }
 }
 
 grpc::Status TrainingServiceImpl::StreamProgress(grpc::ServerContext *context,

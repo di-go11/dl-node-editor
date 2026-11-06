@@ -531,14 +531,14 @@ TrainingConfigFile ConfigReader::readAll(const std::string &filePath)
                 }
                 imageFields.ignoreIndex = static_cast<uint8_t>(parsedValue);
             }
-            else if (key == "model_name")
+            else if (key == "model_id")
             {
                 if (value.empty())
                 {
-                    throw std::runtime_error("model_name value is empty");
+                    throw std::runtime_error("model_id value is empty");
                 }
-                // チェックポイントのファイル名(<modelName>_best.pt / _last.pt)に使われる。
-                command.modelName = value;
+                // チェックポイントのファイル名(<modelId>_best.pt / _last.pt)に使われる。
+                command.modelId = value;
             }
             else if (key == "training_task")
             {
@@ -583,10 +583,10 @@ TrainingConfigFile ConfigReader::readAll(const std::string &filePath)
                     throw std::runtime_error("Unknown model architecture: " + value);
                 }
             }
-            else if (key == "resume_from")
+            else if (key == "resume")
             {
-                // 空を許す(= 自動判定)。値があればその .pt から再開する。
-                command.resumeFrom = value;
+                // true なら <model_id>_last.pt から再開する。false(既定)ならファイルがあっても最初から。
+                command.resume = parseBool(value, key);
             }
             else if (key == "save_last_every")
             {

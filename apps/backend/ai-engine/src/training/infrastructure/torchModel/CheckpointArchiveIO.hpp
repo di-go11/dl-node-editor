@@ -36,6 +36,10 @@ CheckpointMeta readCheckpointArchive(torch::serialize::InputArchive &archive,
                                      IModel &model, IOptimizer &optimizer,
                                      const ModelGraph &expectedGraph);
 
+// メタ情報(epoch / best_metric)だけを読む。モデル・optimizer は作らない。
+// 学習を始める前に「再開できる checkpoint か」を確かめるのに使う。
+CheckpointMeta readCheckpointMeta(torch::serialize::InputArchive &archive);
+
 // モデルを構築する前に、checkpoint から ModelGraph だけを取り出す。
 ModelGraph readModelGraphFromCheckpoint(torch::serialize::InputArchive &archive);
 

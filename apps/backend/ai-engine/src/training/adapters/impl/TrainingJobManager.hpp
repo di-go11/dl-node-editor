@@ -28,7 +28,13 @@ public:
                                                    const std::shared_ptr<ITrainingProgressObserver> &progressObserver,
                                                    const TrainingStopToken *stopToken)>;
 
-    explicit TrainingJobManager(JobRunner runner);
+    // 学習スレッドを起動する前に、同じスレッドで依頼を検査する。開始できなければ例外を投げる
+    // (TrainingPreconditionError など)。投げた例外は start からそのまま呼び出し側へ返り、ジョブは作られない。
+    // runner の中で失敗すると Failed として進捗に入るだけなので、gRPC の応答で返したい検査はこちらに置く。
+    using JobPreflight = std::function<void(const StartTrainingCommand &command)>;
+
+    // preflight は省略可(空なら検査しない)。
+    explicit TrainingJobManager(JobRunner runner, JobPreflight preflight = {});
     // 実行中のジョブがあれば停止を要求し、スレッドの終了を待つ。
     ~TrainingJobManager() override;
 
@@ -52,6 +58,7 @@ private:
     void joinFinishedThreadsLocked();
 
     JobRunner _runner;
+    JobPreflight _preflight;
     std::mutex _mutex;
     std::map<std::string, Job> _jobs; // 終了したジョブも、進捗を読めるよう残しておく
     uint64_t _nextJobNumber = 1;

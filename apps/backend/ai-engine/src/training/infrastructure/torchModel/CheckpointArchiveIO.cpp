@@ -119,6 +119,11 @@ CheckpointMeta readCheckpointArchive(torch::serialize::InputArchive &archive,
     TorchCheckpointReader optimReader(optimArchive);
     optimizer.readFrom(optimReader);
 
+    return readCheckpointMeta(archive);
+}
+
+CheckpointMeta readCheckpointMeta(torch::serialize::InputArchive &archive)
+{
     at::Tensor epochTensor;
     archive.read("epoch", epochTensor);
     at::Tensor bestMetricTensor;

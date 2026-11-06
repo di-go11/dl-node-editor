@@ -65,6 +65,7 @@ namespace
     {
         training::v1::StartTrainingRequest r;
         r.set_model_name("seg_model-1");
+        r.set_model_id("0b6f3c1e-7a2d-4c11-9e55-2f7d8a9b0c13");
         connect(addConvNode(r, "conv1"), "x", "", "");
         addOutput(r, "conv1", "y");
 
@@ -148,7 +149,8 @@ int main()
     // ---------- 正しいリクエストの変換 ----------
     {
         const StartTrainingCommand c = toStartTrainingCommand(makeValidRequest());
-        check(c.modelName == "seg_model-1", "変換: model_name");
+        check(c.modelId == "0b6f3c1e-7a2d-4c11-9e55-2f7d8a9b0c13", "変換: model_id(UUID をそのまま通す)");
+        check(!c.resume, "変換: resume 未指定は false(最初から学習)");
         check(c.modelGraph.has_value(), "変換: model_graph は検証済みのグラフとして入る");
         if (c.modelGraph.has_value())
         {
@@ -168,7 +170,7 @@ int main()
               "変換: optimizer(Adam)");
         check(std::holds_alternative<CrossEntropyConfig>(c.loss), "変換: loss(CrossEntropy)");
         check(c.epochSize == 3 && c.batchSize == 2 && c.saveLastEvery == 2, "変換: epoch / batch / save_last_every");
-        check(c.datasetPath == "/data/train" && c.resumeFrom.empty(), "変換: dataset_path / resume_from(空 = 再開しない)");
+        check(c.datasetPath == "/data/train", "変換: dataset_path");
         check(c.device.type == ComputeDeviceType::Cuda && c.device.index == 1, "変換: device(cuda:1)");
 
         const ImageSpec *image = std::get_if<ImageSpec>(&c.dataSpec);
@@ -346,6 +348,19 @@ int main()
         check(big.has_value() && *big == 18446744073709551615ULL, "変換: seed は uint64 の最大値まで保持する");
     }
     {
+        // resume = true はそのまま渡る(再開できるかはマッパーではなく checkTrainingJobPreconditions が見る)
+        training::v1::StartTrainingRequest r = makeValidRequest();
+        r.set_resume(true);
+        check(toStartTrainingCommand(r).resume, "変換: resume = true");
+    }
+    {
+        // model_name は C++ では使わないので、空でも拒否しない(ファイル名は model_id で決まる)
+        training::v1::StartTrainingRequest r = makeValidRequest();
+        r.set_model_name("");
+        check(toStartTrainingCommand(r).modelId == "0b6f3c1e-7a2d-4c11-9e55-2f7d8a9b0c13",
+              "変換: model_name が空でも model_id があれば通る");
+    }
+    {
         // ignore_index = 0 は正しい値として通す(拒否しない)
         training::v1::StartTrainingRequest r = makeValidRequest();
         r.mutable_data_spec()->mutable_image()->mutable_task_specs()->mutable_segmentation()->set_ignore_index(0);
@@ -356,9 +371,11 @@ int main()
 
     // ---------- 拒否されるリクエスト ----------
     checkRejected([](auto &r)
-                  { r.set_model_name(""); }, "model_name が空");
+                  { r.set_model_id(""); }, "model_id が空(全学習が同じ checkpoint を共有してしまう)");
     checkRejected([](auto &r)
-                  { r.set_model_name("../evil"); }, "model_name にパスの区切りが含まれる");
+                  { r.set_model_id("../evil"); }, "model_id にパスの区切りが含まれる");
+    checkRejected([](auto &r)
+                  { r.set_resume_from("/somewhere/model_last.pt"); }, "resume_from は廃止(resume を使う)");
     checkRejected([](auto &r)
                   { r.clear_model_graph(); }, "model_graph.nodes が空");
     checkRejected([](auto &r)

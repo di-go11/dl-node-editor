@@ -19,6 +19,7 @@
 #include "training/infrastructure/torchModel/TorchModelFactory.hpp"
 #include "training/infrastructure/torchModel/TorchCheckpointStore.hpp"
 #include "training/infrastructure/torchModel/CheckpointModelLoader.hpp"
+#include "training/infrastructure/torchModel/CheckpointArchiveIO.hpp"
 #include "training/infrastructure/dataset/DatasetRepositoryFactory.hpp"
 #include "training/infrastructure/dataset/PreFetchDatasetRepository.hpp"
 #include "training/infrastructure/image/OpenCvImageDecoder.hpp"
@@ -50,6 +51,7 @@
 #include "training/application/impl/TrainingResumeState.hpp"
 #include "training/application/impl/TrainingStopToken.hpp"
 #include "training/application/interfaces/ITrainingProgressObserver.hpp"
+#include "training/application/interfaces/ITrainingJobManager.hpp" // TrainingPreconditionError
 #include "training/adapters/impl/timer/TimedImageDecoder.hpp"
 #include "training/adapters/impl/parallelProcessFn/SequentialExecutor.hpp"
 #include "training/adapters/impl/parallelProcessFn/ThreadExecutor.hpp"
@@ -85,7 +87,64 @@ namespace
         }
     }
 
+    void requireModelId(const StartTrainingCommand &command)
+    {
+        if (command.modelId.empty())
+        {
+            throw std::invalid_argument("学習ジョブ: model_id が空です");
+        }
+    }
+
+    // resume = true のときの再開元(<modelId>_last.pt)。ファイルがなければ TrainingPreconditionError。
+    std::string requireResumeCheckpointPath(const ServerConfig &server, const StartTrainingCommand &command)
+    {
+        const std::string path = TorchCheckpointStore::lastCheckpointPath(server.checkpointOutputDirPath, command.modelId);
+        if (!std::filesystem::exists(path))
+        {
+            throw TrainingPreconditionError("resume が指定されましたが、再開用の checkpoint がありません: " + path);
+        }
+        return path;
+    }
+
+    // checkpoint がすでに指定エポック数まで学習済みなら TrainingPreconditionError。
+    // そのまま進めると 1 エポックも回さずに Completed を返し、「学習した」と誤解されるため。
+    // meta.epoch は「最後に完了したエポック」(0 始まり)なので、学習済みのエポック数は meta.epoch + 1。
+    void requireEpochsRemaining(const CheckpointMeta &meta, unsigned int totalEpochs, const std::string &path)
+    {
+        const unsigned int completedEpochs = meta.epoch + 1u;
+        if (completedEpochs >= totalEpochs)
+        {
+            throw TrainingPreconditionError(
+                "checkpoint はすでに " + std::to_string(completedEpochs) + " エポック学習済みで、指定された合計エポック数(" +
+                std::to_string(totalEpochs) + ")に達しています。続けるには epoch を増やしてください: " + path);
+        }
+    }
+
 } // namespace
+
+void checkTrainingJobPreconditions(const ServerConfig &server, const StartTrainingCommand &command)
+{
+    requireModelId(command);
+    if (!command.resume)
+    {
+        return;
+    }
+
+    const std::string path = requireResumeCheckpointPath(server, command);
+    CheckpointMeta meta;
+    try
+    {
+        // ここでは epoch を見るだけなので、モデルは作らずにメタ情報だけ読む。
+        torch::serialize::InputArchive archive;
+        archive.load_from(path);
+        meta = readCheckpointMeta(archive);
+    }
+    catch (const std::exception &e)
+    {
+        throw TrainingPreconditionError("再開用の checkpoint を読めません: " + path + " (" + e.what() + ")");
+    }
+    requireEpochsRemaining(meta, command.epochSize, path);
+}
 
 TrainingStatus runTrainingJob(const ServerConfig &server,
                               const StartTrainingCommand &command,
@@ -131,22 +190,12 @@ TrainingStatus runTrainingJob(const ServerConfig &server,
     auto lossFactory = std::make_shared<TorchLossFactory>();
 
     // ---- 再開元の決定 ----
-    // 1. resume_from が指定されていればそれを使う(GUI のファイル選択結果もここに入る)
-    // 2. 指定がなくても <modelName>_last.pt があれば自動で再開する
-    // 3. どちらもなければ cold start
-    const std::string modelFileName = command.modelName.empty() ? "model" : command.modelName;
-    const std::string autoResumePath =
-        (std::filesystem::path(server.checkpointOutputDirPath) / (modelFileName + "_last.pt")).string();
-
-    std::string resumePath;
-    if (!command.resumeFrom.empty())
-    {
-        resumePath = command.resumeFrom;
-    }
-    else if (std::filesystem::exists(autoResumePath))
-    {
-        resumePath = autoResumePath;
-    }
+    // resume フラグだけで決める。ファイルがあるかどうかで自動的に再開はしない
+    // (resume = false なら、<modelId>_last.pt があっても読まずに最初から学習する)。
+    // gRPC では checkTrainingJobPreconditions で確認済みだが、CLI からの呼び出しや、
+    // 確認後にファイルが消された場合に備えて、ここでも同じ確認をする。
+    requireModelId(command);
+    const std::string resumePath = command.resume ? requireResumeCheckpointPath(server, command) : std::string{};
 
     if (command.seed.has_value())
     {
@@ -167,6 +216,7 @@ TrainingStatus runTrainingJob(const ServerConfig &server,
 
         CheckpointModelLoader loader(modelFactory, optimizerFactory);
         RestoredCheckpoint restored = loader.load(resumePath, command.optimizer, command.device);
+        requireEpochsRemaining(restored.meta, command.epochSize, resumePath);
 
         graph = restored.graph;
         model = restored.model;
@@ -204,7 +254,7 @@ TrainingStatus runTrainingJob(const ServerConfig &server,
 
     auto trainer = std::make_shared<TorchModelTrainer>(model, loss, optimizer);
     auto evaluator = std::make_shared<TorchModelEvaluator>(*model, *loss, numClasses, imageSpec->taskSpecs);
-    auto checkpointStore = std::make_shared<TorchCheckpointStore>(model, optimizer, server.checkpointOutputDirPath, command.modelName, graph);
+    auto checkpointStore = std::make_shared<TorchCheckpointStore>(model, optimizer, server.checkpointOutputDirPath, command.modelId, graph);
 
     TrainModelUsecase usecase(param, command.saveLastEvery, trainer, evaluator, checkpointStore, progressObserver);
 

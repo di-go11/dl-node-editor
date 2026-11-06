@@ -157,6 +157,64 @@ int main()
         check(stopNotFound, "存在しない job_id: requestStop は TrainingJobNotFoundError");
     }
 
+    // ---------- preflight: 開始前の検査で弾かれたら、例外がそのまま返り、ジョブは作られない ----------
+    {
+        std::atomic<int> runnerCalls{0};
+        TrainingJobManager manager(
+            [&runnerCalls](const StartTrainingCommand &, const std::shared_ptr<ITrainingProgressObserver> &, const TrainingStopToken *)
+            {
+                ++runnerCalls;
+                return TrainingStatus::Completed;
+            },
+            [](const StartTrainingCommand &command)
+            {
+                if (command.resume)
+                {
+                    throw TrainingPreconditionError("checkpoint がありません");
+                }
+            });
+
+        StartTrainingCommand resumeCommand;
+        resumeCommand.resume = true;
+        bool rejected = false;
+        try
+        {
+            manager.start(resumeCommand);
+        }
+        catch (const TrainingPreconditionError &)
+        {
+            rejected = true;
+        }
+        check(rejected, "preflight: 検査で投げた TrainingPreconditionError が start から返る");
+
+        // 弾かれた後も、次の依頼は普通に開始できる(実行中のジョブとして残っていない)
+        const std::string jobId = manager.start(StartTrainingCommand{});
+        check(waitUntilFinished(manager, jobId).status == TrainingStatus::Completed,
+              "preflight: 弾かれた依頼はジョブとして残らず、次の依頼を開始できる");
+        check(runnerCalls.load() == 1, "preflight: 弾かれた依頼では runner が呼ばれない");
+    }
+    {
+        // 実行中のジョブがあるときは、preflight より Busy を優先する(checkpoint を読みに行かない)
+        std::atomic<int> epochs{0};
+        std::atomic<int> preflightCalls{0};
+        TrainingJobManager manager(runUntilStopped(epochs),
+                                   [&preflightCalls](const StartTrainingCommand &)
+                                   { ++preflightCalls; });
+        const std::string jobId = manager.start(StartTrainingCommand{});
+        bool busy = false;
+        try
+        {
+            manager.start(StartTrainingCommand{});
+        }
+        catch (const TrainingJobBusyError &)
+        {
+            busy = true;
+        }
+        check(busy && preflightCalls.load() == 1, "preflight: 実行中なら preflight を呼ばずに TrainingJobBusyError");
+        manager.requestStop(jobId);
+        waitUntilFinished(manager, jobId);
+    }
+
     // ---------- 実行中に manager を破棄しても、停止してスレッドを待つ ----------
     {
         std::atomic<int> epochs{0};
