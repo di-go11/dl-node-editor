@@ -47,7 +47,7 @@ grpc::Status TrainingServiceImpl::StartTraining(grpc::ServerContext * /*context*
     }
     catch (const TrainingJobBusyError &e)
     {
-        return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, e.what());
+        return grpc::Status(grpc::StatusCode::ABORTED, e.what());
     }
     catch (const TrainingPreconditionError &e)
     {

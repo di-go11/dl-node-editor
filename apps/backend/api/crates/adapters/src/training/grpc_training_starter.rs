@@ -1,7 +1,10 @@
-use entities::training::{config::TrainingConfig, JobId};
+use std::result;
+
+use axum::http::{request, response};
+use entities::training::{config::TrainingConfig, JobId, ModelId};
 use tonic::{transport::Channel, Code, Status};
 use usecases::training::StartTrainingError;
-use usecases::training::TrainingStarter;
+use usecases::training::{TrainingResumer, TrainingStarter};
 
 use crate::pb::training::v1::StartTrainingRequest as StartTrainingRequestPb;
 use crate::pb::training::v1::{self as training_pb};
@@ -17,17 +20,15 @@ impl GrpcTrainingStarter {
             client: TrainingServiceClient::new(channel),
         }
     }
-}
-
-impl TrainingStarter for GrpcTrainingStarter {
-    async fn start_training(
+    async fn send(
         &self,
-        training_config: &TrainingConfig,
+        config: &TrainingConfig,
+        model_id: &ModelId,
+        resume: bool,
     ) -> Result<JobId, StartTrainingError> {
-        // From<&TrainingConfig> を実装しているので参照のまま渡す
-        let request = StartTrainingRequestPb::from(training_config);
-
-        // 単項RPCなので、1回のawaitでレスポンスが確定する
+        let mut request = StartTrainingRequestPb::from(config);
+        request.model_id = model_id.as_str().to_string();
+        request.resume = resume;
         let response = self
             .client
             .clone()
@@ -36,14 +37,38 @@ impl TrainingStarter for GrpcTrainingStarter {
             .map_err(start_error_from_status)?
             .into_inner(); // StartTrainingResponse
 
-        // proto の String をドメインの JobId に変換(空文字列ならエラー)
         JobId::new(response.job_id).map_err(|e| StartTrainingError::StartOrderFailed(e.to_string()))
+    }
+}
+
+impl TrainingResumer for GrpcTrainingStarter {
+    async fn resume_training(
+        &self,
+        config: &TrainingConfig,
+        model_id: &ModelId,
+    ) -> Result<JobId, StartTrainingError> {
+        let resume: bool = true;
+        self.send(config, model_id, resume).await
+    }
+}
+
+impl TrainingStarter for GrpcTrainingStarter {
+    async fn start_training(
+        &self,
+        config: &TrainingConfig,
+        model_id: &ModelId,
+    ) -> Result<JobId, StartTrainingError> {
+        let resume: bool = false;
+        self.send(config, model_id, resume).await
     }
 }
 
 fn start_error_from_status(status: Status) -> StartTrainingError {
     match status.code() {
-        Code::FailedPrecondition => StartTrainingError::AlreadyRunning(status.to_string()),
+        Code::FailedPrecondition => {
+            StartTrainingError::ResumePreconditionFailed(status.to_string())
+        } // checkpointなし・エポック数が達している
+        Code::Aborted => StartTrainingError::AlreadyRunning(status.to_string()), // 別のjobがすでに動いている
         Code::InvalidArgument => StartTrainingError::InvalidConfig(status.to_string()),
         _ => StartTrainingError::StartOrderFailed(status.to_string()),
     }
@@ -52,11 +77,19 @@ fn start_error_from_status(status: Status) -> StartTrainingError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn aborted_status_converts_to_already_running_error() {
+        let error = start_error_from_status(Status::aborted("job is running"));
+        assert!(matches!(error, StartTrainingError::AlreadyRunning(_)));
+    }
 
     #[test]
-    fn failed_precondition_status_converts_to_already_running_error() {
-        let error = start_error_from_status(Status::failed_precondition("job is running"));
-        assert!(matches!(error, StartTrainingError::AlreadyRunning(_)));
+    fn failed_precondition_status_converts_to_resume_precondition_failed_error() {
+        let error = start_error_from_status(Status::failed_precondition("checkpoint not found"));
+        assert!(matches!(
+            error,
+            StartTrainingError::ResumePreconditionFailed(_)
+        ));
     }
 
     #[test]

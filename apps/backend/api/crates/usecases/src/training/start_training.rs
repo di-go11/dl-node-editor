@@ -35,7 +35,7 @@ impl<S: TrainingStarter, R: TrainingRunRegistar, G: ModelIdGenerator, K: Progres
             .await
             .map_err(|e| StartTrainingError::RecordFailed(e.to_string()))?;
 
-        let job_id = self.starter.start_training(config).await?;
+        let job_id = self.starter.start_training(config, &model_id).await?;
         self.repository
             .insert_training_run(&job_id, config, &model_id)
             .await
@@ -165,6 +165,7 @@ mod tests {
         async fn start_training(
             &self,
             _training_config: &TrainingConfig,
+            _model_id: &ModelId,
         ) -> Result<JobId, StartTrainingError> {
             self.log.lock().unwrap().push("start_training");
             self.result.clone() // &self なので clone して返す(JobId も StartTrainingError も Clone 可)

@@ -2,7 +2,7 @@ use crate::pb::training::v1::{self as training_pb};
 
 use entities::training::config::TrainingConfig;
 use entities::training::config::{Loss, Optimizer};
-use entities::training::JobId;
+use entities::training::{JobId, ModelId};
 
 use crate::pb::training::v1::optimizer_config::Config as OptimizerConfig;
 
@@ -36,6 +36,8 @@ impl From<&TrainingConfig> for training_pb::StartTrainingRequest {
             resume_from: String::new(),
             // proto 側は Seed で包んで「未指定」と 0 を区別するので、Some の中身だけ包む
             seed: value.seed.map(|v| training_pb::Seed { value: v }),
+            model_id: String::new(),
+            resume: false,
         }
     }
 }

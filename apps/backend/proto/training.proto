@@ -89,7 +89,7 @@ message StartTrainingRequest {
     string device = 8;
     DataSpec data_spec = 9;
     uint32 save_last_every = 10; // 0=毎エポック
-    string resume_from = reseved 11; // 使用しない
+    string resume_from = 11[deprecated = true]; // 使用しない
     Seed seed = 12; // 未設定(has_seed = false)なら乱数を固定しない
     string model_id = 13; // モデル保存用のモデルid
     bool resume = 14; // 再開するかしないか

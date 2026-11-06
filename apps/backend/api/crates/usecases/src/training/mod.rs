@@ -15,7 +15,7 @@ pub use error::{
 };
 pub use get_training_progress::{GetTrainingProcess, TrainingProgressProvider};
 pub use model_id_generator::ModelIdGenerator;
-pub use ports::{ProgressRecordingScheduler, TrainingStarter, TrainingStopper};
+pub use ports::{ProgressRecordingScheduler, TrainingResumer, TrainingStarter, TrainingStopper};
 pub use read_training_record::TrainingRecordReader;
 pub use record_training_process::{
     RecordTrainingProgress, TrainingProgressRecorder, TrainingRunRegistar,

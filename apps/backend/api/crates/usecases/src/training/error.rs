@@ -18,6 +18,9 @@ pub enum StartTrainingError {
     InvalidConfig(String),
     #[error("Failed to record training run: {0}")]
     RecordFailed(String),
+    // エポック数が達していたり、checkpointが存在しないなどで学習を実行できない
+    #[error("Failed to resume training: {0}")]
+    ResumePreconditionFailed(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
