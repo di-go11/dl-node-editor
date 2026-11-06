@@ -5,7 +5,6 @@ use adapters::GrpcTrainingStopper;
 use adapters::connect_database;
 use adapters::http::AppState;
 use adapters::http::router;
-use adapters::pb::training::v1::TrainingStatus::Running;
 use adapters::training::{recording_channel, run_recording_worker};
 use adapters::{SqliteTrainingRepository, UuidModelGenerator};
 use entities::training::JobId;
@@ -13,10 +12,9 @@ use std::eprintln;
 use std::sync::Arc;
 use tonic::transport::Channel;
 use usecases::capabilities::GetCapabilities;
-use usecases::training::RecordError;
 use usecases::training::{
-    GetTrainingProcess, ProgressRecordingScheduler, RecordTrainingProgress, StartTraining,
-    StopTraining, TrainingRecordReader, ValidateTrainingConfig,
+    GetTrainingProcess, RecordTrainingProgress, ResumeProgressRecordings, StartTraining,
+    StopTraining, ValidateTrainingConfig,
 };
 
 #[tokio::main]
@@ -50,13 +48,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }));
 
-    // 起動時に RUNNING のジョブの記録を再開する(新規開始と同じ経路に流すので、二重起動もワーカーが防ぐ)。
-    let runnning_jobs = SqliteTrainingRepository::new(pool.clone())
-        .find_running_job_ids()
-        .await?;
-    for job_id in runnning_jobs {
-        scheduler.schedule(job_id);
-    }
+    // Rustサーバーが落ちて再起動時に RUNNING のジョブの記録を再開する(新規開始と同じ経路に流すので、二重起動もワーカーが防ぐ)。
+    // scheduler は後で StartTraining にも渡すので clone する
+    let resumed = ResumeProgressRecordings::new(
+        SqliteTrainingRepository::new(pool.clone()),
+        scheduler.clone(),
+    )
+    .execute()
+    .await?;
+    println!("resumed recording for {resumed} running job(s)");
 
     // アダプターをユースケースに渡して、AppStateにまとめる
     let state = AppState {

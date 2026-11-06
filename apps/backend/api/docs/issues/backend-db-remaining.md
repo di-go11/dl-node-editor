@@ -331,7 +331,7 @@ GetTrainingHistory::execute(job_id, after_epoch) -> Result<TrainingHistory, ...>
    - (a) `0002` 以降のマイグレーションで `total_elapsed_ms` 列を追加する
    - (b) 読み出すときに `epoch_elapsed_ms` を累積して計算する(再開をまたぐと実際の経過時間とずれる)
    - (c) API から外す
-2. **C++ との接続が切れたとき**(C++ が落ちた、ジョブが `NotFound` など)の扱い
+2. **C++ との接続が切れたとき**(C++ が落ちた、ジョブが `NotFound` など)の扱い → 作業 13 で詳しく検討する。決まったらここにも反映する
    - (a) `failed` に更新する
    - (b) `running` のまま、一定間隔で再接続を試みる
    - (c) まずはログを出すだけにする
@@ -401,3 +401,53 @@ where
 **完了条件**
 - `StartTraining` に出力ポートを追加・削除しても、`adapters/src/http/` 以下を修正せずにビルドが通る
 - `AppState` / `router` の型パラメータがユースケースの数と一致している
+
+---
+
+## 13. 記録タスクが途中で終わった・止まったときの扱い(2026-11-06 提案・未決定あり)
+
+**背景**
+- 進捗の記録は `run_recording_worker` が job_id ごとにタスクを起動して行う。二重保存は次の 3 段で防げている
+  1. ワーカーの `running`(同じ job_id のタスクが実行中なら起動しない)
+  2. `RecordTrainingProgress::execute` の `last_saved_epoch`(保存済みのエポックの続きから C++ に要求する)
+  3. `training_epochs` の `PRIMARY KEY (job_id, epoch)`
+- 一方で、**記録が途切れたまま誰も再開しない**ケースが残っている。記録の再開(`ResumeProgressRecordings`)は Rust サーバーの起動時にしか走らないため
+- 作業 11 の「未決定 2」(C++ との接続が切れたときの扱い)と同じ問題。ここで方針を決めて、作業 11 にも反映する
+
+**起きるケース**
+1. **Rust は動いたまま、ストリームだけが切れる**(C++ の再起動、通信断など)
+   - 記録タスクは `StreamEnded` / `InvalidData` などのエラーで終わり、`running` から外れる
+   - 次に schedule されるのは Rust の再起動時なので、それまで記録が止まる。DB の `training_runs.status` は `running` のまま残る
+2. **C++ が再起動した**
+   - C++ のジョブはメモリ上(`TrainingJobManager` の `_jobs`)にしかないため、その job_id は C++ から消えている
+   - Rust の起動時に `find_running_job_ids` で再開しようとしても、C++ が `NotFound` を返して失敗する。DB の `running` は残り続け、起動するたびに失敗する
+3. **接続が切れずに固まる**
+   - gRPC の keepalive やタイムアウトを設定していないため、ストリームが終わらないまま待ち続ける可能性がある
+   - その job_id はワーカーの `running` に残り続ける(タスクが job_id を占有するのはこのケースだけ)
+
+**未決定(決めてから着手する)**
+1. **ケース 1(ストリームが切れたが、C++ にジョブは残っている)**
+   - (a) ワーカーまたは記録タスクの中で、間隔を空けて数回リトライする(`last_saved_epoch` から続きを取るので、二重保存にはならない)
+   - (b) リトライせず、Rust の再起動まで待つ(今の挙動)
+2. **ケース 2(C++ にジョブがない)**
+   - (a) `NotFound` を受けたら `update_training_run` で `failed` にする(`failure_reason` に「C++ 側でジョブが失われた」と入れる)
+   - (b) `running` のまま残し、ログだけを出す
+3. **ケース 3(固まる)**
+   - (a) `GrpcTrainingProgressProvider` の `Channel` に HTTP/2 keepalive(`http2_keep_alive_interval` / `keep_alive_timeout`)を設定し、切断として検知できるようにする → ケース 1 か 2 に合流する
+   - (b) 記録タスク全体に `tokio::time::timeout` をかける(学習時間に上限がないため、値を決めにくい)
+4. **リトライをどこに置くか**(1-(a) を選んだ場合)
+   - (a) `RecordTrainingProgress::execute` の外側(adapters のワーカーに渡すクロージャ)でリトライする。ユースケースは「1 回記録を試みる」だけにする
+   - (b) ユースケースの中でリトライする(待機に `tokio::time` が必要になり、ユースケースのテストに時間の制御が入る)
+
+提案: 1-(a)、2-(a)、3-(a)、4-(a)。リトライの待機は、作業 11 のポーリングと同じ理由で adapters 側に置く。`NotFound` はリトライしても回復しないので、リトライの対象から外して、すぐに 2-(a) の処理に進める。
+
+**手順**
+1. `RecordError` で「回復できる失敗(ストリーム切断)」と「回復できない失敗(`NotFound`)」を区別できるようにする(`StreamOpenFailed` の中身を見るか、バリアントを分ける)
+2. `NotFound` のときは `update_training_run(job_id, Failed { reason })` を呼んで終える
+3. main.rs のクロージャ(またはワーカー)に、回復できる失敗のときのリトライを追加する
+4. `GrpcTrainingProgressProvider` の `Channel` に keepalive を設定する
+
+**完了条件**
+- 学習中に C++ との接続が一時的に切れても、つながり直せば、抜けたエポックなしで記録が続く
+- C++ が再起動してジョブが消えた場合、そのジョブは `failed` になり、Rust を再起動しても再開を試み続けない
+- どのケースでも、同じエポックが二重に保存されない
