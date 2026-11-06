@@ -2,6 +2,7 @@ use crate::training::RecordError;
 use crate::training::TrainingProgressProvider;
 use crate::training::TrainingRecordReader;
 
+use entities::model::ModelGraph;
 use entities::training::TrainingJobStatus;
 use entities::training::TrainingProcess;
 use entities::training::config::TrainingConfig;
@@ -14,10 +15,12 @@ use std::pin::pin;
 
 pub trait TrainingRunRegistar {
     // 新しいモデルをmodelテーブルにinsertする処理。training_runsが外部キーで参照するため先に呼ぶ。
+    // model_graph は再開時に構造を組み直すために保存する。
     fn insert_model(
         &self,
         model_id: &ModelId,
         model_name: &str,
+        model_graph: &ModelGraph,
     ) -> impl Future<Output = Result<(), RecordError>> + Send;
     // 学習開始時の情報をtraining_runテーブルのinsertする処理。
     fn insert_training_run(
@@ -215,6 +218,7 @@ mod tests {
             &self,
             _model_id: &ModelId,
             _model_name: &str,
+            _model_graph: &ModelGraph,
         ) -> Result<(), RecordError> {
             unimplemented!("RecordTrainingProgress does not call insert_model")
         }

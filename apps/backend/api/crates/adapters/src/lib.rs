@@ -1,6 +1,7 @@
 pub mod capabilities;
 pub mod database;
 pub mod http;
+mod model;
 pub mod training;
 
 pub use capabilities::GrpcCapabilityProvider;

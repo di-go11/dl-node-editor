@@ -31,7 +31,7 @@ impl<S: TrainingStarter, R: TrainingRunRegistar, G: ModelIdGenerator, K: Progres
     pub async fn execute(&self, config: &TrainingConfig) -> Result<JobId, StartTrainingError> {
         let model_id: ModelId = self.id_generator.generate();
         self.repository
-            .insert_model(&model_id, &config.model_name)
+            .insert_model(&model_id, &config.model_name, &config.model_graph)
             .await
             .map_err(|e| StartTrainingError::RecordFailed(e.to_string()))?;
 
@@ -183,6 +183,7 @@ mod tests {
             &self,
             _model_id: &ModelId,
             _model_name: &str,
+            _model_graph: &ModelGraph,
         ) -> Result<(), RecordError> {
             self.log.lock().unwrap().push("insert_model");
             self.insert_model_result.clone()

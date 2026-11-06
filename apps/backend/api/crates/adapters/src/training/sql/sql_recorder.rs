@@ -1,5 +1,7 @@
 use super::SqliteTrainingRepository;
+use crate::model;
 use chrono::Utc;
+use entities::model::ModelGraph;
 use entities::training::config::{
     DataSpec, ImageAnnotationConfig, ImageTaskSpec, Loss, Optimizer, TrainingConfig,
 };
@@ -14,12 +16,22 @@ use usecases::training::{
 };
 // 学習実行情報をDBへ保存する処理3つ
 impl TrainingRunRegistar for SqliteTrainingRepository {
-    async fn insert_model(&self, model_id: &ModelId, model_name: &str) -> Result<(), RecordError> {
-        // TODO: ModelGraphのJSON化を実装したらmodel_graphもinsertする
-        sqlx::query("INSERT INTO model (model_id,model_name,created_at)VALUES (?,?,?)")
-            .bind(model_id.as_str())
-            .bind(model_name)
-            .bind(Utc::now())
+    async fn insert_model(
+        &self,
+        model_id: &ModelId,
+        model_name: &str,
+        model_graph: &ModelGraph,
+    ) -> Result<(), RecordError> {
+        // JSON の形は model::graph_json が決める(HTTP の DTO とは独立)
+        let model_graph_json = model::to_json(model_graph)
+            .map_err(|e| RepositoryError::InvalidData(e.to_string()))?;
+        sqlx::query(
+            "INSERT INTO model (model_id,model_name,model_graph,created_at)VALUES (?,?,?,?)",
+        )
+        .bind(model_id.as_str())
+        .bind(model_name)
+        .bind(model_graph_json)
+        .bind(Utc::now())
             .execute(&self.pool)
             .await
             .map_err(|e| RepositoryError::QueryFailed(e.to_string()))?;
@@ -279,5 +291,100 @@ impl TrainingProgressRecorder for SqliteTrainingRepository {
             .await
             .map_err(|e| RepositoryError::TransactionFailed(e.to_string()))?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use entities::model::layer::{ConcatSpec, Conv2DSpec, NodeSpec};
+    use entities::model::{Node, NodeInput, PortRef};
+    use sqlx::sqlite::SqlitePoolOptions;
+
+    // インメモリDBは接続ごとに別のDBになるため、接続数を1に絞る
+    async fn migrated_repository() -> SqliteTrainingRepository {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        sqlx::migrate!("./src/migrations").run(&pool).await.unwrap();
+        SqliteTrainingRepository::new(pool)
+    }
+
+    fn sample_graph() -> ModelGraph {
+        ModelGraph {
+            nodes: vec![
+                Node {
+                    id: "conv".to_string(),
+                    spec: NodeSpec::Conv2D(Conv2DSpec {
+                        in_channels: 3,
+                        out_channels: 8,
+                        kernel_size: 3,
+                        stride: 1,
+                        padding: 1,
+                        dilation: 1,
+                    }),
+                    inputs: vec![NodeInput {
+                        port: "x".to_string(),
+                        source: None,
+                    }],
+                },
+                Node {
+                    id: "cat".to_string(),
+                    spec: NodeSpec::Concat(ConcatSpec),
+                    inputs: vec![NodeInput {
+                        port: "x0".to_string(),
+                        source: Some(PortRef {
+                            node_id: "conv".to_string(),
+                            port: "y".to_string(),
+                        }),
+                    }],
+                },
+            ],
+            outputs: vec![PortRef {
+                node_id: "cat".to_string(),
+                port: "y".to_string(),
+            }],
+        }
+    }
+
+    // 0001 → 0002 の順にマイグレーションが通り、insert_model で model_graph が保存されること
+    #[tokio::test]
+    async fn insert_model_stores_model_graph_json() {
+        let repo = migrated_repository().await;
+        let model_id = ModelId::new("model-1".to_string()).unwrap();
+        let graph = sample_graph();
+
+        repo.insert_model(&model_id, "unet", &graph).await.unwrap();
+
+        let stored: Option<String> =
+            sqlx::query_scalar("SELECT model_graph FROM model WHERE model_id = ?")
+                .bind(model_id.as_str())
+                .fetch_one(&repo.pool)
+                .await
+                .unwrap();
+        let restored = model::from_json(&stored.expect("model_graph should not be NULL")).unwrap();
+        assert_eq!(restored, graph);
+    }
+
+    // 0002 適用前からある行(model_graph なし)は NULL のまま読めること
+    #[tokio::test]
+    async fn model_graph_is_nullable_for_existing_rows() {
+        let repo = migrated_repository().await;
+        sqlx::query("INSERT INTO model (model_id,model_name,created_at)VALUES (?,?,?)")
+            .bind("old-model")
+            .bind("old")
+            .bind(Utc::now())
+            .execute(&repo.pool)
+            .await
+            .unwrap();
+
+        let stored: Option<String> =
+            sqlx::query_scalar("SELECT model_graph FROM model WHERE model_id = 'old-model'")
+                .fetch_one(&repo.pool)
+                .await
+                .unwrap();
+        assert!(stored.is_none());
     }
 }
