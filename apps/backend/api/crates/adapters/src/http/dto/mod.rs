@@ -7,6 +7,7 @@ mod training_process;
 mod training_stop;
 
 pub use capability::CapabilitiesDto;
+pub use model::ModelSummaryDto;
 pub use training_config::{StartTrainingResponseDto, TrainingConfigDto};
 pub use training_process::TrainingProcessDto;
 pub use training_stop::TrainingJobStatusDto;

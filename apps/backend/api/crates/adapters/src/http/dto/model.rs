@@ -1,5 +1,5 @@
-use entities::model::{ModelGraph, Node, NodeInput, PortRef};
-use serde::Deserialize;
+use entities::model::{ModelGraph, ModelSummary, Node, NodeInput, PortRef};
+use serde::{Deserialize, Serialize};
 
 use super::layer::NodeSpecDto;
 
@@ -65,6 +65,38 @@ impl From<NodeInputDto> for NodeInput {
         NodeInput {
             port: value.port,
             source: value.source.map(Into::into),
+        }
+    }
+}
+
+// ModelSummaryのDTO(学習済みモデル一覧のレスポンス用)
+// ModelId は値オブジェクトだが、JSON上では文字列として返す。
+#[derive(Debug, Serialize)]
+pub struct ModelSummaryDto {
+    pub model_id: String,
+    pub model_name: String,
+    pub created_at: String,
+}
+
+impl From<&ModelSummary> for ModelSummaryDto {
+    fn from(summary: &ModelSummary) -> Self {
+        ModelSummaryDto {
+            model_id: summary.model_id().as_str().to_string(),
+            model_name: summary.model_name().to_string(),
+            created_at: summary.created_at().to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct ModelSummariesDto {
+    pub models: Vec<ModelSummaryDto>,
+}
+
+impl From<&[ModelSummary]> for ModelSummariesDto {
+    fn from(summaries: &[ModelSummary]) -> Self {
+        Self {
+            models: summaries.iter().map(ModelSummaryDto::from).collect(),
         }
     }
 }

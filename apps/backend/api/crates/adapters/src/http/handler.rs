@@ -1,6 +1,7 @@
 use super::dto::{
     CapabilitiesDto, StartTrainingResponseDto, TrainingConfigDto, TrainingJobStatusDto,
     TrainingProcessDto,
+    ModelSummaryDto,
 };
 use axum::{
     extract::{Path, State},
@@ -9,20 +10,21 @@ use axum::{
 };
 use entities::training::{config::TrainingConfig, JobId, TrainingProcess};
 use futures_util::StreamExt;
-use usecases::training::{
+use usecases::{model::{error::FetchModelError, ports::ModelSummaryProvider}, training::{
     GetTrainingProcess, ModelIdGenerator, ProgressRecordingScheduler, StartTraining, StopTraining,
     TrainingProgressProvider, TrainingProgressProviderError, TrainingRecordReader,
     TrainingRunRegistar, TrainingStarter, TrainingStopper, ValidateTrainingConfig,
     ValidateTrainingConfigError,
-};
+}};
 use usecases::{
     capabilities::{CapabilityProvider, GetCapabilities},
     training::StartTrainingError,
+    model::{ModelSummaryProvider, ModelTrainingConfigProvider,GetModelSummary,GetModelTrainingConfig,error::{ModelRepositoryError}},
 };
 
 use axum::response::sse::{Event, KeepAlive, Sse};
 use futures_core::Stream;
-use std::sync::Arc;
+use std::{future::Future, sync::Arc};
 use std::{convert::Infallible, eprint};
 
 // 新規学習の開始POSTリクエストハンドラ(学習再開は別のエンドポイントにする)
@@ -186,6 +188,21 @@ where
         Ok(event)
     });
     Ok(Sse::new(sse_stream).keep_alive(KeepAlive::default()))
+}
+
+// 学習済みモデルの一覧取得関数
+pub async fn get_model_lists<U>(
+    State(usecase): State<Arc<U>>,
+) -> Result<Json<Vec<ModelSummaryDto>>, StatusCode>
+where 
+    U: GetModelSummary + Send + Sync + 'static,
+{
+    let model_summaries = usecase.get_summary().await.map_err(|e| match e {
+        ModelRepositoryError::Fetch(FetchModelError::NotFound(_)) => StatusCode::NOT_FOUND,
+        ModelRepositoryError::Fetch(FetchModelError::InvalidQuery(_)) => StatusCode::BAD_REQUEST,
+    })?;
+    let dtos: Vec<ModelSummaryDto> = model_summaries.into_iter().map(ModelSummaryDto::from).collect(); //Vecにまとめる
+    Ok(Json(dtos))
 }
 
 #[cfg(test)]

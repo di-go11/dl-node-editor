@@ -14,9 +14,10 @@ use usecases::{
         ModelIdGenerator, ProgressRecordingScheduler, TrainingProgressProvider, TrainingProgressRecorder, TrainingRecordReader,
         TrainingRunRegistar, TrainingStarter, TrainingStopper,
     },
+    model::{GetTrainingHistory},
 };
 
-pub fn router<C, S, R, G, K, V, P, T, D>(state: AppState<C, S, R, G, K, V, P, T, D>) -> Router
+pub fn router<C, S, R, G, K, V, P, T, D, MSummary, MConfig>(state: AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig>) -> Router
 where
     C: CapabilityProvider + Send + Sync + 'static,
     S: TrainingStarter + Send + Sync + 'static,
@@ -32,13 +33,15 @@ where
         + Send
         + Sync
         + 'static,
+    MSummary: Send + Sync + 'static,
+    MConfig: Send + Sync + 'static,
 {
     Router::new().nest(
         "/api/v1",
         Router::new()
             .route("/capabilities", get(get_capabilities::<C>))
             .route("/trainings", post(start_training::<S, R, G, K>))// 学習開始
-            .route("/models")get(get_models::)
+            .route("/models")get(get_models)
             .route("/trainings/validate", post(validate_training::<V>))
             .route("/trainings/{job_id}", get(get_training_process::<P>))
             .route(
