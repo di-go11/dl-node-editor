@@ -154,9 +154,9 @@ Optimizer の種類も変えたい(重みだけ引き継いで、optimizer の�
 ```
 GET  /api/v1/models                     学習済みモデルの一覧
 GET  /api/v1/models/{model_id}/config   最新の run の training_config(フォームの初期値と固定項目の表示用)
-POST /api/v1/models/{model_id}/resume   学習再開。本体には変えてよい項目だけを入れる
+POST /api/v1/models/{model_id}/resume   学習再開。本体は GET /config の応答と同じ形(全設定 + model_id)
 ```
-- 一覧の各要素: `model_id`, `model_name`, `created_at`, `task_type`, 最後の run の `status` / `started_at` / `finished_at`, 完了したエポック数
+- 一覧の各要素: `model_id`, `model_name`, `created_at`(その他の項目の追加は作業 7 に回した)
   - `training_runs` が 1 件もないモデルは出さない(`insert_model` の後に C++ の学習開始が失敗した場合などにできる。作業 8 を参照)
 - 再開の本体: `ResumeTrainingConfigDto`(`GET /config` の応答と同じ形。上の「学習再開の設計方針」を参照)。パスと本体の `model_id` が違えば 400
 - 応答: 新規学習と同じ `{ "job_id": ... }`
@@ -167,19 +167,17 @@ POST /api/v1/models/{model_id}/resume   学習再開。本体には変えてよ�
 - HTTP の DTO(`TrainingConfigDto` 以下)を双方向(Serialize + Deserialize)にし、`ResumeTrainingConfigDto { model_id, #[serde(flatten)] config }` を追加した
 - `ResumeTraining` の依存は `AppState` の既存の型パラメータを使い回している(resumer = `S`、`GrpcTrainingStarter` が両方を実装)。作業 12 で分ける
 - `ResumeTraining` は、モデルと前回の設定があるかだけを確かめる(なければ 404、`model_graph` が NULL なら 409)。下の手順 3・4 は作業 14 に回した
-- 残り: 一覧の `task_type` / 最後の run の `status` / 日時 / 完了エポック数(今は `model_id` / `model_name` / `created_at` だけ)
+- 一覧の項目追加(`task_type` / 最後の run の `status` / 日時 / 完了エポック数 / 再開できるか)は、再開画面で初めて必要になるので作業 7 に回した
+- 残り: 実機での確認(下の「完了条件」)
 
-**作業内容**
-- 読み取り用のトレイトに `list_models` / `find_model(model_id)` / `find_latest_config(model_id)` を追加し、SQL で実装する
-  - 最新の run は `training_runs` を `started_at DESC` で 1 件取る
-  - 完了エポック数は、そのモデルの全 run について `MAX(training_epochs.epoch)` を取る
-- `ResumeTraining` ユースケースを新しく作る(`StartTraining` は新規専用のまま)
-  1. `find_model` → 見つからなければ `ModelNotFound`(404)
-  2. `find_latest_config` → 見つからなければ `NoPreviousRun`(409)
-  3. Optimizer の種類が前回と違えば `OptimizerTypeChanged`(422)
-  4. 名前・構造・`data_spec` は DB の値、残りはリクエストの値から `TrainingConfig` を組み立てる
-  5. `start_training(config, model_id, resume = true)` → `insert_training_run`(`insert_model` はしない)
-- C++ の `FailedPrecondition`(checkpoint がない・エポック数が足りない)を `StartTrainingError` に足して、409 にする
+**実装の内容**
+- 読み取りのポートは `ModelSummaryProvider`(一覧)と `ModelTrainingConfigProvider`(最新の run の設定)。どちらも `SqliteTrainingRepository` が実装する
+  - 最新の run は `training_runs` を `started_at DESC, rowid DESC` で 1 件取る
+- `ResumeTraining` ユースケース(`StartTraining` は新規専用のまま)
+  1. `ModelTrainingConfigProvider::fetch` → なければ `ModelNotFound`(404)、`model_graph` が NULL なら `NotResumable`(409)
+  2. `resume_training(config, model_id)`(gRPC で `resume = true`)→ `insert_training_run`(`insert_model` はしない)→ 進捗の記録を schedule
+  - Optimizer の種類の照合(`OptimizerTypeChanged`、422)と、固定項目を DB の値で上書きする処理は作業 14 に回した
+- C++ の `FailedPrecondition`(checkpoint がない・エポック数が足りない)は `StartTrainingError::ResumePreconditionFailed` として 409 にする
 - 「そのモデルを学習中か」は DB の `status` では判定しない。C++ は同時に 1 ジョブしか動かさず、`AlreadyRunning` で弾けるため。また、Rust が落ちると `running` のままの行が残り、そのモデルを永久に再開できなくなるため
 
 **注意**
@@ -204,6 +202,14 @@ POST /api/v1/models/{model_id}/resume   学習再開。本体には変えてよ�
 ---
 
 ## 7. 学習再開画面(React)
+
+**バックエンドの前作業(作業 5 から移した)**
+- 一覧 API(`GET /models`)の各要素に、次を追加する。今は `model_id` / `model_name` / `created_at` だけ
+  - `task_type`(`training_config` の `data_spec` から)
+  - 最後の run の `status` / `started_at` / `finished_at`
+  - 完了したエポック数(そのモデルの全 run について `MAX(training_epochs.epoch)`)
+  - 再開できるか(`model_graph` が保存されているか。作業 15 を入れたら `last` の `.pt` があるかも見る)
+- `ModelSummary`(entity)・`ModelSummaryDto`・`openapi.yaml` の `ModelSummary` を合わせて変える
 
 **作業内容**
 - ノードエディタのヘッダーに [学習再開] を追加し、`/resume` に移動する
@@ -480,3 +486,80 @@ where
 **完了条件**
 - 再開リクエストの `model_graph` を書き換えて送っても、保存されている構造で再開される
 - Optimizer の種類を変えて送ると 422 が返り、C++ には送られない
+
+---
+
+## 15. 重み(`.pt`)のダウンロードと削除(2026-11-09 提案・未決定あり)
+
+**背景**
+- 学習済みの重みを、GUI からダウンロード・削除できるようにしたい
+- `.pt` は C++ が `<checkpointOutputDirPath>/<model_id>_best.pt` / `_last.pt` に保存している(`TorchCheckpointStore`)。中身はモデルのパラメータ・Optimizer の状態・`model_graph`・メタ情報(`torch::serialize::OutputArchive`)
+- ファイルがあるのは **C++ コンテナのファイルシステム**。サーバー運用では C++ だけが GPU ノードにいるので、Rust からは直接読めない・消せない
+- そのため **model テーブルに `.pt` のパスは保存しない**。パスは `model_id` から決まるので二重管理になるうえ、Rust が持っていても使えない。ファイルの場所は C++ だけが知り、Rust とは `model_id` と種類(best / last)だけでやり取りする
+
+**API 案**
+```
+GET    /api/v1/models/{model_id}/checkpoints         → 200 { "checkpoints": [{ "kind": "best"|"last", "size_bytes", "saved_at", "epoch" }] }
+GET    /api/v1/models/{model_id}/checkpoints/{kind}  → 200 application/octet-stream
+                                                        Content-Disposition: attachment; filename="<model_name>_<kind>.pt"
+DELETE /api/v1/models/{model_id}/checkpoints/{kind}  → 204
+```
+gRPC(`training.proto` に追加。または `checkpoint.proto` に分ける):
+```proto
+rpc ListCheckpoints(ListCheckpointsRequest) returns (ListCheckpointsResponse);              // 単項
+rpc DownloadCheckpoint(DownloadCheckpointRequest) returns (stream CheckpointChunk);         // サーバーストリーミング(1MB 程度ずつ)
+rpc DeleteCheckpoint(DeleteCheckpointRequest) returns (DeleteCheckpointResponse);           // 単項
+```
+- `kind` は enum(best / last)で受け、ファイル名は C++ が `model_id` と組み立てる。任意のパスやファイル名は受け付けない(パストラバーサル対策)。`model_id` は Rust 側で `ModelId::new` を通す
+- Rust は受け取ったチャンクをそのまま HTTP のレスポンスに流す(`axum::body::Body::from_stream`)。全体をメモリに載せない
+
+**エラー**
+- ファイルがない → 404(C++ は `NOT_FOUND`)
+- そのモデルが学習中 → 409(書き込み中のファイルを読む・消すのを防ぐ。C++ 側で、そのモデルのジョブが動いているかを見て `FAILED_PRECONDITION` を返す)
+- `last` を消したあとに再開すると、既存の処理で 409 になる(作業 4 の `resume = true` の前提チェック)
+
+**未決定(決めてから着手する)**
+1. **転送方式**
+   - (a) 上の案のとおり gRPC で C++ から取り出す。今の構成(gRPC 境界)のままで、どのデプロイ形態でも動く
+   - (b) 保存先を共有ボリュームやオブジェクトストレージ(S3 / MinIO)にし、Rust が直接読む。ファイルが大きくなる・利用者が増える場合に向くが、インフラが増える
+   - 提案: (a)。必要になったら (b) に移る(そのときは C++ の保存先と、Rust の読み出しの両方を差し替える)
+2. **ファイルの有無をどこで管理するか**
+   - (a) C++ が正とし、一覧は `ListCheckpoints` で毎回 C++ に聞く。DB には持たない
+   - (b) DB に `checkpoints(model_id, kind, epoch, saved_at, uri)` テーブルを作り、C++ からの保存完了の通知で書く。一覧は DB から返せるが、ファイルとずれないようにする仕組みが要る
+   - 提案: (a)。エポックごとの重みを残して選べるようにするなど、1 モデルに多数の重みを持つようになったら (b) を検討する
+3. **削除の範囲**
+   - (a) 重みファイルだけを消す。DB の `model` / `training_runs` は残す(学習の履歴は見られるが、再開はできない)
+   - (b) モデルごと消す(`DELETE /models/{model_id}`)。重みと DB の行をまとめて消す。DB と C++ をまたぐので、片方だけ消えた場合の扱いを決める必要がある
+   - 両方入れるなら (a) を先に作り、(b) は (a) を呼んでから DB を消す形にする
+4. **ダウンロードしたファイルの用途**
+   - このツール以外(Python の PyTorch など)で使えるかは要確認。`torch::serialize::OutputArchive` の形式は Python の `torch.load` でそのまま読めない可能性がある
+   - 他で使いたいなら、パラメータだけを書き出す形式(`state_dict` 相当や safetensors など)でのエクスポートを別に用意する
+
+**関連**
+- 一覧 API(作業 5)に「再開できるか(`last` があるか)」を出すと、再開画面(作業 7)で再開できないモデルを区別できる
+- `training_config.resume_from` の列(0001)は、作業 4 で再開を `resume` フラグと `<model_id>_last.pt` に切り替えたので使っていない。0001 は編集しない方針なので、残すか、新しいマイグレーションで消すかを決める
+
+**完了条件**
+- GUI から best / last をダウンロードでき、ファイル名にモデル名が入っている
+- 削除したあと、一覧に出なくなり、ダウンロードは 404、再開は 409 になる
+- 学習中のモデルは、ダウンロードも削除も 409 で断られる
+
+---
+
+## 16. 学習失敗の理由にスタックトレースを入れない(2026-11-09 提案)
+
+**背景**
+- `TrainingJobManager.cpp` は例外を `std::exception` で受け、`e.what()` をそのまま失敗理由にしている
+- libtorch の `c10::Error::what()` はバックトレース(`frame #0: ...` が数十行)付きなので、それが gRPC → Rust → `training_runs.failure_reason` と GUI の表示にそのまま出ている
+- バックトレースは C++ 内部の情報で、利用者には不要。DB の行も大きくなる
+
+**作業内容**
+1. C++(`TrainingJobManager.cpp`): `std::exception` より前で `c10::Error` を受け、`e.what_without_backtrace()` を `onFinished` に渡す。バックトレースが必要なら `std::cerr`(標準エラー)にだけ出す
+2. Rust(保険): gRPC から受けた失敗理由を entity にする箇所で、長さに上限を付ける(例: 1 KB)。C++ がどんな文字列を返しても DB が膨らまないようにする
+3. 利用者向けの言い換え(「最後の層は Conv2D にしてください」など)は DB には入れず、表示側で行う。種類で分けたくなったら proto に `error_code` を追加する
+
+**関連**
+- C++ 側にはログの仕組み(出力先・レベル・ローテーション)がない。`std::cerr` の出力が残るかは起動のしかた次第。必要ならロガー(spdlog など)の導入を別の作業にする
+
+**完了条件**
+- 形の合わないモデルで学習を失敗させたとき、`failure_reason` と GUI の表示が 1 行のメッセージになっている
