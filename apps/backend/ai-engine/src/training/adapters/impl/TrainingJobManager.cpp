@@ -6,6 +6,8 @@
 #include <exception>
 #include <utility>
 #include <random>
+#include <iostream>
+#include <torch/torch.h>
 
 TrainingJobManager::TrainingJobManager(JobRunner runner, JobPreflight preflight)
     : _runner(std::move(runner)), _preflight(std::move(preflight))
@@ -67,9 +69,10 @@ std::string TrainingJobManager::start(const StartTrainingCommand &command)
                 const TrainingStatus status = runner(command, store, stopToken.get());
                 store->onFinished(status, "");
             }
-            catch (const std::exception &e)
+            catch (const c10::Error &e)
             {
-                store->onFinished(TrainingStatus::Failed, e.what());
+                std::cerr << e.what() << std::endl;
+                store->onFinished(TrainingStatus::Failed, e.what_without_backtrace());
             }
             catch (...)
             {
