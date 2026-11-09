@@ -15,7 +15,6 @@ pub fn to_json(graph: &ModelGraph) -> Result<String, serde_json::Error> {
     serde_json::to_string(&StoredModelGraph::from(graph))
 }
 
-#[allow(dead_code)] // 作業 5(学習再開)で model_graph を読み出すときに使う
 pub fn from_json(json: &str) -> Result<ModelGraph, serde_json::Error> {
     serde_json::from_str::<StoredModelGraph>(json).map(ModelGraph::from)
 }

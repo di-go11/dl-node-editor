@@ -3,10 +3,10 @@ use entities::model::layer::{
     IndexedPoolingSpec, LinearSpec, NodeSpec, Pooling2DSpec, PoolingType, UnpoolingSpec,
     UpsampleMode, UpsampleSpec,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 // NodeSpecのDTO
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum NodeSpecDto {
     // snake_case のままだと "conv2_d" になるので個別に指定する
@@ -42,7 +42,7 @@ impl From<NodeSpecDto> for NodeSpec {
 }
 
 // Conv2DのDTO
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Conv2DSpecDto {
     pub in_channels: i64,
     pub out_channels: i64,
@@ -66,9 +66,12 @@ impl From<Conv2DSpecDto> for Conv2DSpec {
 }
 
 // PoolingTypeのDTO
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PoolingTypeDto {
+    // entity からの変換(応答)を漏れなく書くためだけにある。GUI からは受け付けない
+    #[serde(skip_deserializing)]
+    Unspecified,
     Max,
     Average,
 }
@@ -76,6 +79,7 @@ pub enum PoolingTypeDto {
 impl From<PoolingTypeDto> for PoolingType {
     fn from(value: PoolingTypeDto) -> Self {
         match value {
+            PoolingTypeDto::Unspecified => PoolingType::Unspecified,
             PoolingTypeDto::Max => PoolingType::Max,
             PoolingTypeDto::Average => PoolingType::Average,
         }
@@ -83,7 +87,7 @@ impl From<PoolingTypeDto> for PoolingType {
 }
 
 // Pooling2DのDTO
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Pooling2DSpecDto {
     pub pooling_type: PoolingTypeDto,
     pub kernel_size: i64,
@@ -103,7 +107,7 @@ impl From<Pooling2DSpecDto> for Pooling2DSpec {
 }
 
 // BatchNormalizerのDTO
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct BatchNormalizerSpecDto {
     pub num_features: i64,
     pub eps: f64,
@@ -121,7 +125,7 @@ impl From<BatchNormalizerSpecDto> for BatchNormalizerSpec {
 }
 
 // LinearのDTO
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct LinearSpecDto {
     pub in_features: i64,
     pub out_features: i64,
@@ -139,9 +143,12 @@ impl From<LinearSpecDto> for LinearSpec {
 }
 
 // ActivationTypeのDTO
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ActivationTypeDto {
+    // entity からの変換(応答)を漏れなく書くためだけにある。GUI からは受け付けない
+    #[serde(skip_deserializing)]
+    Unspecified,
     Relu,
     Sigmoid,
     Softmax,
@@ -151,6 +158,7 @@ pub enum ActivationTypeDto {
 impl From<ActivationTypeDto> for ActivationType {
     fn from(value: ActivationTypeDto) -> Self {
         match value {
+            ActivationTypeDto::Unspecified => ActivationType::Unspecified,
             ActivationTypeDto::Relu => ActivationType::Relu,
             ActivationTypeDto::Sigmoid => ActivationType::Sigmoid,
             ActivationTypeDto::Softmax => ActivationType::Softmax,
@@ -160,7 +168,7 @@ impl From<ActivationTypeDto> for ActivationType {
 }
 
 // ActivationのDTO
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ActivationSpecDto {
     pub activation_type: ActivationTypeDto,
     pub dim: i32,
@@ -176,7 +184,7 @@ impl From<ActivationSpecDto> for ActivationSpec {
 }
 
 // IndexedPoolingのDTO
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct IndexedPoolingSpecDto {
     pub kernel_size: i64,
     pub stride: i64,
@@ -194,7 +202,7 @@ impl From<IndexedPoolingSpecDto> for IndexedPoolingSpec {
 }
 
 // UnpoolingのDTO
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct UnpoolingSpecDto {
     pub kernel_size: i64,
     pub stride: i64,
@@ -212,9 +220,12 @@ impl From<UnpoolingSpecDto> for UnpoolingSpec {
 }
 
 // UpsampleModeのDTO
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UpsampleModeDto {
+    // entity からの変換(応答)を漏れなく書くためだけにある。GUI からは受け付けない
+    #[serde(skip_deserializing)]
+    Unspecified,
     Nearest,
     Bilinear,
 }
@@ -222,6 +233,7 @@ pub enum UpsampleModeDto {
 impl From<UpsampleModeDto> for UpsampleMode {
     fn from(value: UpsampleModeDto) -> Self {
         match value {
+            UpsampleModeDto::Unspecified => UpsampleMode::Unspecified,
             UpsampleModeDto::Nearest => UpsampleMode::Nearest,
             UpsampleModeDto::Bilinear => UpsampleMode::Bilinear,
         }
@@ -229,7 +241,7 @@ impl From<UpsampleModeDto> for UpsampleMode {
 }
 
 // UpsampleのDTO
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct UpsampleSpecDto {
     pub upsample_mode: UpsampleModeDto,
     pub scale_factor: i64,
@@ -245,7 +257,7 @@ impl From<UpsampleSpecDto> for UpsampleSpec {
 }
 
 // AddのDTO
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct AddSpecDto {
     pub alpha: f64,
 }
@@ -253,6 +265,145 @@ pub struct AddSpecDto {
 impl From<AddSpecDto> for AddSpec {
     fn from(value: AddSpecDto) -> Self {
         AddSpec { alpha: value.alpha }
+    }
+}
+
+// ===== entity -> DTO(GET /models/{model_id}/config の応答用) =====
+
+impl From<NodeSpec> for NodeSpecDto {
+    fn from(value: NodeSpec) -> Self {
+        match value {
+            NodeSpec::Conv2D(spec) => NodeSpecDto::Conv2D(spec.into()),
+            NodeSpec::Pooling2D(spec) => NodeSpecDto::Pooling2D(spec.into()),
+            NodeSpec::BatchNorm(spec) => NodeSpecDto::BatchNorm(spec.into()),
+            NodeSpec::Linear(spec) => NodeSpecDto::Linear(spec.into()),
+            NodeSpec::Activation(spec) => NodeSpecDto::Activation(spec.into()),
+            NodeSpec::IndexedPooling(spec) => NodeSpecDto::IndexedPooling(spec.into()),
+            NodeSpec::Unpooling(spec) => NodeSpecDto::Unpooling(spec.into()),
+            NodeSpec::Upsample(spec) => NodeSpecDto::Upsample(spec.into()),
+            NodeSpec::Add(spec) => NodeSpecDto::Add(spec.into()),
+            NodeSpec::Concat(ConcatSpec) => NodeSpecDto::Concat,
+        }
+    }
+}
+
+impl From<Conv2DSpec> for Conv2DSpecDto {
+    fn from(value: Conv2DSpec) -> Self {
+        Conv2DSpecDto {
+            in_channels: value.in_channels,
+            out_channels: value.out_channels,
+            kernel_size: value.kernel_size,
+            stride: value.stride,
+            padding: value.padding,
+            dilation: value.dilation,
+        }
+    }
+}
+
+impl From<PoolingType> for PoolingTypeDto {
+    fn from(value: PoolingType) -> Self {
+        match value {
+            PoolingType::Unspecified => PoolingTypeDto::Unspecified,
+            PoolingType::Max => PoolingTypeDto::Max,
+            PoolingType::Average => PoolingTypeDto::Average,
+        }
+    }
+}
+
+impl From<Pooling2DSpec> for Pooling2DSpecDto {
+    fn from(value: Pooling2DSpec) -> Self {
+        Pooling2DSpecDto {
+            pooling_type: value.pooling_type.into(),
+            kernel_size: value.kernel_size,
+            stride: value.stride,
+            padding: value.padding,
+        }
+    }
+}
+
+impl From<BatchNormalizerSpec> for BatchNormalizerSpecDto {
+    fn from(value: BatchNormalizerSpec) -> Self {
+        BatchNormalizerSpecDto {
+            num_features: value.num_features,
+            eps: value.eps,
+            momentum: value.momentum,
+        }
+    }
+}
+
+impl From<LinearSpec> for LinearSpecDto {
+    fn from(value: LinearSpec) -> Self {
+        LinearSpecDto {
+            in_features: value.in_features,
+            out_features: value.out_features,
+            bias: value.bias,
+        }
+    }
+}
+
+impl From<ActivationType> for ActivationTypeDto {
+    fn from(value: ActivationType) -> Self {
+        match value {
+            ActivationType::Unspecified => ActivationTypeDto::Unspecified,
+            ActivationType::Relu => ActivationTypeDto::Relu,
+            ActivationType::Sigmoid => ActivationTypeDto::Sigmoid,
+            ActivationType::Softmax => ActivationTypeDto::Softmax,
+            ActivationType::Tanh => ActivationTypeDto::Tanh,
+        }
+    }
+}
+
+impl From<ActivationSpec> for ActivationSpecDto {
+    fn from(value: ActivationSpec) -> Self {
+        ActivationSpecDto {
+            activation_type: value.activation_type.into(),
+            dim: value.dim,
+        }
+    }
+}
+
+impl From<IndexedPoolingSpec> for IndexedPoolingSpecDto {
+    fn from(value: IndexedPoolingSpec) -> Self {
+        IndexedPoolingSpecDto {
+            kernel_size: value.kernel_size,
+            stride: value.stride,
+            padding: value.padding,
+        }
+    }
+}
+
+impl From<UnpoolingSpec> for UnpoolingSpecDto {
+    fn from(value: UnpoolingSpec) -> Self {
+        UnpoolingSpecDto {
+            kernel_size: value.kernel_size,
+            stride: value.stride,
+            padding: value.padding,
+        }
+    }
+}
+
+impl From<UpsampleMode> for UpsampleModeDto {
+    fn from(value: UpsampleMode) -> Self {
+        match value {
+            UpsampleMode::Unspecified => UpsampleModeDto::Unspecified,
+            UpsampleMode::Nearest => UpsampleModeDto::Nearest,
+            UpsampleMode::Bilinear => UpsampleModeDto::Bilinear,
+        }
+    }
+}
+
+impl From<UpsampleSpec> for UpsampleSpecDto {
+    fn from(value: UpsampleSpec) -> Self {
+        UpsampleSpecDto {
+            upsample_mode: value.upsample_mode.into(),
+            scale_factor: value.scale_factor,
+        }
+    }
+}
+
+impl From<AddSpec> for AddSpecDto {
+    fn from(value: AddSpec) -> Self {
+        AddSpecDto { alpha: value.alpha }
     }
 }
 

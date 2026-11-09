@@ -2,7 +2,7 @@ openapi: 3.1.0
 
 info:
   title: Model Editor Backend API
-  version: 0.2.0
+  version: 0.3.0
   description: |
     ノードエディタ(React)と Rust の HTTP API の間の契約。**このファイルが契約の正本である。**
 
@@ -38,6 +38,8 @@ tags:
     description: 実行環境(使えるデバイス)の取得
   - name: trainings
     description: 学習の開始・進捗・停止
+  - name: models
+    description: 学習済みモデルの一覧・学習設定の取得と、学習の再開
 
 paths:
   /capabilities:
@@ -64,7 +66,7 @@ paths:
       description: |
         受理されると job_id が返り、進捗は /trainings/{job_id}/progress で購読する。
         新規学習専用。同じ model_name のモデルがすでにあるかは /trainings/validate で先に確かめる。
-        学習の再開は別のエンドポイントで行う(未実装)。
+        学習の再開は /models/{model_id}/resume で行う。
       requestBody:
         required: true
         content:
@@ -205,6 +207,92 @@ paths:
         '502':
           $ref: '#/components/responses/UpstreamError'
 
+  /models:
+    get:
+      tags: [models]
+      operationId: listModels
+      summary: 学習済みモデルの一覧を取得する
+      description: |
+        学習再開画面(/resume)の一覧に使う。新しく作ったモデルが先に並ぶ。
+        学習の記録(run)が 1 件もないモデルは含めない。0 件でも 200 で空の配列を返す。
+      responses:
+        '200':
+          description: 取得できた
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelSummariesResponse'
+        '500':
+          description: DB の読み取りに失敗した
+
+  /models/{model_id}/config:
+    get:
+      tags: [models]
+      operationId: getModelConfig
+      summary: モデルの最新の学習設定を取得する
+      description: |
+        再開フォームの初期値と、固定項目(model_name / model_graph / data_spec / optimizer の type)の表示に使う。
+        応答はそのまま /models/{model_id}/resume の本体として送り返せる。
+      parameters:
+        - $ref: '#/components/parameters/ModelId'
+      responses:
+        '200':
+          description: 取得できた
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResumeTrainingConfig'
+        '400':
+          $ref: '#/components/responses/InvalidModelId'
+        '404':
+          $ref: '#/components/responses/ModelNotFound'
+        '409':
+          description: モデル構造が保存されていない古いモデルなので再開できない
+        '500':
+          description: DB の読み取りに失敗した
+
+  /models/{model_id}/resume:
+    post:
+      tags: [models]
+      operationId: resumeTraining
+      summary: 学習を再開する
+      description: |
+        /models/{model_id}/config の応答の、変えてよい項目だけを書き換えて送る。
+        - 固定項目(model_name / model_graph / data_spec / optimizer の type)は、フロントで読み取り専用にする。
+          今はバックエンドでは照合しないので、書き換えて送ると C++ が拒否する(409)か、意図しない学習になる。
+        - epoch は合計エポック数である。前回までに完了したエポック数より大きい値にする。
+        - 再開元の checkpoint は C++ が model_id から決める。
+        受理されると job_id が返り、進捗は /trainings/{job_id}/progress で購読する。
+      parameters:
+        - $ref: '#/components/parameters/ModelId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResumeTrainingConfig'
+      responses:
+        '200':
+          description: 受理した
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StartTrainingResponse'
+        '400':
+          description: model_id の形が正しくない、またはパスと本体の model_id が違う
+        '404':
+          $ref: '#/components/responses/ModelNotFound'
+        '409':
+          description: |
+            再開できない。すでに学習が実行中、checkpoint がない、epoch が完了済みのエポック数以下、
+            モデル構造が保存されていない、C++ が設定を拒否した、のいずれか
+        '422':
+          description: リクエストの形が合わない
+        '500':
+          description: DB の読み書きに失敗した
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+
 components:
   parameters:
     JobId:
@@ -215,12 +303,24 @@ components:
       schema:
         type: string
         minLength: 1
+    ModelId:
+      name: model_id
+      in: path
+      required: true
+      description: /models の応答で返る学習済みモデルの識別子
+      schema:
+        type: string
+        minLength: 1
 
   responses:
     InvalidJobId:
       description: job_id の形が正しくない
     NotFound:
       description: 指定した job_id が見つからない
+    InvalidModelId:
+      description: model_id の形が正しくない
+    ModelNotFound:
+      description: 指定した model_id のモデル(または学習の記録)が見つからない
     UpstreamError:
       description: 学習エンジン(C++ / gRPC)との通信に失敗した
 
@@ -835,6 +935,47 @@ components:
         job_id:
           type: string
           minLength: 1
+
+    # ------------------------------------------------------------
+    # 学習済みモデルと学習の再開
+    # ------------------------------------------------------------
+
+    ModelSummary:
+      type: object
+      required: [model_id, model_name, created_at]
+      properties:
+        model_id:
+          type: string
+          minLength: 1
+        model_name:
+          type: string
+        created_at:
+          type: string
+          description: モデルを作った日時(UTC)
+
+    ModelSummariesResponse:
+      type: object
+      required: [models]
+      properties:
+        models:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModelSummary'
+
+    ResumeTrainingConfig:
+      description: |
+        StartTrainingRequest と同じ項目に model_id を足したもの(同じ階層に並ぶ)。
+        GET /models/{model_id}/config の応答と POST /models/{model_id}/resume の本体で共有する。
+        応答では seed を固定していない場合も、キーを省略せずに null を返す。
+      allOf:
+        - $ref: '#/components/schemas/StartTrainingRequest'
+        - type: object
+          required: [model_id]
+          properties:
+            model_id:
+              type: string
+              minLength: 1
+              description: パスの model_id と同じ値にする
 
     # ------------------------------------------------------------
     # 学習の状態と進捗

@@ -12,9 +12,10 @@ use std::eprintln;
 use std::sync::Arc;
 use tonic::transport::Channel;
 use usecases::capabilities::GetCapabilities;
+use usecases::model::{GetModelSummary, GetModelTrainingConfig};
 use usecases::training::{
-    GetTrainingProcess, RecordTrainingProgress, ResumeProgressRecordings, StartTraining,
-    StopTraining, ValidateTrainingConfig,
+    GetTrainingProcess, RecordTrainingProgress, ResumeProgressRecordings, ResumeTraining,
+    StartTraining, StopTraining, ValidateTrainingConfig,
 };
 
 #[tokio::main]
@@ -77,6 +78,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             pool.clone(),
         ))),
         record_training: training_progress_recorder.clone(),
+        get_model_summary: Arc::new(GetModelSummary::new(SqliteTrainingRepository::new(
+            pool.clone(),
+        ))),
+        get_model_config: Arc::new(GetModelTrainingConfig::new(SqliteTrainingRepository::new(
+            pool.clone(),
+        ))),
+        // 再開も新規学習と同じ GrpcTrainingStarter(resume = true で送る)と scheduler を使う
+        resume_training: Arc::new(ResumeTraining::new(
+            SqliteTrainingRepository::new(pool.clone()),
+            GrpcTrainingStarter::new(channel.clone()),
+            SqliteTrainingRepository::new(pool.clone()),
+            scheduler.clone(),
+        )),
     };
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await?;

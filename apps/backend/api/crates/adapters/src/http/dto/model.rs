@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use super::layer::NodeSpecDto;
 
 // ModelGraphのDTO
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ModelGraphDto {
     pub nodes: Vec<NodeDto>,
     pub outputs: Vec<PortRefDto>,
@@ -20,7 +20,7 @@ impl From<ModelGraphDto> for ModelGraph {
 }
 
 // NodeのDTO
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct NodeDto {
     pub id: String,
     pub spec: NodeSpecDto,
@@ -38,7 +38,7 @@ impl From<NodeDto> for Node {
 }
 
 // PortRefのDTO
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct PortRefDto {
     pub node_id: String,
     pub port: String,
@@ -54,7 +54,7 @@ impl From<PortRefDto> for PortRef {
 }
 
 // NodeInputのDTO
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct NodeInputDto {
     pub port: String,
     pub source: Option<PortRefDto>, // Noneの場合は、グラフ入力につなぐ
@@ -63,6 +63,45 @@ pub struct NodeInputDto {
 impl From<NodeInputDto> for NodeInput {
     fn from(value: NodeInputDto) -> Self {
         NodeInput {
+            port: value.port,
+            source: value.source.map(Into::into),
+        }
+    }
+}
+
+// ===== entity -> DTO(GET /models/{model_id}/config の応答用) =====
+
+impl From<ModelGraph> for ModelGraphDto {
+    fn from(value: ModelGraph) -> Self {
+        ModelGraphDto {
+            nodes: value.nodes.into_iter().map(Into::into).collect(),
+            outputs: value.outputs.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<Node> for NodeDto {
+    fn from(value: Node) -> Self {
+        NodeDto {
+            id: value.id,
+            spec: value.spec.into(),
+            inputs: value.inputs.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<PortRef> for PortRefDto {
+    fn from(value: PortRef) -> Self {
+        PortRefDto {
+            node_id: value.node_id,
+            port: value.port,
+        }
+    }
+}
+
+impl From<NodeInput> for NodeInputDto {
+    fn from(value: NodeInput) -> Self {
+        NodeInputDto {
             port: value.port,
             source: value.source.map(Into::into),
         }

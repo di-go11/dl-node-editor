@@ -19,8 +19,9 @@
 ```
 
 - 再開画面はエディタのドキュメント(`document.training` やグラフ)を使わない。前回の `training_config` を初期値として読み込む
-- 再開リクエストは `model_id` と「変えてよい項目」だけを送る。名前・構造・データ仕様は Rust が DB から組み立てる
-  → 「再開なのに名前を変えられる」「別モデルの `model_id` と別の名前を組み合わせて送れる」が型の上で起きなくなる
+- **(2026-11-09 変更)** 再開リクエストの本体は、`GET /models/{model_id}/config` の応答と同じ `ResumeTrainingConfigDto`(全設定 + `model_id`)にする。取得した設定の変えてよい項目だけを書き換えて、そのまま送り返す
+  - 当初は「`model_id` と変えてよい項目だけを送り、名前・構造・データ仕様は Rust が DB から組み立てる」予定だった。DTO を新規学習・設定取得・再開で共有し、往復できる形を優先して変更した
+  - 固定項目は**当面はフロントで読み取り専用にするだけ**。バックエンドでの上書き・照合は作業 14 で行う(それまでは、書き換えて送ると C++ が `FailedPrecondition` などで拒否するか、意図しない学習になる)
 
 再開時に変えられる項目は次のとおり(C++ の現在の実装に合わせる)。
 
@@ -157,8 +158,16 @@ POST /api/v1/models/{model_id}/resume   学習再開。本体には変えてよ�
 ```
 - 一覧の各要素: `model_id`, `model_name`, `created_at`, `task_type`, 最後の run の `status` / `started_at` / `finished_at`, 完了したエポック数
   - `training_runs` が 1 件もないモデルは出さない(`insert_model` の後に C++ の学習開始が失敗した場合などにできる。作業 8 を参照)
-- 再開の本体: `epoch`, `batch`, `device`, `dataset_path`, `save_last_every`, `seed`, `optimizer`, `loss`
+- 再開の本体: `ResumeTrainingConfigDto`(`GET /config` の応答と同じ形。上の「学習再開の設計方針」を参照)。パスと本体の `model_id` が違えば 400
 - 応答: 新規学習と同じ `{ "job_id": ... }`
+
+**状況(2026-11-09)**
+3 本のエンドポイントは実装済み(`cargo test` は通過。実機での確認はまだ)。
+- `GetModelSummary` / `GetModelTrainingConfig` / `ResumeTraining` ユースケースと、SQL の実装(`adapters/src/training/sql/sql_model_reader.rs`)
+- HTTP の DTO(`TrainingConfigDto` 以下)を双方向(Serialize + Deserialize)にし、`ResumeTrainingConfigDto { model_id, #[serde(flatten)] config }` を追加した
+- `ResumeTraining` の依存は `AppState` の既存の型パラメータを使い回している(resumer = `S`、`GrpcTrainingStarter` が両方を実装)。作業 12 で分ける
+- `ResumeTraining` は、モデルと前回の設定があるかだけを確かめる(なければ 404、`model_graph` が NULL なら 409)。下の手順 3・4 は作業 14 に回した
+- 残り: 一覧の `task_type` / 最後の run の `status` / 日時 / 完了エポック数(今は `model_id` / `model_name` / `created_at` だけ)
 
 **作業内容**
 - 読み取り用のトレイトに `list_models` / `find_model(model_id)` / `find_latest_config(model_id)` を追加し、SQL で実装する
@@ -451,3 +460,23 @@ where
 - 学習中に C++ との接続が一時的に切れても、つながり直せば、抜けたエポックなしで記録が続く
 - C++ が再起動してジョブが消えた場合、そのジョブは `failed` になり、Rust を再起動しても再開を試み続けない
 - どのケースでも、同じエポックが二重に保存されない
+
+---
+
+## 14. 学習再開で固定項目をバックエンドでも守る(2026-11-09 提案)
+
+**背景**
+再開リクエストの本体は全設定を含む `ResumeTrainingConfigDto` にしたので(作業 5)、クライアントは `model_name` / `model_graph` / `data_spec` / Optimizer の種類を書き換えて送ることができる。
+今はフロントで読み取り専用にしているだけで、バックエンドでは確かめていない。
+- curl などで直接呼んだ場合や、フロントのバグ(state の取り違えなど)で、checkpoint と合わない設定が C++ に届く
+- 構造が違えば C++ が `.pt` の読み込みで失敗するが、分かるのは学習を始めるときで、エラーも分かりにくい
+
+**作業内容**
+- `ResumeTraining::execute` では、すでに `ModelTrainingConfigProvider::fetch` で前回の設定を読んでいる(今は存在確認にしか使っていない)。これを使って次の処理を行う
+  - `model_name` / `model_graph` / `data_spec` は、リクエストの値を使わず DB の値で上書きする(フロントには表示用に返しているだけなので、送り返された値は信用しない)
+  - Optimizer の種類が前回と違えば `OptimizerTypeChanged`(422)を返す(C++ は `optimizer type mismatch` で例外を投げるため)
+- 余力があれば、`epoch` が前回の完了エポック数以下なら、C++ に送る前に 409 を返す(作業 2 の `last_saved_epoch` をモデル単位で使う)
+
+**完了条件**
+- 再開リクエストの `model_graph` を書き換えて送っても、保存されている構造で再開される
+- Optimizer の種類を変えて送ると 422 が返り、C++ には送られない

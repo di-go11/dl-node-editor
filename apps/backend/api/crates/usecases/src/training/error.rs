@@ -23,6 +23,23 @@ pub enum StartTrainingError {
     ResumePreconditionFailed(String),
 }
 
+// 学習再開(ResumeTraining)のエラー
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum ResumeTrainingError {
+    // 指定された model_id のモデル(または学習の記録)がない
+    #[error("model not found: {0}")]
+    ModelNotFound(String),
+    // model_graph が保存されていないなど、再開に必要な情報がない
+    #[error("model is not resumable: {0}")]
+    NotResumable(String),
+    // DB からの読み出しに失敗した
+    #[error("failed to read model: {0}")]
+    ReadFailed(String),
+    // C++ での学習開始・記録の失敗。AlreadyRunning / ResumePreconditionFailed などは新規学習と同じ扱い
+    #[error(transparent)]
+    Start(#[from] StartTrainingError),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 
 pub enum StopTrainingError {

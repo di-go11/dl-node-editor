@@ -1,8 +1,8 @@
 use usecases::{
     capabilities::{CapabilityProvider, GetCapabilities},
-    model::GetTrainingHistory,
+    model::{GetModelSummary, GetModelTrainingConfig},
     training::{
-        GetTrainingProcess, RecordTrainingProgress, StartTraining, StopTraining,
+        GetTrainingProcess, RecordTrainingProgress, ResumeTraining, StartTraining, StopTraining,
         TrainingProgressProvider, TrainingRecordReader, TrainingStopper, ValidateTrainingConfig,
     },
 };
@@ -13,7 +13,8 @@ use std::sync::Arc;
 // 型パラメータの境界(where句)について:
 // AppState 側で必要なのは「ユースケース構造体の定義そのもの」に付いている境界だけ。
 // 現在該当するのは GetCapabilities(C) / ValidateTrainingConfig(V) / GetTrainingProcess(P) / StopTraining(T) の4つ。
-// StartTraining / RecordTrainingProgress / GetTrainingHistory は impl 側にだけ境界があるため、ここには書かない。
+// StartTraining / RecordTrainingProgress / GetModelSummary / GetModelTrainingConfig / ResumeTraining は
+// impl 側にだけ境界があるため、ここには書かない。
 // TODO: 上記4つのユースケースも境界を impl 側へ移せば、このファイルの where 句はすべて削除できる。
 // TODO(設計改善): 型パラメータの数そのものは、入力ポート導入(docs/issues/backend-db-remaining.md 作業12)で減らす。
 pub struct AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig>
@@ -33,8 +34,13 @@ where
     // 記録の起動をProgressRecordingSchedulerポート経由にしたら、このフィールドと型パラメータDを削除する。
     // 詳細は handler.rs の start_training のコメントを参照。
     pub record_training: Arc<RecordTrainingProgress<P, D>>,
-    // 学習済みモデルの一覧・学習設定の取得(実装中)
-    pub get_model_history: Arc<GetTrainingHistory<MSummary, MConfig>>,
+    // 学習済みモデルの一覧・最新の学習設定の取得
+    pub get_model_summary: Arc<GetModelSummary<MSummary>>,
+    pub get_model_config: Arc<GetModelTrainingConfig<MConfig>>,
+    // 学習再開。依存は既存の型パラメータを使い回す(resumer = S、registar = R、scheduler = K、設定の読み出し = MConfig)。
+    // S は TrainingStarter と TrainingResumer の両方を実装した型(GrpcTrainingStarter)にする必要がある。
+    // TODO(設計改善): 作業12 で入力ポートを導入したら、ResumeTraining 用の型パラメータ 1 つに分ける。
+    pub resume_training: Arc<ResumeTraining<MConfig, S, R, K>>,
 }
 
 // axum はリクエストごとに State を clone するため Clone が必要。
@@ -56,7 +62,9 @@ where
             stop_training: Arc::clone(&self.stop_training),
             validate_training: Arc::clone(&self.validate_training),
             record_training: Arc::clone(&self.record_training),
-            get_model_history: Arc::clone(&self.get_model_history),
+            get_model_summary: Arc::clone(&self.get_model_summary),
+            get_model_config: Arc::clone(&self.get_model_config),
+            resume_training: Arc::clone(&self.resume_training),
         }
     }
 }
@@ -146,7 +154,7 @@ where
 
 impl<C, S, R, G, K, V, P, T, D, MSummary, MConfig>
     FromRef<AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig>>
-    for Arc<GetTrainingHistory<MSummary, MConfig>>
+    for Arc<GetModelSummary<MSummary>>
 where
     C: CapabilityProvider,
     V: TrainingRecordReader,
@@ -154,6 +162,34 @@ where
     T: TrainingStopper,
 {
     fn from_ref(app_state: &AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig>) -> Self {
-        Arc::clone(&app_state.get_model_history)
+        Arc::clone(&app_state.get_model_summary)
+    }
+}
+
+impl<C, S, R, G, K, V, P, T, D, MSummary, MConfig>
+    FromRef<AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig>>
+    for Arc<GetModelTrainingConfig<MConfig>>
+where
+    C: CapabilityProvider,
+    V: TrainingRecordReader,
+    P: TrainingProgressProvider,
+    T: TrainingStopper,
+{
+    fn from_ref(app_state: &AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig>) -> Self {
+        Arc::clone(&app_state.get_model_config)
+    }
+}
+
+impl<C, S, R, G, K, V, P, T, D, MSummary, MConfig>
+    FromRef<AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig>>
+    for Arc<ResumeTraining<MConfig, S, R, K>>
+where
+    C: CapabilityProvider,
+    V: TrainingRecordReader,
+    P: TrainingProgressProvider,
+    T: TrainingStopper,
+{
+    fn from_ref(app_state: &AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig>) -> Self {
+        Arc::clone(&app_state.resume_training)
     }
 }

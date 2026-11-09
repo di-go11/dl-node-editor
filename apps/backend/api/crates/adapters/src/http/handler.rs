@@ -1,31 +1,37 @@
 use super::dto::{
-    CapabilitiesDto, StartTrainingResponseDto, TrainingConfigDto, TrainingJobStatusDto,
-    TrainingProcessDto,
-    ModelSummaryDto,
+    CapabilitiesDto, ModelSummariesDto, ResumeTrainingConfigDto, StartTrainingResponseDto,
+    TrainingConfigDto, TrainingJobStatusDto, TrainingProcessDto,
 };
 use axum::{
     extract::{Path, State},
     http::StatusCode,
     Json,
 };
-use entities::training::{config::TrainingConfig, JobId, TrainingProcess};
+use entities::{
+    model::ModelId,
+    training::{config::TrainingConfig, JobId, TrainingProcess},
+};
 use futures_util::StreamExt;
-use usecases::{model::{error::FetchModelError, ports::ModelSummaryProvider}, training::{
-    GetTrainingProcess, ModelIdGenerator, ProgressRecordingScheduler, StartTraining, StopTraining,
-    TrainingProgressProvider, TrainingProgressProviderError, TrainingRecordReader,
-    TrainingRunRegistar, TrainingStarter, TrainingStopper, ValidateTrainingConfig,
-    ValidateTrainingConfigError,
-}};
 use usecases::{
     capabilities::{CapabilityProvider, GetCapabilities},
-    training::StartTrainingError,
-    model::{ModelSummaryProvider, ModelTrainingConfigProvider,GetModelSummary,GetModelTrainingConfig,error::{ModelRepositoryError}},
+    model::{
+        error::{FetchModelError, ModelRepositoryError},
+        ports::{ModelSummaryProvider, ModelTrainingConfigProvider},
+        GetModelSummary, GetModelTrainingConfig,
+    },
+    training::{
+        GetTrainingProcess, ModelIdGenerator, ProgressRecordingScheduler, ResumeTraining,
+        ResumeTrainingError, StartTraining, StartTrainingError, StopTraining,
+        TrainingProgressProvider, TrainingProgressProviderError, TrainingRecordReader,
+        TrainingResumer, TrainingRunRegistar, TrainingStarter, TrainingStopper,
+        ValidateTrainingConfig, ValidateTrainingConfigError,
+    },
 };
 
 use axum::response::sse::{Event, KeepAlive, Sse};
 use futures_core::Stream;
-use std::{future::Future, sync::Arc};
-use std::{convert::Infallible, eprint};
+use std::convert::Infallible;
+use std::sync::Arc;
 
 // 新規学習の開始POSTリクエストハンドラ(学習再開は別のエンドポイントにする)
 // 進捗記録の開始は StartTraining が ProgressRecordingScheduler ポート経由で行うため、ハンドラは関与しない。
@@ -42,15 +48,23 @@ where
     K: ProgressRecordingScheduler + Send + Sync + 'static,
 {
     let config = TrainingConfig::from(dto);
-    let job_id = start.execute(&config).await.map_err(|e| match e {
+    let job_id = start
+        .execute(&config)
+        .await
+        .map_err(status_code_from_start_error)?;
+    Ok(Json(job_id.into()))
+}
+
+// 新規学習と学習再開で共通の、C++での学習開始・記録の失敗の変換
+fn status_code_from_start_error(error: StartTrainingError) -> StatusCode {
+    match error {
         StartTrainingError::StartOrderFailed(_) => StatusCode::BAD_GATEWAY,
         StartTrainingError::ConversionToProtoFailed(_)
         | StartTrainingError::InvalidConfig(_)
         | StartTrainingError::ResumePreconditionFailed(_) => StatusCode::CONFLICT,
         StartTrainingError::AlreadyRunning(_) => StatusCode::CONFLICT,
         StartTrainingError::RecordFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
-    })?;
-    Ok(Json(job_id.into()))
+    }
 }
 
 // 新規学習の整合性チェックPOSTリクエストハンドラ(学習開始と同じJSONを受け取る)
@@ -82,10 +96,6 @@ where
         .map_err(|_| StatusCode::BAD_GATEWAY)?;
     Ok(Json(capabilities.into()))
 }
-
-pub async fn get_models<M>(
-    State(state): State<Arc<>>
-)
 
 // 学習停止POSTリクエストハンドラ
 pub async fn stop_training<T>(
@@ -190,19 +200,81 @@ where
     Ok(Sse::new(sse_stream).keep_alive(KeepAlive::default()))
 }
 
-// 学習済みモデルの一覧取得関数
-pub async fn get_model_lists<U>(
-    State(usecase): State<Arc<U>>,
-) -> Result<Json<Vec<ModelSummaryDto>>, StatusCode>
-where 
-    U: GetModelSummary + Send + Sync + 'static,
+// 学習済みモデルの一覧取得GETリクエストハンドラ。0件でも 200 で空の一覧を返す
+pub async fn get_model_lists<S>(
+    State(usecase): State<Arc<GetModelSummary<S>>>,
+) -> Result<Json<ModelSummariesDto>, StatusCode>
+where
+    S: ModelSummaryProvider + Send + Sync + 'static,
 {
-    let model_summaries = usecase.get_summary().await.map_err(|e| match e {
+    let model_summaries = usecase
+        .get_summary()
+        .await
+        .map_err(status_code_from_model_error)?;
+    Ok(Json(ModelSummariesDto::from(model_summaries.as_slice())))
+}
+
+// 学習済みモデルの最新の学習設定取得GETリクエストハンドラ(再開フォームの初期値と固定項目の表示用)
+// 応答はそのまま POST /models/{model_id}/resume の本体として送り返せる
+pub async fn get_model_config<T>(
+    State(usecase): State<Arc<GetModelTrainingConfig<T>>>,
+    Path(model_id): Path<String>,
+) -> Result<Json<ResumeTrainingConfigDto>, StatusCode>
+where
+    T: ModelTrainingConfigProvider + Send + Sync + 'static,
+{
+    let model_id = ModelId::new(model_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let config = usecase
+        .get_config(&model_id)
+        .await
+        .map_err(status_code_from_model_error)?;
+    Ok(Json(ResumeTrainingConfigDto {
+        model_id: model_id.as_str().to_string(),
+        config: config.into(),
+    }))
+}
+
+fn status_code_from_model_error(error: ModelRepositoryError) -> StatusCode {
+    match error {
         ModelRepositoryError::Fetch(FetchModelError::NotFound(_)) => StatusCode::NOT_FOUND,
-        ModelRepositoryError::Fetch(FetchModelError::InvalidQuery(_)) => StatusCode::BAD_REQUEST,
-    })?;
-    let dtos: Vec<ModelSummaryDto> = model_summaries.into_iter().map(ModelSummaryDto::from).collect(); //Vecにまとめる
-    Ok(Json(dtos))
+        // 構造が保存されていない古いモデルは再開できない
+        ModelRepositoryError::Fetch(FetchModelError::GraphNotSaved(_)) => StatusCode::CONFLICT,
+        // どちらもクライアントの誤りではなく、サーバー側(DB)の問題
+        ModelRepositoryError::Fetch(
+            FetchModelError::InvalidQuery(_) | FetchModelError::InvalidData(_),
+        ) => StatusCode::INTERNAL_SERVER_ERROR,
+    }
+}
+
+// 学習再開POSTリクエストハンドラ。本体は GET /models/{model_id}/config の応答と同じ形
+// TODO(設計改善): 型パラメータは作業12(入力ポート)で U 1つにする。
+pub async fn resume_training<C, S, R, K>(
+    State(usecase): State<Arc<ResumeTraining<C, S, R, K>>>,
+    Path(model_id): Path<String>,
+    Json(dto): Json<ResumeTrainingConfigDto>,
+) -> Result<Json<StartTrainingResponseDto>, StatusCode>
+where
+    C: ModelTrainingConfigProvider + Send + Sync + 'static,
+    S: TrainingResumer + Send + Sync + 'static,
+    R: TrainingRunRegistar + Send + Sync + 'static,
+    K: ProgressRecordingScheduler + Send + Sync + 'static,
+{
+    // パスと本体で別のモデルを指していたら、どちらを再開すべきか分からないので拒否する
+    if dto.model_id != model_id {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let model_id = ModelId::new(model_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let config = TrainingConfig::from(dto.config);
+    let job_id = usecase
+        .execute(&model_id, &config)
+        .await
+        .map_err(|e| match e {
+            ResumeTrainingError::ModelNotFound(_) => StatusCode::NOT_FOUND,
+            ResumeTrainingError::NotResumable(_) => StatusCode::CONFLICT,
+            ResumeTrainingError::ReadFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            ResumeTrainingError::Start(e) => status_code_from_start_error(e),
+        })?;
+    Ok(Json(job_id.into()))
 }
 
 #[cfg(test)]
