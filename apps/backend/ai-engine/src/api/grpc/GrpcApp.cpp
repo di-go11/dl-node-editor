@@ -42,6 +42,11 @@ void runGrpcServer()
         {
             SeedApplier seedApplier;
             return runTrainingJob(serverConfig, command, progressObserver, seedApplier, stopToken);
+        },
+        // 再開できない依頼は、学習スレッドを起動する前に弾いて StartTraining の応答で返す。
+        [serverConfig](const StartTrainingCommand &command)
+        {
+            checkTrainingJobPreconditions(serverConfig, command);
         });
     TrainingServiceImpl trainingService(jobManager);
 

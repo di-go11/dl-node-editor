@@ -1,6 +1,6 @@
 // ModelGraphArchive(writeModelGraph / readModelGraph)のラウンドトリップテスト。
 //
-//   - 全 5 種の層を含む ModelGraph を archive に書き → 読み戻して構造が一致すること
+//   - 全 9 種の層を含む ModelGraph を archive に書き → 読み戻して構造が一致すること
 //   - format_version が不一致の archive は std::runtime_error になること
 //
 // libtorch の serialize を実際に通すが .pt ファイルは作らず、メモリ上の
@@ -10,16 +10,18 @@
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include <torch/torch.h>
 
-#include "training/entities/domain-objects/ActivationConfig.hpp"
-#include "training/entities/domain-objects/ActivationType.hpp"
-#include "training/entities/domain-objects/LayersConfig.hpp"
-#include "training/entities/domain-objects/ModelGraph.hpp"
-#include "training/entities/domain-objects/ModelGraphFingerprint.hpp"
-#include "training/entities/domain-objects/PoolingType.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/ActivationSpec.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/ActivationType.hpp"
+#include "training/entities/domain-objects/ModelGraph/NodeSpec.hpp"
+#include "training/entities/domain-objects/ModelGraph/DAG/ModelGraphBuilder.hpp"
+#include "training/entities/domain-objects/ModelGraph/ModelGraph.hpp"
+#include "training/entities/domain-objects/ModelGraph/ModelGraphFingerprint.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/PoolingType.hpp"
 #include "training/infrastructure/torchModel/ModelGraphArchive.hpp"
 
 #ifndef MODEL_GRAPH_ARCHIVE_TEST_DIR
@@ -27,64 +29,85 @@
 #endif
 
 // Conv2D(in=3, out=21, k=3, s=1, p=1, dilation=1) 1 層のみのグラフの fingerprint。
-// 正規化文字列 "v1;layers=1:[0]conv2d|3|21|3|1|1|1" の FNV-1a(64bit)。
-// 2026/9/18 dilation フィールド追加(kModelGraphArchiveVersion を v1→v2 に bump)
-// に伴い値が変わった。今後この値を変えるときは、それが意図した *Params の
-// フィールド変更(=version bump を伴う変更)であることを確認すること。
-#define EXPECTED_SIMPLE_FINGERPRINT "20a9a8897b805afd"
+// 正規化文字列 "v2;nodes=1:[n0]conv2d|3|21|3|1|1|1<x=.;outputs=n0.y" の FNV-1a(64bit)。
+// (ノード ID は ModelGraphBuilder が付ける "n0"。"x=." は、グラフ入力を x につなぐ意味)
+// DAG 化(ModelGraph を nodes / outputs にした)で、文字列の先頭を v1 → v2 にしたため値が変わった。
+// 今後この値を変えるときは、それが意図したフォーマットの変更であることを確認すること。
+#define EXPECTED_SIMPLE_FINGERPRINT "7905992374f76ef3"
 
 namespace
 {
-int failureCount = 0;
+    int failureCount = 0;
 
-void check(bool condition, const std::string &message)
-{
-    std::cout << (condition ? "[PASS] " : "[FAIL] ") << message << std::endl;
-    if (!condition)
+    // makeFullGraph が作るノードの数。ID は追加した順に n0 〜 n8 と付く(n6 = Upsample、n7 = Add、n8 = Concat)。
+    constexpr std::size_t kNodeCount = 9;
+
+    void check(bool condition, const std::string &message)
     {
-        ++failureCount;
+        std::cout << (condition ? "[PASS] " : "[FAIL] ") << message << std::endl;
+        if (!condition)
+        {
+            ++failureCount;
+        }
     }
-}
 
-ModelGraph makeFullGraph()
-{
-    ModelGraph graph;
+    ModelGraph makeFullGraph()
+    {
+        ModelGraphBuilder graph;
 
-    Conv2DParams conv;
-    conv.inChannels = 3;
-    conv.outChannels = 16;
-    conv.kernelSize = 5;
-    conv.stride = 2;
-    conv.padding = 1;
-    conv.dilation = 2;
-    graph.layers.push_back(LayersConfig{conv});
+        Conv2DSpec conv;
+        conv.inChannels = 3;
+        conv.outChannels = 16;
+        conv.kernelSize = 5;
+        conv.stride = 2;
+        conv.padding = 1;
+        conv.dilation = 2;
+        graph.add(NodeSpec{conv});
 
-    BatchNormParams bn;
-    bn.numFeatures = 16;
-    bn.eps = 1e-4;
-    bn.momentum = 0.05;
-    graph.layers.push_back(LayersConfig{bn});
+        BatchNormSpec bn;
+        bn.numFeatures = 16;
+        bn.eps = 1e-4;
+        bn.momentum = 0.05;
+        graph.add(NodeSpec{bn});
 
-    ActivationConfig act;
-    act.activationType = ActivationType::Softmax;
-    act.dim = 2;
-    graph.layers.push_back(LayersConfig{act});
+        ActivationSpec act;
+        act.activationType = ActivationType::Softmax;
+        act.dim = 2;
+        graph.add(NodeSpec{act});
 
-    PoolingParams pool;
-    pool.type = PoolingType::Average;
-    pool.kernelSize = 3;
-    pool.stride = 3;
-    pool.padding = 0;
-    graph.layers.push_back(LayersConfig{pool});
+        PoolingSpec pool;
+        pool.type = PoolingType::Average;
+        pool.kernelSize = 3;
+        pool.stride = 3;
+        pool.padding = 0;
+        graph.add(NodeSpec{pool});
 
-    LinearParams lin;
-    lin.inFeatures = 128;
-    lin.outFeatures = 10;
-    lin.bias = false;
-    graph.layers.push_back(LayersConfig{lin});
+        LinearSpec lin;
+        lin.inFeatures = 128;
+        lin.outFeatures = 10;
+        lin.bias = false;
+        graph.add(NodeSpec{lin});
 
-    return graph;
-}
+        UnpoolingSpec unp;
+        unp.kernelSize = 3;
+        unp.stride = 3;
+        unp.padding = 1;
+        graph.add(NodeSpec{unp}, {NodeInput{"x", graph.lastOutput()}, NodeInput{"indices", PortRef{"n3", "indices"}}});
+
+        UpsampleSpec ups;
+        ups.scaleFactor = 4;
+        ups.upsampleMode = UpsampleMode::Nearest;
+        graph.add(NodeSpec{ups}); //"n6"
+
+        AddSpec add;
+        add.alpha = 0.5;
+        graph.add(NodeSpec{add}, {NodeInput{"x", graph.lastOutput()}, NodeInput{"x", PortRef{"n6", "y"}}}); // "n7 = n6 + n6"
+
+        ConcatSpec cat;
+        graph.add(NodeSpec{cat}, {NodeInput{"x", graph.lastOutput()}, NodeInput{"x", PortRef{"n6", "y"}}}); //"n8 = n7 + n6"
+
+        return graph.build();
+    }
 } // namespace
 
 int main()
@@ -113,49 +136,85 @@ int main()
     // ---- fingerprint の後方互換 ----
     // fingerprint は checkpoint に記録され、復元時に照合される。文字列フォーマットが
     // 変わると過去の .pt がすべて読めなくなるため、既知のグラフに対する値を固定する。
-    // フィールド列挙を LayersParamsFields.hpp に集約するリファクタでも
+    // フィールド列挙を NodeSpecFields.hpp に集約するリファクタでも
     // この値が変わらないことを確認した。
     {
-        ModelGraph simple;
-        Conv2DParams conv;
+        ModelGraphBuilder simple;
+        Conv2DSpec conv;
         conv.inChannels = 3;
         conv.outChannels = 21;
         conv.kernelSize = 3;
         conv.stride = 1;
         conv.padding = 1;
-        simple.layers.push_back(LayersConfig{conv});
+        simple.add(NodeSpec{conv});
 
-        const std::string fp = modelGraphFingerprint(simple);
+        const std::string fp = modelGraphFingerprint(simple.build());
         std::cout << "  (fingerprint of Conv2D(3,21,3,1,1) = " << fp << ")" << std::endl;
         check(fp == EXPECTED_SIMPLE_FINGERPRINT,
               "既知グラフの fingerprint が変わっていない(過去の .pt との互換)");
     }
 
-    check(restored.layers.size() == original.layers.size(), "層数が一致する");
+    check(restored.nodes.size() == original.nodes.size(), "ノード数が一致する");
     check(modelGraphFingerprint(restored) == modelGraphFingerprint(original),
           "全フィールドが一致する (fingerprint が一致)");
 
+    // DAG の構造(ID・入力の接続・outputs)の明示チェック。
+    // 先頭はグラフ入力(ノード ID もポート名も空)を x につなぐ。Unpooling / Add / Concat 以外は直前のノードの y につなぎ、
+    // この 3 つは離れたノードからの線も持つ。
+    check(restored.nodes.size() == kNodeCount && restored.nodes[0].id == "n0" && restored.nodes[8].id == "n8",
+          "ノード ID が復元される");
+    check(restored.nodes.size() == kNodeCount &&
+              restored.nodes[0].inputs.size() == 1 && restored.nodes[0].inputs[0].port == "x" &&
+              restored.nodes[0].inputs[0].source.nodeId.empty() && restored.nodes[0].inputs[0].source.port.empty(),
+          "グラフ入力につなぐ接続(ノード ID もポート名も空)が復元される");
+    check(restored.nodes.size() == kNodeCount &&
+              restored.nodes[3].inputs.size() == 1 &&
+              restored.nodes[3].inputs[0].source.nodeId == "n2" && restored.nodes[3].inputs[0].source.port == "y",
+          "ノード間の接続が復元される");
+    check(restored.outputs.size() == 1 && restored.outputs[0].nodeId == "n8" && restored.outputs[0].port == "y",
+          "outputs が復元される");
+    check(restored.nodes.size() == kNodeCount &&
+              restored.nodes[5].inputs.size() == 2 &&
+              restored.nodes[5].inputs[1].port == "indices" &&
+              restored.nodes[5].inputs[1].source.nodeId == "n3" && restored.nodes[5].inputs[1].source.port == "indices",
+          "入力が 2 本あるノードの接続(離れたノードへの線)が復元される");
+
+    // nodes[8] を読む前にノード数を確かめる(&& の短絡評価で、範囲外アクセスを防ぐ)
+    check(restored.nodes.size() == kNodeCount && restored.nodes[8].inputs.size() == 2 &&
+              restored.nodes[8].inputs[0].port == "x" && restored.nodes[8].inputs[0].source.nodeId == "n7" && // 1本目: Add(n7)の y
+              restored.nodes[8].inputs[1].port == "x" && restored.nodes[8].inputs[1].source.nodeId == "n6" && // 2本目: Upsample(n6)の y
+              restored.nodes[8].inputs[1].source.port == "y",
+          "可変長ポート x への 2 本の接続が、つないだ順のまま復元される");
+
     // 代表フィールドの明示チェック(fingerprint 任せにしない)
-    if (restored.layers.size() == 5)
+    // Concat はフィールドを持たないので、層の種類(NodeKind)が復元されることだけを確かめる。
+    if (restored.nodes.size() == kNodeCount)
     {
-        const auto &conv = std::get<Conv2DParams>(restored.layers[0].params);
+        const auto &conv = std::get<Conv2DSpec>(restored.nodes[0].spec);
         check(conv.outChannels == 16 && conv.kernelSize == 5 && conv.stride == 2,
-              "Conv2DParams が復元される");
-        check(conv.dilation == 2, "Conv2DParams の dilation が復元される");
-        const auto &bn = std::get<BatchNormParams>(restored.layers[1].params);
+              "Conv2DSpec が復元される");
+        check(conv.dilation == 2, "Conv2DSpec の dilation が復元される");
+        const auto &bn = std::get<BatchNormSpec>(restored.nodes[1].spec);
         check(std::abs(bn.eps - 1e-4) < 1e-12 && std::abs(bn.momentum - 0.05) < 1e-12,
-              "BatchNormParams の double フィールドが復元される");
-        const auto &act = std::get<ActivationConfig>(restored.layers[2].params);
+              "BatchNormSpec の double フィールドが復元される");
+        const auto &act = std::get<ActivationSpec>(restored.nodes[2].spec);
         check(act.activationType == ActivationType::Softmax && act.dim == 2,
-              "ActivationConfig の enum / dim が復元される");
-        const auto &pool = std::get<PoolingParams>(restored.layers[3].params);
-        check(pool.type == PoolingType::Average, "PoolingParams の enum が復元される");
-        const auto &lin = std::get<LinearParams>(restored.layers[4].params);
-        check(lin.bias == false && lin.inFeatures == 128, "LinearParams の bias が復元される");
+              "ActivationSpec の enum / dim が復元される");
+        const auto &pool = std::get<PoolingSpec>(restored.nodes[3].spec);
+        check(pool.type == PoolingType::Average, "PoolingSpec の enum が復元される");
+        const auto &lin = std::get<LinearSpec>(restored.nodes[4].spec);
+        check(lin.bias == false && lin.inFeatures == 128, "LinearSpec の bias が復元される");
+        const auto &unp = std::get<UnpoolingSpec>(restored.nodes[5].spec);
+        check(unp.kernelSize == 3 && unp.padding == 1 && unp.stride == 3, "UnpoolingのkernelSize,padding,strideが復元される");
+        const auto &ups = std::get<UpsampleSpec>(restored.nodes[6].spec);
+        check(ups.scaleFactor == 4 && ups.upsampleMode == UpsampleMode::Nearest, "UpsampleSpecのscaleFactor/enumが復元される");
+        const auto &add = std::get<AddSpec>(restored.nodes[7].spec);
+        check(add.alpha == 0.5, "AddSpec の alpha が復元される");
+        check(std::holds_alternative<ConcatSpec>(restored.nodes[8].spec), "ConcatSpec として復元される");
     }
     else
     {
-        check(false, "層数が 5 でないため個別フィールド検証をスキップ");
+        check(false, "ノード数が " + std::to_string(kNodeCount) + " でないため個別フィールド検証をスキップ");
     }
 
     // ---- 空グラフ ----
@@ -168,7 +227,7 @@ int main()
         torch::serialize::InputArchive in;
         in.load_from(emptyPath.string());
         const ModelGraph empty = readModelGraph(in);
-        check(empty.layers.empty(), "空の ModelGraph をラウンドトリップできる");
+        check(empty.nodes.empty(), "空の ModelGraph をラウンドトリップできる");
     }
 
     // ---- フォーマットの固定(後方互換) ----
@@ -178,17 +237,17 @@ int main()
     {
         const std::filesystem::path pinPath = dir / "pin.pt";
         {
-            ModelGraph g;
-            Conv2DParams conv;
+            ModelGraphBuilder g;
+            Conv2DSpec conv;
             conv.inChannels = 3;
             conv.outChannels = 21;
             conv.kernelSize = 3;
             conv.stride = 1;
             conv.padding = 1;
-            g.layers.push_back(LayersConfig{conv});
+            g.add(NodeSpec{conv});
 
             torch::serialize::OutputArchive out;
-            writeModelGraph(out, g);
+            writeModelGraph(out, g.build());
             out.save_to(pinPath.string());
         }
         torch::serialize::InputArchive in;
@@ -197,9 +256,12 @@ int main()
         std::sort(keys.begin(), keys.end());
 
         const std::vector<std::string> expected = {
-            "format_version", "layer_0_dilation", "layer_0_in_channels",
-            "layer_0_kernel_size", "layer_0_kind", "layer_0_out_channels",
-            "layer_0_padding", "layer_0_stride", "layer_count"};
+            "format_version",
+            "node_0_dilation", "node_0_id", "node_0_in_channels",
+            "node_0_input_0_port", "node_0_input_0_source_node", "node_0_input_0_source_port",
+            "node_0_input_count", "node_0_kernel_size", "node_0_kind",
+            "node_0_out_channels", "node_0_padding", "node_0_stride",
+            "node_count", "output_0_node", "output_0_port", "output_count"};
         check(keys == expected,
               "Conv2D 1 層の archive キー集合が固定値と一致する(フォーマット非破壊)");
 
@@ -216,7 +278,7 @@ int main()
             torch::serialize::OutputArchive out;
             out.write("format_version",
                       torch::tensor(static_cast<int64_t>(kModelGraphArchiveVersion + 1)));
-            out.write("layer_count", torch::tensor(static_cast<int64_t>(0)));
+            out.write("node_count", torch::tensor(static_cast<int64_t>(0)));
             out.save_to(badPath.string());
         }
         bool threw = false;
@@ -231,6 +293,29 @@ int main()
             threw = true;
         }
         check(threw, "現行より新しい format_version で std::runtime_error を投げる");
+    }
+
+    // ---- 異常系: v2 以前(layers の配列だった頃)の format は読めない ----
+    {
+        const std::filesystem::path oldPath = dir / "old_version.pt";
+        {
+            torch::serialize::OutputArchive out;
+            out.write("format_version", torch::tensor(static_cast<int64_t>(2)));
+            out.write("layer_count", torch::tensor(static_cast<int64_t>(0)));
+            out.save_to(oldPath.string());
+        }
+        bool threw = false;
+        try
+        {
+            torch::serialize::InputArchive in;
+            in.load_from(oldPath.string());
+            readModelGraph(in);
+        }
+        catch (const std::runtime_error &)
+        {
+            threw = true;
+        }
+        check(threw, "v2 以前の format_version で std::runtime_error を投げる(DAG 化で互換を切った)");
     }
 
     std::filesystem::remove_all(dir);

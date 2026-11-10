@@ -2,7 +2,7 @@
 
 #include "training/adapters/interfaces/IModel.hpp"
 #include "training/adapters/interfaces/IOptimizer.hpp"
-#include "training/entities/domain-objects/ModelGraphFingerprint.hpp"
+#include "training/entities/domain-objects/ModelGraph/ModelGraphFingerprint.hpp"
 #include "training/entities/domain-objects/OptimizerTypeName.hpp"
 #include "training/infrastructure/torchModel/ModelGraphArchive.hpp"
 #include "training/infrastructure/torchModel/TorchCheckpointArchive.hpp"
@@ -119,6 +119,11 @@ CheckpointMeta readCheckpointArchive(torch::serialize::InputArchive &archive,
     TorchCheckpointReader optimReader(optimArchive);
     optimizer.readFrom(optimReader);
 
+    return readCheckpointMeta(archive);
+}
+
+CheckpointMeta readCheckpointMeta(torch::serialize::InputArchive &archive)
+{
     at::Tensor epochTensor;
     archive.read("epoch", epochTensor);
     at::Tensor bestMetricTensor;

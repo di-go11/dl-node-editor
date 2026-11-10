@@ -8,7 +8,7 @@
 
 #include "training/entities/domain-objects/CheckpointMeta.hpp"
 #include "training/entities/domain-objects/ComputeDevice.hpp"
-#include "training/entities/domain-objects/ModelGraph.hpp"
+#include "training/entities/domain-objects/ModelGraph/ModelGraph.hpp"
 #include "training/entities/domain-objects/OptimizerConfig.hpp"
 
 class IModel;

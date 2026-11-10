@@ -219,7 +219,13 @@ message ModelGraph {
 
 ## 実装計画
 
-ブランチ `feat/model-graph-dag`(main から)で、下のコミット単位で進める。**各コミットの時点でビルドと全テストが通り、CLI の SegNet 学習が動く**状態を保つ(途中で止めても main に戻せるように)。
+> **進捗と残りのタスクは `model-graph-dag-tasks.md` にまとめている。** 以下は当初の計画で、ファイルの置き場所などが実際の構成と違う箇所がある(違いは `model-graph-dag-tasks.md` の「ADR から変わった点」)。
+
+ブランチ `feat/DAG-struct` で、下の順に進める。
+
+> **順番の変更(2026-10-01)**: proto の DAG 化とファイル分割(`model_graph.proto`、パッケージ `model.v1`)を先に行った。そのため、4 のうち proto の定義は完了済みで、**2 が終わるまで ai-engine はビルドできない**。0(変更前の出力の記録)は、proto を変更する前のコミット(main)でテストを書いて値を取る。mapper は 2 の中で、proto の `Node` をドメインの `GraphNode` に直接詰め替える形で書く(`linearToGraph` を経由する一時的な形は不要になった)。
+>
+> 当初の方針「各コミットの時点でビルドと全テストが通る」は、2 の完了以降に適用する。
 
 C++ 側(1〜6)で ADR の範囲は完了する。Rust・フロントエンド・Capabilities(7〜9)は別の issue に分ける。
 
@@ -336,7 +342,7 @@ GUI で自由に組んだグラフの間違いを、学習を始める前に見�
 
 - 各層ごとに: entities の `*Params`、`LayerKind`(末尾に 7, 8, 9 を追加)、`LayersParamsFields`、`LayerPorts`、形状の規則、`Torch*Layer`、`TorchLayerBuilder`、proto の `LayerConfig`、mapper、テスト
 - `ModelGraphArchive` の `static_assert` の要素数を更新する。format は v3 のまま(層の種類が増えるだけで、レイアウトは変わらないため)
-- `ModelArchitectureType` に `UNetSmall` を追加する(`.config` の `model_architecture` で選べる)。encoder 3 段 + decoder 3 段で、concat の skip connection を使う小さい構成
+- `ModelArchitectureType` に `Unet` を追加する(`.config` の `model_architecture` で選べる)。encoder 3 段 + decoder 3 段で、concat の skip connection を使う小さい構成
 - 確認: CPU で U-Net を 1 エポック学習し、checkpoint の保存と再開ができること。GPU サーバーでも 1 回動かす
 
 **完了条件**: U-Net が CLI と grpcurl の両方で学習できる。
@@ -345,7 +351,7 @@ GUI で自由に組んだグラフの間違いを、学習を始める前に見�
 
 - `model-config-and-training-rpc.md`: 「config スキーマの表現方針」の節を、この ADR への参照に置き換える
 - `start-training-request-contract.md`: 「層のつながり」「Pooling / Unpooling の対応」「入力サイズ」の確認項目を、3 の形状推論で完了済みにする。Rust 側の構造チェックの項目を追加する
-- `.config` の `model_architecture` のコメントに、`SegNetDilated` / `SegNetFullDilated` / `UNetSmall` を追記する
+- `.config` の `model_architecture` のコメントを、残したプリセット(`SegNet` / `Unet`)に合わせる(`Sample` / `SegNetDilated` / `SegNetFullDilated` は削除した)
 - `開発ロードマップ.md` の「model config のグラフ表現」を更新する
 
 ### 7〜9. このブランチの後(別の issue)

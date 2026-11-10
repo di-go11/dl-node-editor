@@ -1,5 +1,3 @@
-mod get_capabilities;
-mod ports;
-
-pub use get_capabilities::GetCapabilities;
-pub use ports::{CapabilityProvider, ProviderError};
+pub mod capabilities;
+pub mod model;
+pub mod training;

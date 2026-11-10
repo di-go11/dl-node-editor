@@ -1,4 +1,5 @@
 #include "training/infrastructure/torchFunc/SGDOptimizer.hpp"
+#include "training/infrastructure/torchFunc/OptimizerLoadKeepingOptions.hpp"
 #include "training/infrastructure/torchFunc/OptimizerStateDeviceSync.hpp"
 #include "training/infrastructure/torchModel/TorchCheckpointArchive.hpp"
 
@@ -30,7 +31,10 @@ void SGDOptimizer::writeTo(ICheckpointWriter &archive) const
 
 void SGDOptimizer::readFrom(ICheckpointReader &archive)
 {
-    _optim->load(toTorchArchive(archive));
+    // 状態(momentum_buffer)は checkpoint から引き継ぎ、lr などは今回の指定値のまま残す
+    // (学習再開時にハイパーパラメータを変えられるようにするため)。
+    training::infrastructure::torchFunc::loadStateKeepingOptions<torch::optim::SGDOptions>(
+        *_optim, toTorchArchive(archive));
 
     // load 直後は state(momentum_buffer)が保存時の device 上にあるため、
     // param の device へ揃える(CPU 保存 → GPU 再開 などで step() が壊れるのを防ぐ)。

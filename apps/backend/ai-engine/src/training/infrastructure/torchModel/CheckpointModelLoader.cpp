@@ -38,8 +38,8 @@ RestoredCheckpoint CheckpointModelLoader::load(const std::string &checkpointPath
     // 1. 構造を読む(モデルより先。ここが Phase 2 で追加された部分)
     restored.graph = readModelGraphFromCheckpoint(archive);
 
-    // 2. 構造からモデルを組む
-    restored.model = _modelFactory->create(restored.graph, device);
+    // 2. 構造からモデルを組む。checkpoint のファイルは外から来る入力なので、組む前に検証を通す。
+    restored.model = _modelFactory->create(ValidatedModelGraph::create(restored.graph), device);
 
     // 3. モデルのパラメータに optimizer を結び付ける
     //    parameters() はモデル内部と記憶域を共有するので、RestoredCheckpoint に

@@ -3,7 +3,7 @@
 
 namespace
 {
-    std::variant<torch::nn::MaxPool2d, torch::nn::AvgPool2d> makeModule(const PoolingParams &params)
+    std::variant<torch::nn::MaxPool2d, torch::nn::AvgPool2d> makeModule(const PoolingSpec &params)
     {
         if (params.type == PoolingType::Max)
         {
@@ -15,14 +15,14 @@ namespace
     }
 } // namespace
 
-TorchPoolingLayer::TorchPoolingLayer(const PoolingParams &params) : _module(makeModule(params))
+TorchPoolingLayer::TorchPoolingLayer(const PoolingSpec &params) : _module(makeModule(params))
 {
 }
 
-void TorchPoolingLayer::forward(const at::Tensor &input, at::Tensor &output)
+std::vector<at::Tensor> TorchPoolingLayer::forward(const std::vector<at::Tensor> &inputs)
 {
-    output = std::visit([&input](auto &module)
-                        { return module->forward(input); }, _module);
+    return {std::visit([&inputs](auto &module)
+                       { return module->forward(inputs[0]); }, _module)};
 }
 
 std::vector<at::Tensor> TorchPoolingLayer::parameters() const

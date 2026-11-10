@@ -1,0 +1,45 @@
+name: easy-deeplearning-creator
+services:
+  ai-engine:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile.ai-engine
+      target: runtime
+    volumes:
+      - ./data/weights:/app/models #.pt保存先
+      - ./data/datasets:/datasets:ro #読み取り専用
+    deploy:
+      resources:
+        limits:
+          cpus: "8"
+          memory: 10g
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile.api
+      target: runtime
+    volumes:
+      - ./data/api-data:/data
+    environment:
+      - DATABASE_URL=sqlite:/data/training.db?mode=rwc #data/training.dbがない場合読み書き可で作成
+      - AI_ENGINE_ADDR=http://ai-engine:50051
+    depends_on:
+      - ai-engine
+    restart: unless-stopped
+  web:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile.web
+      target: runtime
+    ports:
+      - "25812:80"
+    depends_on:
+      - api
+    restart: unless-stopped

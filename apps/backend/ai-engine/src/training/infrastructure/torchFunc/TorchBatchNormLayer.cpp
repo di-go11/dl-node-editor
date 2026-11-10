@@ -1,11 +1,11 @@
 #include "training/infrastructure/torchFunc/TorchBatchNormLayer.hpp"
 #include "training/infrastructure/torchFunc/DeviceToTorch.hpp"
 
-TorchBatchNormLayer::TorchBatchNormLayer(const BatchNormParams &params) : _module(torch::nn::BatchNormOptions(params.numFeatures).eps(params.eps).momentum(params.momentum)) {}
+TorchBatchNormLayer::TorchBatchNormLayer(const BatchNormSpec &params) : _module(torch::nn::BatchNormOptions(params.numFeatures).eps(params.eps).momentum(params.momentum)) {}
 
-void TorchBatchNormLayer::forward(const at::Tensor &input, at::Tensor &output)
+std::vector<at::Tensor> TorchBatchNormLayer::forward(const std::vector<at::Tensor> &inputs)
 {
-    output = _module->forward(input);
+    return {_module->forward(inputs[0])};
 }
 
 std::vector<at::Tensor> TorchBatchNormLayer::parameters() const

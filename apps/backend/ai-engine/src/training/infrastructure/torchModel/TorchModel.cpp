@@ -4,9 +4,8 @@
 #include "training/adapters/interfaces/ILayerBuilders.hpp"
 #include "training/adapters/interfaces/ILoss.hpp"
 #include "training/adapters/interfaces/IOptimizer.hpp"
-#include "training/adapters/interfaces/IIndicesSource.hpp"
-#include "training/adapters/interfaces/IIndicesSink.hpp"
-#include "training/entities/domain-objects/ModelGraph.hpp"
+#include "training/entities/domain-objects/ModelGraph/DAG/GraphValidation.hpp"
+#include "training/entities/domain-objects/ModelGraph/NodePorts.hpp"
 #include "training/infrastructure/torchModel/TorchCheckpointArchive.hpp"
 #include "training/infrastructure/torchFunc/DeviceToTorch.hpp"
 
@@ -14,63 +13,99 @@
 
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 
-TorchModel::TorchModel(const ModelGraph &graph, ILayerBuilder &builder, const ComputeDevice &device)
-    : _device(device)
+namespace
 {
-    _layers.reserve(graph.layers.size());
-    for (const auto &layerConfig : graph.layers)
+    // ポート名から、その番号(spec の中での位置)を引く。無ければ例外。
+    // 検証済みのグラフでは必ず見つかるので、見つからないのは検証の抜けか、層の仕様の変更に追従していない場合。
+    template <typename PortSpecs>
+    std::size_t portIndexOf(const PortSpecs &ports, const std::string &name, const std::string &nodeId)
     {
-        auto layer = builder.build(layerConfig);
-        layer->to(_device);
-
-        // indices を使う層(pooling/unpooling のどちらか片方でも)が1つでも
-        // あれば、forward() でスタックの push/pop を行う。無ければ普通のモデルは
-        // dynamic_cast のコストを一切払わない。
-        if (dynamic_cast<IIndicesSource *>(layer.get()) || dynamic_cast<IIndicesSink *>(layer.get()))
+        for (std::size_t i = 0; i < ports.size(); ++i)
         {
-            _useIndices = true;
+            if (ports[i].name == name)
+            {
+                return i;
+            }
         }
-
-        _layers.push_back(std::move(layer));
+        throw std::logic_error("TorchModel: ノード '" + nodeId + "' にポート '" + name + "' がありません");
     }
+} // namespace
+
+TorchModel::TorchModel(const ValidatedModelGraph &graph, ILayerBuilder &builder, const ComputeDevice &device)
+    : _device(device), _order(graph.getOrder())
+{
+    const ModelGraph &g = graph.getGraph();
+
+    std::unordered_map<std::string, std::size_t> indexOf;
+    for (std::size_t i = 0; i < g.nodes.size(); ++i)
+    {
+        indexOf[g.nodes[i].id] = i;
+    }
+
+    // 接続元(ノード ID とポート名)を、forward で引きやすい添字に直す。
+    auto resolve = [&](const PortRef &ref) -> InputSource
+    {
+        InputSource source;
+        if (ref.nodeId.empty())
+        {
+            source.fromGraphInput = true; // グラフ入力
+            return source;
+        }
+        source.node = indexOf.at(ref.nodeId);
+        source.port = portIndexOf(nodePortsOf(g.nodes[source.node].spec).outputPorts, ref.port, ref.nodeId);
+        return source;
+    };
+
+    // 層は nodes の並び順で作る(実行順ではない)。重みの初期値は、層を作る順に乱数を使って決まるため。
+    _layers.reserve(g.nodes.size());
+    _inputs.reserve(g.nodes.size());
+    for (const GraphNode &node : g.nodes)
+    {
+        auto layer = builder.build(node.spec);
+        layer->to(_device);
+        _layers.push_back(std::move(layer));
+
+        // 層の forward に渡す順(入力ポートの順)に、接続元を並べる。
+        // 同じポートに複数つながる場合(Add / Concat)は、つないだ順に並ぶ。
+        std::vector<InputSource> sources;
+        for (const InputPortSpec &port : nodePortsOf(node.spec).inputPorts)
+        {
+            for (const NodeInput &input : node.inputs)
+            {
+                if (input.port == port.name)
+                {
+                    sources.push_back(resolve(input.source));
+                }
+            }
+        }
+        _inputs.push_back(std::move(sources));
+    }
+
+    // モデルの出力。outputs は当面 1 つだけ(検証で保証済み)。
+    _output = resolve(g.outputs.at(0));
 }
 
 at::Tensor TorchModel::forward(const at::Tensor &input)
 {
-    at::Tensor current = input.to(training::infrastructure::torchFunc::deviceToTorch(_device));
-    at::Tensor next;
+    const at::Tensor graphInput = input.to(training::infrastructure::torchFunc::deviceToTorch(_device));
 
-    std::vector<at::Tensor> indicesStack; // LIFO。pooling で積み、対応する unpooling で降ろす
+    // results[i] = ノード i の出力(出力ポートの順)。後続のノードがここから引く。
+    std::vector<std::vector<at::Tensor>> results(_layers.size());
 
-    for (auto &layer : _layers)
+    for (const std::size_t i : _order)
     {
-        if (_useIndices)
+        std::vector<at::Tensor> inputs;
+        inputs.reserve(_inputs[i].size());
+        for (const InputSource &source : _inputs[i])
         {
-            if (auto *sink = dynamic_cast<IIndicesSink *>(layer.get()))
-            {
-                if (indicesStack.empty())
-                {
-                    throw std::runtime_error(
-                        "TorchModel::forward: unpooling に対応する pooling の indices がありません");
-                }
-                sink->provideIndices(indicesStack.back());
-                indicesStack.pop_back();
-            }
+            inputs.push_back(source.fromGraphInput ? graphInput : results[source.node][source.port]);
         }
-
-        layer->forward(current, next);
-        current = next;
-
-        if (_useIndices)
-        {
-            if (auto *source = dynamic_cast<IIndicesSource *>(layer.get()))
-            {
-                indicesStack.push_back(source->takeIndices());
-            }
-        }
+        results[i] = _layers[i]->forward(inputs);
     }
-    return current;
+
+    return results[_output.node][_output.port];
 }
 
 at::Tensor TorchModel::trainStep(at::Tensor &input, at::Tensor &target, ILoss &loss, IOptimizer &optimizer)

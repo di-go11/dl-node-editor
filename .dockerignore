@@ -1,0 +1,18 @@
+# VCS・エディタ
+.git
+**/.vscode
+
+# データ・成果物(大きい)
+apps/backend/ai-engine/TrainingDataset
+apps/backend/ai-engine/models
+apps/backend/ai-engine/build
+apps/backend/ai-engine/Testing
+apps/backend/api/target
+deploy/data
+
+# どの階層にあっても除外したいもの
+**/node_modules
+**/*.log
+
+# 例外(除外した中から一部だけ戻す)
+# !apps/backend/ai-engine/modelconfigs/test_segnet_dag.json

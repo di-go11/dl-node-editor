@@ -10,6 +10,18 @@ thiserror = "2.0.21"
 tonic = "0.14.6"
 tonic-prost = "0.14.6"
 usecases = { version = "0.1.0", path = "../usecases" }
+futures-core = "0.3"
+futures-util = "0.3"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+axum = "0.8.9"
+sqlx = {version = "0.8.6", features = ["runtime-tokio", "sqlite", "migrate","chrono"]}
+chrono = "0.4"
+uuid = {version = "1", features = ["v7"]}
+tokio = {version = "1.53.1", features = ["rt","time"]}
 
 [build-dependencies]
 tonic-prost-build = "0.14.6"
+
+[dev-dependencies]
+tokio = { version = "1.53.1", features = ["test-util", "macros", "rt"] }

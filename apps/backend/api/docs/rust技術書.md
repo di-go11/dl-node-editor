@@ -776,6 +776,151 @@ use device_type;
 use device_type::{self, DeviceType};
 //                 ^^^^ これは device_type モジュール自身を指す
 ```
+
+#### derive
+
+構造体や列挙型に対して特定のトレイトの標準的な実装を自動的に提供するための属性。
+
+```rust
+#[derive(Debug, Clone, PartialEq,Eq,Hash)]
+```
+
+- `Debug`: デバック出力を可能にするトレイト。
+- `Clone`: オブジェクトをコピーするためのトレイト。
+- `PartialEq/Eq`: 型の比較(等値性)のためのトレイト。
+- `Hash`: ハッシュマップのキーとして使用可能にするためのトレイト。
+- `Default`: `.default()`で構造体のデフォルト値を作れる。
+
+##### Debug
+
+`{:?}`を使って、構造体の中身をデバッグ出力することができる。
+
+```rust
+#[derive(Debug)]
+struct User {
+    name:string,
+    age:u32,
+}
+
+fn main() {
+    let user = User{name:"Alice".to_string(), age:30};
+    println!("{:?}",user); // User { name: "Alice", age: 30 }
+}
+```
+
+##### Clone
+
+`clone()`メソッドを使って、構造体のコピーを作ることができる。
+
+```rust
+#[derive(Clone)]
+struct User {
+    name:string,
+    age:u32,
+}
+fn main() {
+    let user1 = User{name:"Alice".to_string(), age:30};
+    let user2 = user1.clone(); // user1のコピーを作る
+}
+```
+
+##### PartialEq/Eq
+
+`==`演算子を使って、構造体の比較を行うことができる。
+
+```rust
+#[derive(PartialEq, Eq)]
+struct User {
+    name:string,
+    age:u32,
+}
+fn main() {
+    let user1 = User{name:"Alice".to_string(), age:30};
+    let user2 = User{name:"Alice".to_string(), age:30};
+    println("{}", user1 == user2); // true
+}
+```
+
+##### PartialOrd/Ord
+
+`<`, `>`, `<=`, `>=`演算子を使って、構造体の比較を行うことができる。ソートも可能になる。
+
+```rust
+#[derive(PartialOrd, Ord)]
+struct User {
+    name:string,
+    age:u32,
+}
+fn main(){
+    let mut users = vec![
+        User{name:"Alice".to_string(), age:30},
+        User{name:"Bob".to_string(), age:25}, 
+        User{name:"Charlie".to_string(), age:35}
+    ];
+
+    users.sort(); // ageの昇順でソートされる
+    println!("{:?}", users);
+}
+```
+
+##### Default
+
+初期値を自動生成できる。
+
+```rust
+#[derive(Default)]
+struct User {
+    name: String,
+    age: u32,
+}
+
+fn main() {
+    let user = User::default(); // User { name: "", age: 0 }
+    println!("{:?}", user);
+}
+```
+
+### 内部クレート
+
+#### future
+
+Rustの非同期処理の基盤ライブラリ。`Future`トレイトや`Stream`トレイトなどを提供し、非同期プログラミングを可能にする。
+
+|概念|意味|同期処理での対応物|
+|---|---|---|
+|`Future<Output = T>`|いつか**一回だけ**値`T`を返す非同期計算|関数の戻り値`T`|
+|`Stream<Item = T>`|いつか**複数回**値`T`を返す非同期計算|イテレータの要素`T`|
+
+##### futures-core
+
+トレイトの定義のみ提供するクレート。
+- `Stream`トレイトなど、最小限のトレイト定義だけを持つ、とても軽量なクレート。
+- 使い道:「関数が`Stream`を返す」というインターフェースを書く。
+
+##### future-util
+
+便利なメソッドの実装を提供するクレート。
+
+- `StreamExt`トレイトを提供する。`.next().await`、`.map()`、`.filter()`、`.collect()`などStreamを実際に消費、加工するための道具
+- `Iteraotr`に対する`map`や`Collect`に相当するもの。
+
+### 外部クレート
+
+#### tokio
+
+Rustの`async`や`await`を実際に動かすための非同期ランタイム。Rust本体と標準クレートに搭載されているのは、`async fn`と`Future`という「非同期処理の書き方」のみ。実行機能はない。tokioはスケジューラを担う。
+
+##### 機能
+
+|機能|例|用途|
+|---|---|---|
+|ランタイム起動|`#[tokio::main]`|`main`をasyncにする|
+|テスト|`#[tokio:test]`|asyncなテスト関数を書く|
+|タスク生成|`tokio::spawn(async {...})`|軽量な並行タスクを起動する|
+|時間|`tokio::time::sleep`,`timeout`|非同期の待機やタイムアウト|
+|同期|`tokio::sync::{Mutex,mpsc,broadcast}`|タスク間の通信やロック|
+|I/O|`tokio::net::TcpListener`|ブロックしないネットワークI/O|
+
 ## Cargo
 
 Rustのプロジェクト管理ツール。クレートの作成、依存関係の管理、ビルド、テストなどを担当する。

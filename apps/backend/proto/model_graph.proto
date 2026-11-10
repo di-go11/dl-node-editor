@@ -1,0 +1,118 @@
+syntax = "proto3";
+package model.v1;
+
+// モデルの構造を、層(ノード)とその接続からなる DAG(有向非巡回グラフ)で表す。
+//
+// 送る側が守ること。守られていないリクエストは、C++ 側が INVALID_ARGUMENT で拒否する
+// (見つかった問題は、model_graph.nodes[3](id=enc2_pool).inputs[1] のような位置を付けて、すべて返す)。
+//   - ノードは 1 つ以上。ノード ID は空でなく、グラフの中で重複しない。使える文字は英数字・'-'・'_' だけ
+//   - 入力の参照先(source.node_id)のノードが存在する。閉路がない
+//   - ポート名が、層の種類ごとの定義(下の表)にある。入力ポートには、ちょうど 1 本つなぐ
+//   - 出力の種類と入力の種類が合う(indices は、indices どうししかつなげない)
+//   - outputs は、当面 1 つだけ
+//
+// ポート名(層の種類ごと):
+//   層                 入力ポート        出力ポート
+//   Unpooling          x, indices        y
+//   IndexedPooling     x                 y, indices
+//   それ以外           x                 y
+//
+// 形状(チャンネル数など)の整合は、ここでは確認しない。合っていなければ、学習の開始時に失敗する。
+// 実際に送れる例: apps/backend/ai-engine/configs/segnet_dag.json
+
+// ----Graph----
+
+message ModelGraph {
+    // 並び順に意味がある。重みの初期化と、checkpoint の重みの対応は、この並び順で決まる
+    // (同じグラフでも並び順を変えると、別のモデルとして扱われる)。
+    // 実行順は接続から決まるので、実行順に並べる必要はない。
+    repeated Node nodes = 1;
+    repeated PortRef outputs = 2; // モデルの出力。当面は 1 つだけ。グラフ入力は指定できない(node_id は空にできない)
+}
+
+// ----Node----
+
+// 出力ポート 1 つを指す。
+message PortRef {
+    string node_id = 1; // 参照先のノードの ID。空 = グラフ入力(画像)。このとき port も空にする
+    string port = 2; // 参照先の出力ポート名("y" など)
+}
+
+// このノードの入力ポート port に、source が指す出力をつなぐ。
+message NodeInput {
+    string port = 1; // このノードの入力ポート名("x" など)
+    PortRef source = 2; // 未設定のままだと、グラフ入力として扱われる(node_id も port も空になるため)
+}
+
+message Node {
+    // 空でなく、グラフの中で重複しない。英数字・'-'・'_' だけ。
+    // string なのは、React Flow のノード ID が string であることと、optional を使わないため。
+    string id = 1;
+    NodeSpec spec = 2;
+    repeated NodeInput inputs = 3;
+}
+
+
+// ----Layers----
+
+message NodeSpec {
+    oneof params {
+        Conv2DSpec conv2d = 1;
+        Pooling2DSpec pooling2d = 2;
+        BatchNormSpec batch_norm = 3;
+        LinearSpec linear = 4;
+        ActivationSpec activation = 5;
+        IndexedPoolingSpec indexed_pooling = 6;
+        UnpoolingSpec unpooling = 7;
+        UpsampleSpec upsample = 8;
+        AddSpec add = 9;
+        ConcatSpec concat = 10;
+    }
+}
+
+message Conv2DSpec {
+    int64 in_channels = 1;
+    int64 out_channels = 2;
+    int64 kernel_size = 3;
+    int64 stride = 4;
+    int64 padding = 5;
+    int64 dilation = 6;
+}
+
+message Pooling2DSpec {
+    PoolingType pooling_type = 1;
+    int64 kernel_size = 2;
+    int64 stride = 3;
+    int64 padding = 4;
+}
+
+enum PoolingType {POOLING_TYPE_UNSPECIFIED = 0; POOLING_TYPE_MAX = 1; POOLING_TYPE_AVERAGE = 2;}
+
+message BatchNormSpec {int64 num_features = 1; double eps = 2; double momentum = 3;}
+message LinearSpec {int64 in_features = 1;int64 out_features = 2; bool bias = 3;}
+message ActivationSpec {ActivationType activation_type = 1; int32 dim = 2;}
+
+enum ActivationType {
+    ACTIVATION_TYPE_UNSPECIFIED = 0;
+    ACTIVATION_TYPE_RELU = 1;
+    ACTIVATION_TYPE_SIGMOID = 2;
+    ACTIVATION_TYPE_SOFTMAX = 3;
+    ACTIVATION_TYPE_TANH = 4;
+}
+message IndexedPoolingSpec {int64 kernel_size = 1; int64 stride = 2; int64 padding = 3;}
+message UnpoolingSpec {int64 kernel_size = 1; int64 stride = 2; int64 padding = 3;}
+
+enum UpsampleMode {UPSAMPLE_MODE_UNSPECIFIED = 0; UPSAMPLE_MODE_NEAREST = 1; UPSAMPLE_MODE_BILINEAR = 2;}
+message UpsampleSpec {
+    UpsampleMode upsample_mode = 1;
+    int64 scale_factor = 2;
+}
+
+message AddSpec {
+    // 2 番目以降の入力にかける係数。0(未指定)は 1.0 として扱う。
+    double alpha = 1;
+}
+
+// 入力をチャンネル方向に結合する。結合する次元は固定なので、パラメータはない。
+message ConcatSpec {
+}

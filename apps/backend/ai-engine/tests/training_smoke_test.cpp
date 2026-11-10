@@ -22,12 +22,14 @@
 #include <torch/torch.h>
 
 #include "training/entities/domain-objects/ComputeDevice.hpp"
-#include "training/entities/domain-objects/Conv2DParams.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/Conv2DSpec.hpp"
 #include "training/entities/domain-objects/DataSpecs/DataSpec.hpp"
 #include "training/entities/domain-objects/DatasetSplit.hpp"
 #include "training/entities/domain-objects/Metrics/EpochMetrics.hpp"
-#include "training/entities/domain-objects/LayersConfig.hpp"
-#include "training/entities/domain-objects/ModelGraph.hpp"
+#include "training/entities/domain-objects/ModelGraph/NodeSpec.hpp"
+#include "training/entities/domain-objects/ModelGraph/DAG/GraphValidation.hpp"
+#include "training/entities/domain-objects/ModelGraph/DAG/ModelGraphBuilder.hpp"
+#include "training/entities/domain-objects/ModelGraph/ModelGraph.hpp"
 #include "training/entities/domain-objects/OptimizerConfig.hpp"
 #include "training/entities/domain-objects/TrainParam.hpp"
 #include "training/entities/image/ColorLabelMap.hpp"
@@ -177,15 +179,15 @@ namespace
 
     ModelGraph oneConvGraph(int numClasses)
     {
-        ModelGraph g;
-        Conv2DParams conv;
+        ModelGraphBuilder g;
+        Conv2DSpec conv;
         conv.inChannels = 3;
         conv.outChannels = numClasses;
         conv.kernelSize = 3;
         conv.stride = 1;
         conv.padding = 1;
-        g.layers.push_back(LayersConfig{conv});
-        return g;
+        g.add(NodeSpec{conv});
+        return g.build();
     }
 
     std::vector<at::Tensor> snapshot(const std::vector<at::Tensor> &p)
@@ -276,7 +278,7 @@ int main()
     auto optimizerFactory = std::make_shared<TorchOptimizerFactory>();
 
     const ModelGraph graph = oneConvGraph(numClasses);
-    std::shared_ptr<IModel> model = modelFactory->create(graph, kTestDevice);
+    std::shared_ptr<IModel> model = modelFactory->create(ValidatedModelGraph::create(graph), kTestDevice);
     std::vector<at::Tensor> params = model->parameters();
 
     AdamOptimizerConfig adam;

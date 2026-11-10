@@ -3,7 +3,7 @@ services:
   ai-engine-dev:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.ai-engine
       target: dev
     volumes:
       - ../:/workspaces:cached # リポジトリルートをマウント(.gitを含めるため。backend単体マウントだとコンテナ内でgit操作ができなくなる)
@@ -16,7 +16,7 @@ services:
       resources:
         limits:
           cpus: "4"
-          memory: 5g
+          memory: 10g
         reservations:
           devices:
             - driver: nvidia
@@ -32,15 +32,38 @@ services:
   api-dev:
     build:
       context: .
-      dockerfile: Dockerfile.rust
+      dockerfile: Dockerfile.api
+      target: dev
     volumes:
       - ../:/workspaces:cached
       - ~/.claude:/root/.claude:cached # ホスト側のClaude設定(CLAUDE.md等)を共有
       - cargo-registry:/usr/local/cargo/registry # cargo のキャッシュをコンテナ再作成後も永続化
+      - api-data:/data # DBの永続化用ボリューム
     # VS Code が DevContainer として認識し続けるための設定(base imageのデフォルトCMDはbashで、TTYがないと即終了するため)
     command: /bin/bash -c "while sleep 1000; do :; done"
     working_dir: /workspaces/apps/backend/api
+    environment:
+      - DATABASE_URL=sqlite:/data/training.db?mode=rwc
+  web-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      target: dev
+    volumes:
+      - ../:/workspaces:cached # リポジトリルートをマウント(.gitを含めるため。既存サービスと同じ)
+      - ~/.claude:/root/.claude:cached # ホスト側のClaude設定(CLAUDE.md等)を共有
+      # node_modules だけはコンテナ内に閉じる。(1)WSL2 ではホストFSへのI/Oが遅く、数万の小ファイルを持つ
+      # node_modules で最も影響が出る。(2)esbuild 等のネイティブバイナリはOS/CPU別に取得されるため、
+      # ホスト(Windows)とコンテナ(Linux)で共有すると実行できないバイナリが混ざる。
+      - web-node-modules:/workspaces/apps/frontend/node_modules
+    ports:
+      - "5173:5173" # Vite の開発サーバーを、ホストのブラウザから開くため
+    # VS Code が DevContainer として認識し続けるための設定(既存サービスと同じ)
+    command: /bin/bash -c "while sleep 1000; do :; done"
+    working_dir: /workspaces/apps/frontend
 
 volumes:
   ccache-data:
   cargo-registry:
+  web-node-modules: # web-dev の node_modules を永続化し、ホストと分離するための名前付きボリューム
+  api-data: # api-dev の DB データを永続化するための名前付きボリューム

@@ -91,9 +91,10 @@ set_property(TARGET ai_engine_lib PROPERTY CXX_STANDARD 17)
 set(PROTO_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/protoGenerated)
 file(MAKE_DIRECTORY ${PROTO_GEN_DIR})
 
-add_library(ai_engine_proto STATIC 
+add_library(ai_engine_proto STATIC
 		${PROTO_DIR}/capabilities.proto
-		${PROTO_DIR}/training.proto)
+		${PROTO_DIR}/training.proto
+		${PROTO_DIR}/model_graph.proto)
 target_link_libraries(ai_engine_proto PUBLIC gRPC::grpc++ SystemProtobuf::libprotobuf)
 target_include_directories(ai_engine_proto PUBLIC ${PROTO_GEN_DIR})
 set_property(TARGET ai_engine_proto PROPERTY CXX_STANDARD 17)
@@ -292,6 +293,19 @@ target_include_directories(device_config_test PRIVATE
 )
 set_property(TARGET device_config_test PROPERTY CXX_STANDARD 17)
 
+# 14-2. ポートの検証(GraphValidation)と形状推論(GraphShapeInference)のテスト。
+#       libtorch 非依存(entities のみ)。ai_engine_lib には依存せず、必要な .cpp だけをビルドする。
+add_executable(graph_shape_inference_test
+	tests/graph_shape_inference_test.cpp
+	src/training/entities/domain-objects/ModelGraph/DAG/GraphValidation.cpp
+	src/training/entities/domain-objects/ModelGraph/DAG/GraphShapeInference.cpp
+)
+target_include_directories(graph_shape_inference_test PRIVATE
+	${CMAKE_CURRENT_SOURCE_DIR}/src
+	${CMAKE_CURRENT_SOURCE_DIR}
+)
+set_property(TARGET graph_shape_inference_test PROPERTY CXX_STANDARD 17)
+
 # 15. CPU と CUDA で学習結果が概ね一致することの確認(CUDA 無しは CPU のみで skip)。
 add_executable(device_parity_test tests/device_parity_test.cpp)
 target_include_directories(device_parity_test PRIVATE
@@ -342,7 +356,11 @@ set_property(TARGET training_job_manager_test PROPERTY CXX_STANDARD 17)
 
 # 19. TrainingProtoMapper(proto <-> ドメインの変換と値の確認)の単体テスト。
 # ai_engine_grpc と同じ理由で、torch のヘッダを見せない(libtorch 同梱の protobuf ヘッダと衝突するため)。
-add_executable(training_proto_mapper_test tests/training_proto_mapper_test.cpp)
+# mapper が呼ぶ ValidatedModelGraph::create の実体は ai_engine_lib にあるが、上の理由でリンクできないので、
+# GraphValidation.cpp(entities のみ、torch 非依存)だけを直接ビルドする。
+add_executable(training_proto_mapper_test
+	tests/training_proto_mapper_test.cpp
+	src/training/entities/domain-objects/ModelGraph/DAG/GraphValidation.cpp)
 target_include_directories(training_proto_mapper_test PRIVATE
 	${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(training_proto_mapper_test PRIVATE ai_engine_grpc ai_engine_proto)
@@ -371,6 +389,50 @@ target_include_directories(torch_seed_recall_test PRIVATE
 target_link_libraries(torch_seed_recall_test PRIVATE ai_engine_lib "${TORCH_LIBRARIES}")
 target_link_options(torch_seed_recall_test PRIVATE "-Wl,--allow-shlib-undefined")
 set_property(TARGET torch_seed_recall_test PROPERTY CXX_STANDARD 17)
+
+## 3. ModelGraph / TorchModel を作り替えても計算結果が変わらないことの確認(期待値は作り替える前のコードで記録)
+add_executable(model_graph_golden_test tests/model_graph_golden_test.cpp)
+target_include_directories(model_graph_golden_test PRIVATE
+	${CMAKE_CURRENT_SOURCE_DIR}/src
+	${CMAKE_CURRENT_SOURCE_DIR}
+	${TORCH_INCLUDE_DIRS}
+)
+target_link_libraries(model_graph_golden_test PRIVATE ai_engine_lib "${TORCH_LIBRARIES}")
+target_link_options(model_graph_golden_test PRIVATE "-Wl,--allow-shlib-undefined")
+set_property(TARGET model_graph_golden_test PROPERTY CXX_STANDARD 17)
+
+## 4. TorchAddLayer の forward と、Add の形状の規則が一致することの確認
+add_executable(torch_add_test tests/torch_add_test.cpp)
+target_include_directories(torch_add_test PRIVATE
+	${CMAKE_CURRENT_SOURCE_DIR}/src
+	${CMAKE_CURRENT_SOURCE_DIR}
+	${TORCH_INCLUDE_DIRS}
+)
+target_link_libraries(torch_add_test PRIVATE ai_engine_lib "${TORCH_LIBRARIES}")
+target_link_options(torch_add_test PRIVATE "-Wl,--allow-shlib-undefined")
+set_property(TARGET torch_add_test PROPERTY CXX_STANDARD 17)
+
+## 5. TorchConcatLayer の forward と、Concat の形状の規則が一致することの確認
+add_executable(torch_concat_test tests/torch_concat_test.cpp)
+target_include_directories(torch_concat_test PRIVATE
+	${CMAKE_CURRENT_SOURCE_DIR}/src
+	${CMAKE_CURRENT_SOURCE_DIR}
+	${TORCH_INCLUDE_DIRS}
+)
+target_link_libraries(torch_concat_test PRIVATE ai_engine_lib "${TORCH_LIBRARIES}")
+target_link_options(torch_concat_test PRIVATE "-Wl,--allow-shlib-undefined")
+set_property(TARGET torch_concat_test PROPERTY CXX_STANDARD 17)
+
+## 6. 学習再開時に、Optimizer の lr などが checkpoint の値ではなく今回の指定値になることの確認
+add_executable(optimizer_resume_options_test tests/optimizer_resume_options_test.cpp)
+target_include_directories(optimizer_resume_options_test PRIVATE
+	${CMAKE_CURRENT_SOURCE_DIR}/src
+	${CMAKE_CURRENT_SOURCE_DIR}
+	${TORCH_INCLUDE_DIRS}
+)
+target_link_libraries(optimizer_resume_options_test PRIVATE ai_engine_lib "${TORCH_LIBRARIES}")
+target_link_options(optimizer_resume_options_test PRIVATE "-Wl,--allow-shlib-undefined")
+set_property(TARGET optimizer_resume_options_test PROPERTY CXX_STANDARD 17)
 # =====CIテスト用の設定=====
 enable_testing()
 
@@ -380,6 +442,21 @@ add_test(NAME training_progress_store_test COMMAND training_progress_store_test)
 add_test(NAME training_job_manager_test COMMAND training_job_manager_test)
 add_test(NAME training_proto_mapper_test COMMAND training_proto_mapper_test)
 add_test(NAME torch_seed_recall_test COMMAND torch_seed_recall_test)
+add_test(NAME model_graph_golden_test COMMAND model_graph_golden_test)
+add_test(NAME graph_shape_inference_test COMMAND graph_shape_inference_test)
+add_test(NAME image_resize_test COMMAND image_resize_test)
+add_test(NAME model_evaluator_test COMMAND model_evaluator_test)
+add_test(NAME best_checkpoint_test COMMAND best_checkpoint_test)
+add_test(NAME checkpoint_roundtrip_test COMMAND checkpoint_roundtrip_test)
+add_test(NAME model_graph_archive_test COMMAND model_graph_archive_test)
+add_test(NAME checkpoint_rebuild_test COMMAND checkpoint_rebuild_test)
+add_test(NAME training_smoke_test COMMAND training_smoke_test)
+add_test(NAME device_config_test COMMAND device_config_test)
+add_test(NAME device_parity_test COMMAND device_parity_test)
+add_test(NAME loss_function_test COMMAND loss_function_test)
+add_test(NAME torch_add_test COMMAND torch_add_test)
+add_test(NAME torch_concat_test COMMAND torch_concat_test)
+add_test(NAME optimizer_resume_options_test COMMAND optimizer_resume_options_test)
 
 set_tests_properties(torch_loss_factory_test PROPERTIES LABELS "cpu")
 set_tests_properties(image_pipeline_test PROPERTIES LABELS "cpu")
@@ -387,3 +464,23 @@ set_tests_properties(training_progress_store_test PROPERTIES LABELS "cpu")
 set_tests_properties(training_job_manager_test PROPERTIES LABELS "cpu")
 set_tests_properties(training_proto_mapper_test PROPERTIES LABELS "cpu")
 set_tests_properties(torch_seed_recall_test PROPERTIES LABELS "cpu")
+set_tests_properties(model_graph_golden_test PROPERTIES LABELS "cpu")
+set_tests_properties(graph_shape_inference_test PROPERTIES LABELS "cpu")
+set_tests_properties(image_resize_test PROPERTIES LABELS "cpu")
+set_tests_properties(model_evaluator_test PROPERTIES LABELS "cpu")
+set_tests_properties(best_checkpoint_test PROPERTIES LABELS "cpu")
+set_tests_properties(checkpoint_roundtrip_test PROPERTIES LABELS "cpu")
+set_tests_properties(model_graph_archive_test PROPERTIES LABELS "cpu")
+set_tests_properties(checkpoint_rebuild_test PROPERTIES LABELS "cpu")
+set_tests_properties(training_smoke_test PROPERTIES LABELS "cpu")
+set_tests_properties(device_config_test PROPERTIES LABELS "cpu")
+# device_parity_test は、CUDA が無い環境では CPU 側だけを実行する(CUDA との比較は省かれる)。
+set_tests_properties(device_parity_test PROPERTIES LABELS "cpu")
+set_tests_properties(loss_function_test PROPERTIES LABELS "cpu")
+set_tests_properties(torch_add_test PROPERTIES LABELS "cpu")
+set_tests_properties(torch_concat_test PROPERTIES LABELS "cpu")
+set_tests_properties(optimizer_resume_options_test PROPERTIES LABELS "cpu")
+
+# training_smoke_test は、実データ(TrainingDataset/train。リポジトリには含めていない)が無いと
+# 何も確認せずに終了コード 0 で終わる。Passed と区別できるよう、ctest の表示を Skipped にする。
+set_tests_properties(training_smoke_test PROPERTIES SKIP_REGULAR_EXPRESSION "\\[SKIP\\]")

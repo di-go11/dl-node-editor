@@ -1,0 +1,39 @@
+FROM rust:1.88-slim-bookworm AS dev
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    sqlite3 \
+    protobuf-compiler \
+    libprotobuf-dev \
+    pkg-config \
+    build-essential \
+    ca-certificates \
+    git \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN rustup component add rust-src clippy rustfmt
+
+WORKDIR /workspaces/apps/backend/api
+
+#==== 本番用 ====
+
+## ==== build ====
+FROM rust:1.88-slim-bookworm AS builder
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    protobuf-compiler libprotobuf-dev pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+COPY apps/backend/api   /src/api
+COPY apps/backend/proto /src/proto
+WORKDIR /src/api
+RUN cargo build --release -p server
+
+## ====runtime====
+FROM debian:bookworm-slim AS runtime
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /src/api/target/release/server /app/server
+WORKDIR /app
+CMD ["/app/server"]

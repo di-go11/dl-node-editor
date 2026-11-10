@@ -10,24 +10,34 @@
 TorchCheckpointStore::TorchCheckpointStore(std::shared_ptr<IModel> model,
                                            std::shared_ptr<IOptimizer> optimizer,
                                            std::string outputDir,
-                                           std::string modelName,
+                                           std::string modelId,
                                            ModelGraph modelGraph)
     : _model(std::move(model)),
       _optimizer(std::move(optimizer)),
       _outputDir(std::move(outputDir)),
-      _modelName(std::move(modelName)),
-      _modelGraph(std::move(modelGraph)) {}
+      _modelId(std::move(modelId)),
+      _modelGraph(std::move(modelGraph))
+{
+    // 空のまま既定名にすると、別モデルの学習どうしが同じファイルを上書き・再開してしまうため拒否する。
+    if (_modelId.empty())
+    {
+        throw std::invalid_argument("TorchCheckpointStore: modelId が空です");
+    }
+}
+
+std::string TorchCheckpointStore::lastCheckpointPath(const std::string &outputDir, const std::string &modelId)
+{
+    return (std::filesystem::path(outputDir) / (modelId + "_last.pt")).string();
+}
 
 std::string TorchCheckpointStore::checkpointPath(CheckpointKind kind) const
 {
-    const std::string name = _modelName.empty() ? "model" : _modelName;
-
     switch (kind)
     {
     case CheckpointKind::Best:
-        return (std::filesystem::path(_outputDir) / (name + "_best.pt")).string();
+        return (std::filesystem::path(_outputDir) / (_modelId + "_best.pt")).string();
     case CheckpointKind::Last:
-        return (std::filesystem::path(_outputDir) / (name + "_last.pt")).string();
+        return lastCheckpointPath(_outputDir, _modelId);
     default:
         throw std::runtime_error("TorchCheckpointStore::checkpointPath: unknown kind");
     }

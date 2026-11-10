@@ -1,13 +1,14 @@
 #pragma once
 
-#include "training/entities/domain-objects/ModelGraph.hpp"
+#include "training/entities/domain-objects/ModelGraph/DAG/GraphValidation.hpp"
 #include "training/entities/domain-objects/ComputeDevice.hpp"
 
 #include <memory>
 
 class IModel;
 
-// ModelGraph(モデル構造の内部表現)から IModel を組み立てるポート。
+// ValidatedModelGraph(検証済みのモデル構造)から IModel を組み立てるポート。
+// 検証を通っていないグラフは、型の上で渡せない(実装側で再検証する必要がない)。
 //
 // 「どの具象レイヤ実装を使うか」(libtorch / 将来の別バックエンド)は
 // infrastructure 層の実装が握る。checkpoint からの再構築や cold start は
@@ -17,5 +18,5 @@ class IModelFactory
 public:
     virtual ~IModelFactory() = default;
 
-    virtual std::shared_ptr<IModel> create(const ModelGraph &graph, const ComputeDevice &device) = 0;
+    virtual std::shared_ptr<IModel> create(const ValidatedModelGraph &graph,const ComputeDevice &device) = 0;
 };

@@ -1,0 +1,6 @@
+# 生成物は整形対象にしない(生成し直すたびに差分が出るため)
+dist
+coverage
+node_modules
+src/api/schema.d.ts
+public/mockServiceWorker.js

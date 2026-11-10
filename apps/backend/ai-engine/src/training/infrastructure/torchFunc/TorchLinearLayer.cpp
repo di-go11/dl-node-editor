@@ -1,11 +1,11 @@
 #include "training/infrastructure/torchFunc/TorchLinearLayer.hpp"
 #include "training/infrastructure/torchFunc/DeviceToTorch.hpp"
 
-TorchLinearLayer::TorchLinearLayer(const LinearParams &params) : _module(torch::nn::LinearOptions(params.inFeatures, params.outFeatures).bias(params.bias)) {}
+TorchLinearLayer::TorchLinearLayer(const LinearSpec &params) : _module(torch::nn::LinearOptions(params.inFeatures, params.outFeatures).bias(params.bias)) {}
 
-void TorchLinearLayer::forward(const at::Tensor &input, at::Tensor &output)
+std::vector<at::Tensor> TorchLinearLayer::forward(const std::vector<at::Tensor> &inputs)
 {
-    output = _module->forward(input);
+    return {_module->forward(inputs[0])};
 }
 
 std::vector<at::Tensor> TorchLinearLayer::parameters() const

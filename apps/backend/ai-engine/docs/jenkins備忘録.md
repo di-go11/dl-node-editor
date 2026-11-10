@@ -34,7 +34,7 @@ COPY plugins.txt /usr/share/jenkins/ref/plugins.txt
 RUN jenkins-plugin-cli --plugin-file /usr/share/jenkins/ref/plugins.txt
 
 # Configuration as Code (JCasC) で管理者・ジョブ設定を再現可能にし、
-# UIでの手動設定(かつ設定の属人化)を避ける
+# UIでの手動設定を避ける
 ENV CASC_JENKINS_CONFIG=/var/jenkins_home/casc.yaml
 
 # セットアップウィザードを無効化し、casc.yamlの設定内容だけで起動を完結させる
@@ -68,13 +68,14 @@ services:
       - ../jenkins-home:/var/jenkins_home
       - ./casc.yaml:/var/jenkins_home/casc.yaml:ro
     ports:
-      - "192.168.11.20:8082:8080"
+      - "192.168.11.20:8082:8080" # ホストPCにてアドレスを指定して解放.外部からのアクセス可能
+      - "127.0.0.1:8082:8080" # localhostにて解放. 外部からのアクセス不可
     networks:
       - jenkins-net
   jenkins-agent:
     build:
       context: ../../ObjectDetection/robust-object-detection/.devcontainer
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.ai-engine
       target: ci-agent #devステージではなく、ci-agentステージがビルドされる
     volumes:
       - jenkins-ccache:/home/jenkins/.ccache  #専用ボリューム
@@ -276,7 +277,7 @@ CMake Error ... CUDA_ARCHITECTURES is empty for target "cmTC_xxxx".
   `ccache`がキャッシュを使わず素通しした、と考えられる。`nvcc`が呼ぶ`gcc -c ...`(コンパイルのみ)だけが、
   キャッシュを使おうとして失敗した。
 
-#### 調べ方(これが決め手だった)
+#### 調べ方
 
 CMakeのconfigureエラーは、画面のエラーより**ログファイルの方に本当の理由が出る**。
 

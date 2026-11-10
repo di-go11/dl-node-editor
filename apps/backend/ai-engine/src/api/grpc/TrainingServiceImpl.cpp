@@ -47,7 +47,15 @@ grpc::Status TrainingServiceImpl::StartTraining(grpc::ServerContext * /*context*
     }
     catch (const TrainingJobBusyError &e)
     {
+        return grpc::Status(grpc::StatusCode::ABORTED, e.what());
+    }
+    catch (const TrainingPreconditionError &e)
+    {
         return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, e.what());
+    }
+    catch (const std::invalid_argument &e)
+    {
+        return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, e.what());
     }
 }
 
@@ -63,6 +71,53 @@ grpc::Status TrainingServiceImpl::StreamProgress(grpc::ServerContext *context,
     catch (const TrainingJobNotFoundError &e)
     {
         return grpc::Status(grpc::StatusCode::NOT_FOUND, e.what());
+    }
+
+    // after_epoch の指定があれば、その続きのエポックを飛ばさずに全部送る(履歴の保存用)。
+    if (request->start_position_case() == training::v1::StreamProgressRequest::kAfterEpoch)
+    {
+        uint32_t cursor = request->after_epoch(); // 送信済みのエポック数(response.epoch と同じ数え方)
+        uint64_t lastVersion = 0;
+        while (!context->IsCancelled())
+        {
+            const EpochBatch batch = progress->waitForEpochsAfter(cursor, lastVersion, kProgressWaitTimeout);
+            if (batch.version == lastVersion)
+            {
+                continue; // タイムアウト。切断を確認してから待ち直す
+            }
+            lastVersion = batch.version;
+
+            // 途中のエポックは RUNNING で送る
+            for (const EpochReport &report : batch.reports)
+            {
+                TrainingProcessSnapshot one;
+                one.status = TrainingStatus::Running;
+                one.hasEpochReport = true;
+                one.latest = report;
+
+                training::v1::StreamProgressResponse response;
+                fillStreamProgressResponse(one, response);
+                if (!writer->Write(response))
+                {
+                    return grpc::Status::OK; // クライアントが切断した
+                }
+                cursor = report.epoch + 1u;
+            }
+
+            // 全エポックのあとに、終了を 1 回だけ送る(epoch は 0 になる)
+            if (isFinished(batch.status))
+            {
+                TrainingProcessSnapshot last;
+                last.status = batch.status;
+                last.errorMessage = batch.errorMessage;
+
+                training::v1::StreamProgressResponse response;
+                fillStreamProgressResponse(last, response);
+                writer->Write(response);
+                break;
+            }
+        }
+        return grpc::Status::OK;
     }
 
     // lastVersion = 0 から始めるので、最初の1件は今の状態がすぐ返る(開始済みのジョブは version >= 1)。

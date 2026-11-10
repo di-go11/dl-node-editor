@@ -15,6 +15,14 @@ public:
     using std::runtime_error::runtime_error;
 };
 
+// 依頼の内容が今の状態と合わないため、学習を開始できない。
+// 例: resume = true なのに checkpoint がない / checkpoint がすでに指定エポック数まで学習済み。
+class TrainingPreconditionError : public std::runtime_error
+{
+public:
+    using std::runtime_error::runtime_error;
+};
+
 // 指定された job_id のジョブが存在しない。
 class TrainingJobNotFoundError : public std::runtime_error
 {
@@ -30,6 +38,7 @@ public:
 
     // ジョブを別スレッドで開始し、job_id を返す。戻った時点で状態は Running。
     // 実行中のジョブがあれば TrainingJobBusyError。
+    // 開始条件を満たさなければ TrainingPreconditionError(このときジョブは作られない)。
     virtual std::string start(const StartTrainingCommand &command) = 0;
 
     // 停止を要求し、その時点の状態を返す。停止はエポックの区切りで行われるため、直後はまだ Running のことがある。

@@ -1,15 +1,15 @@
 #pragma once
 
 #include "training/adapters/interfaces/ILayer.hpp"
-#include "training/entities/domain-objects/BatchNormParams.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/BatchNormSpec.hpp"
 
 #include <torch/nn/modules/batchnorm.h>
 
 class TorchBatchNormLayer : public ILayer
 {
 public:
-    explicit TorchBatchNormLayer(const BatchNormParams &params);
-    void forward(const at::Tensor &input, at::Tensor &output) override;
+    explicit TorchBatchNormLayer(const BatchNormSpec &params);
+    std::vector<at::Tensor> forward(const std::vector<at::Tensor> &inputs) override;
     std::vector<at::Tensor> parameters() const override;
     void setTrain(bool trainingMode) override;
     void to(const ComputeDevice &device) override;

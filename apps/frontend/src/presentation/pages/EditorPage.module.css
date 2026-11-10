@@ -1,0 +1,40 @@
+/*
+ * CSS グリッドで 4 つの領域を配置する。grid-template-areas に名前で配置を書くと、
+ * 画面のレイアウトが図のように読める(指示書 4.2 の図と対応している)。
+ */
+.page {
+  display: grid;
+  grid-template-areas:
+    'header  header  header'
+    'sidebar canvas  inspector'
+    'log     log     log';
+  /* 右の列は auto。幅はプロパティパネル(ResizablePanel)自身が決める */
+  grid-template-columns: 200px minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) 160px;
+  height: 100vh;
+}
+
+.header {
+  grid-area: header;
+}
+
+.sidebar {
+  grid-area: sidebar;
+  min-height: 0;
+}
+
+/* キャンバスは React Flow が親の大きさいっぱいに広がるので、領域の大きさを確定させておく */
+.canvas {
+  grid-area: canvas;
+  min-height: 0;
+}
+
+.inspector {
+  grid-area: inspector;
+  min-height: 0;
+}
+
+.log {
+  grid-area: log;
+  min-height: 0;
+}

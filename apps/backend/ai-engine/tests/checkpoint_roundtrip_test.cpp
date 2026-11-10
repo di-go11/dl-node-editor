@@ -14,6 +14,7 @@
 
 #include <cmath>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
@@ -22,10 +23,16 @@
 
 #include <torch/torch.h>
 
+#include "training/TrainingJob.hpp"
+#include "training/application/impl/ServerConfig.hpp"
+#include "training/application/impl/StartTrainingCommand.hpp"
+#include "training/application/interfaces/ITrainingJobManager.hpp"
 #include "training/entities/domain-objects/CheckpointMeta.hpp"
-#include "training/entities/domain-objects/Conv2DParams.hpp"
-#include "training/entities/domain-objects/LayersConfig.hpp"
-#include "training/entities/domain-objects/ModelGraph.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/Conv2DSpec.hpp"
+#include "training/entities/domain-objects/ModelGraph/NodeSpec.hpp"
+#include "training/entities/domain-objects/ModelGraph/DAG/GraphValidation.hpp"
+#include "training/entities/domain-objects/ModelGraph/DAG/ModelGraphBuilder.hpp"
+#include "training/entities/domain-objects/ModelGraph/ModelGraph.hpp"
 #include "training/infrastructure/torchFunc/AdamOptimizer.hpp"
 #include "training/infrastructure/torchFunc/CrossEntropy.hpp"
 #include "training/infrastructure/torchFunc/TorchLayerBuilder.hpp"
@@ -55,15 +62,15 @@ void check(bool condition, const std::string &message)
 
 ModelGraph makeGraph(int numClasses)
 {
-    ModelGraph graph;
-    Conv2DParams conv;
+    ModelGraphBuilder graph;
+    Conv2DSpec conv;
     conv.inChannels = 3;
     conv.outChannels = numClasses;
     conv.kernelSize = 3;
     conv.stride = 1;
     conv.padding = 1;
-    graph.layers.push_back(LayersConfig{conv});
-    return graph;
+    graph.add(NodeSpec{conv});
+    return graph.build();
 }
 
 // TorchModel と、その parameters() を束ねた AdamOptimizer をまとめて構築する。
@@ -77,7 +84,7 @@ struct Bundle
 Bundle makeBundle(const ModelGraph &graph, ILayerBuilder &builder, double lr)
 {
     Bundle b;
-    b.model = std::make_shared<TorchModel>(graph, builder, kTestDevice);
+    b.model = std::make_shared<TorchModel>(ValidatedModelGraph::create(graph), builder, kTestDevice);
     b.params = b.model->parameters();
     b.optimizer = std::make_shared<AdamOptimizer>(b.params, lr);
     return b;
@@ -272,6 +279,80 @@ int main()
         }
         check(!legacyThrew && legacyMeta.epoch == 3u,
               "fingerprint の無い旧形式 checkpoint は例外にならず読める(構造チェックはスキップ)");
+    }
+
+    // ---- 異常系: modelId が空のストアは作れない(全学習が同じファイルを共有してしまうため) ----
+    {
+        Bundle d = makeBundle(graph, builder, 0.05);
+        bool emptyThrew = false;
+        try
+        {
+            TorchCheckpointStore store(d.model, d.optimizer, dir.string(), "", graph);
+        }
+        catch (const std::invalid_argument &)
+        {
+            emptyThrew = true;
+        }
+        check(emptyThrew, "TorchCheckpointStore は modelId が空なら std::invalid_argument を投げる");
+    }
+
+    // ---- 学習開始前の確認(checkTrainingJobPreconditions) ----
+    // roundtrip_last.pt は epoch 20(0 始まり)= 21 エポック学習済みとして保存されている。
+    {
+        ServerConfig server;
+        server.checkpointOutputDirPath = dir.string();
+
+        // 例外の種類を名前で返す。投げなければ "ok"。
+        auto outcome = [&server](const StartTrainingCommand &command) -> std::string
+        {
+            try
+            {
+                checkTrainingJobPreconditions(server, command);
+                return "ok";
+            }
+            catch (const TrainingPreconditionError &)
+            {
+                return "precondition";
+            }
+            catch (const std::invalid_argument &)
+            {
+                return "invalid";
+            }
+            catch (...)
+            {
+                return "other";
+            }
+        };
+        auto makeCommand = [](const std::string &modelId, bool resume, unsigned int epochSize)
+        {
+            StartTrainingCommand c;
+            c.modelId = modelId;
+            c.resume = resume;
+            c.epochSize = epochSize;
+            return c;
+        };
+
+        check(outcome(makeCommand("", false, 30)) == "invalid", "事前確認: model_id が空なら invalid_argument");
+        check(outcome(makeCommand("roundtrip", false, 1)) == "ok",
+              "事前確認: resume = false なら _last.pt があっても読まない(エポック数も見ない)");
+        check(outcome(makeCommand("no_such_model", false, 1)) == "ok",
+              "事前確認: resume = false なら _last.pt がなくてもよい");
+        check(outcome(makeCommand("no_such_model", true, 30)) == "precondition",
+              "事前確認: resume = true で _last.pt がなければ TrainingPreconditionError");
+        check(outcome(makeCommand("roundtrip", true, 22)) == "ok",
+              "事前確認: resume = true で残りエポックがあれば通る(21 エポック済み / 合計 22)");
+        check(outcome(makeCommand("roundtrip", true, 21)) == "precondition",
+              "事前確認: 学習済みエポック数 == 合計エポック数なら TrainingPreconditionError(0 エポックで Completed にしない)");
+        check(outcome(makeCommand("roundtrip", true, 5)) == "precondition",
+              "事前確認: 学習済みエポック数 > 合計エポック数なら TrainingPreconditionError");
+
+        // 壊れたファイルは「再開できない」として扱う(gRPC で UNKNOWN にしない)
+        {
+            std::ofstream broken(dir / "broken_last.pt", std::ios::binary);
+            broken << "not a checkpoint";
+        }
+        check(outcome(makeCommand("broken", true, 30)) == "precondition",
+              "事前確認: 読めない _last.pt は TrainingPreconditionError");
     }
 
     std::filesystem::remove_all(dir); // 後片付け

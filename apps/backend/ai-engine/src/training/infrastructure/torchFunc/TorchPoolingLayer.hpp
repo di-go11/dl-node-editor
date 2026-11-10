@@ -1,7 +1,7 @@
 #pragma once
 
 #include "training/adapters/interfaces/ILayer.hpp"
-#include "training/entities/domain-objects/PoolingParams.hpp"
+#include "training/entities/domain-objects/ModelGraph/Layers/PoolingSpec.hpp"
 
 #include <torch/nn/modules/pooling.h>
 #include <variant>
@@ -9,8 +9,8 @@
 class TorchPoolingLayer : public ILayer
 {
 public:
-    explicit TorchPoolingLayer(const PoolingParams &params);
-    void forward(const at::Tensor &input, at::Tensor &output) override;
+    explicit TorchPoolingLayer(const PoolingSpec &params);
+    std::vector<at::Tensor> forward(const std::vector<at::Tensor> &inputs) override;
     std::vector<at::Tensor> parameters() const override;
     void setTrain(bool trainingMode) override;
     void to(const ComputeDevice &device) override;

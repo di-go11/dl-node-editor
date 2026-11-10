@@ -113,6 +113,94 @@ int main()
         check(s.version == 5, "再 start: version は引き継いで進む(0 に戻らない)");
     }
 
+    // ---------- waitForEpochsAfter: afterEpoch は完了したエポック数(EpochReport.epoch は 0 始まり) ----------
+    {
+        TrainingProgressStore history;
+        history.start();
+        history.onEpochCompleted(makeReport(0, 0.9));
+        history.onEpochCompleted(makeReport(1, 0.8));
+        history.onEpochCompleted(makeReport(2, 0.7));
+
+        const EpochBatch all = history.waitForEpochsAfter(/*afterEpoch=*/0, /*lastVersion=*/0, 5s);
+        check(all.reports.size() == 3 && all.reports[0].epoch == 0, "waitForEpochsAfter(0): 最初のエポックから全部返す");
+        check(all.status == TrainingStatus::Running, "waitForEpochsAfter: その時点の状態を返す");
+        check(all.version == 4, "waitForEpochsAfter: その時点の version を返す");
+
+        const EpochBatch rest = history.waitForEpochsAfter(/*afterEpoch=*/2, /*lastVersion=*/0, 5s);
+        check(rest.reports.size() == 1 && rest.reports[0].epoch == 2, "waitForEpochsAfter(2): 3 番目のエポックだけ返す");
+
+        const EpochBatch none = history.waitForEpochsAfter(/*afterEpoch=*/3, /*lastVersion=*/0, 5s);
+        check(none.reports.empty(), "waitForEpochsAfter(3): 続きがなければ空");
+    }
+
+    // ---------- waitForEpochsAfter: 1 件ずつ読み進めても抜けない ----------
+    {
+        TrainingProgressStore history;
+        history.start();
+        unsigned int cursor = 0;
+        uint64_t lastVersion = 0;
+        unsigned int received = 0;
+        for (unsigned int epoch = 0; epoch < 5; ++epoch)
+        {
+            history.onEpochCompleted(makeReport(epoch, 0.5));
+            const EpochBatch batch = history.waitForEpochsAfter(cursor, lastVersion, 5s);
+            lastVersion = batch.version;
+            for (const EpochReport &report : batch.reports)
+            {
+                check(report.epoch == received, "waitForEpochsAfter(逐次): 順番どおりに届く");
+                ++received;
+                cursor = report.epoch + 1u;
+            }
+        }
+        check(received == 5, "waitForEpochsAfter(逐次): 全エポックが届く");
+    }
+
+    // ---------- waitForEpochsAfter: 終了後に読んでも全部返る ----------
+    {
+        TrainingProgressStore history;
+        history.start();
+        history.onEpochCompleted(makeReport(0, 0.9));
+        history.onEpochCompleted(makeReport(1, 0.8));
+        history.onFinished(TrainingStatus::Completed, "");
+
+        const EpochBatch batch = history.waitForEpochsAfter(/*afterEpoch=*/0, /*lastVersion=*/0, 5s);
+        check(batch.reports.size() == 2, "waitForEpochsAfter(終了後): 全エポックが返る");
+        check(batch.status == TrainingStatus::Completed, "waitForEpochsAfter(終了後): 終了の状態が返る");
+    }
+
+    // ---------- waitForEpochsAfter: 1 エポックも終わらずに失敗 ----------
+    {
+        TrainingProgressStore history;
+        history.start();
+        history.onFinished(TrainingStatus::Failed, "dataset not found");
+
+        const EpochBatch batch = history.waitForEpochsAfter(/*afterEpoch=*/0, /*lastVersion=*/0, 5s);
+        check(batch.reports.empty(), "waitForEpochsAfter(即失敗): エポックは空");
+        check(batch.status == TrainingStatus::Failed, "waitForEpochsAfter(即失敗): status == Failed");
+        check(batch.errorMessage == "dataset not found", "waitForEpochsAfter(即失敗): errorMessage が入る");
+    }
+
+    // ---------- waitForEpochsAfter: 更新がなければタイムアウトする ----------
+    {
+        TrainingProgressStore history;
+        history.start();
+        const auto begin = std::chrono::steady_clock::now();
+        const EpochBatch batch = history.waitForEpochsAfter(/*afterEpoch=*/0, /*lastVersion=*/1, 50ms);
+        const auto elapsed = std::chrono::steady_clock::now() - begin;
+        check(batch.version == 1, "waitForEpochsAfter(timeout): version は変わらない");
+        check(elapsed >= 50ms, "waitForEpochsAfter(timeout): timeout まで待つ");
+    }
+
+    // ---------- start で履歴が消える ----------
+    {
+        TrainingProgressStore history;
+        history.start();
+        history.onEpochCompleted(makeReport(0, 0.9));
+        history.start();
+        const EpochBatch batch = history.waitForEpochsAfter(/*afterEpoch=*/0, /*lastVersion=*/0, 5s);
+        check(batch.reports.empty(), "再 start: 前のジョブの履歴は消える");
+    }
+
     if (failureCount == 0)
     {
         std::cout << "All training progress store tests passed." << std::endl;
