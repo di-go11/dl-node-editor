@@ -75,7 +75,7 @@ services:
   jenkins-agent:
     build:
       context: ../../ObjectDetection/robust-object-detection/.devcontainer
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.ai-engine
       target: ci-agent #devステージではなく、ci-agentステージがビルドされる
     volumes:
       - jenkins-ccache:/home/jenkins/.ccache  #専用ボリューム
