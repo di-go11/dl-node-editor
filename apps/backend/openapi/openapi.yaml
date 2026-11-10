@@ -213,7 +213,7 @@ paths:
       operationId: listModels
       summary: 学習済みモデルの一覧を取得する
       description: |
-        学習再開画面(/resume)の一覧に使う。新しく作ったモデルが先に並ぶ。
+        学習再開画面(/resume)の一覧に使う。最近学習した(最新の run を始めた)モデルが先に並ぶ。
         学習の記録(run)が 1 件もないモデルは含めない。0 件でも 200 で空の配列を返す。
       responses:
         '200':
@@ -231,8 +231,8 @@ paths:
       operationId: getModelConfig
       summary: モデルの最新の学習設定を取得する
       description: |
-        再開フォームの初期値と、固定項目(model_name / model_graph / data_spec / optimizer の type)の表示に使う。
-        応答はそのまま /models/{model_id}/resume の本体として送り返せる。
+        再開フォームの初期値と、固定項目(model_name / data_spec / optimizer の type など)の表示に使う。
+        /models/{model_id}/resume には、この応答のうち変えてよい項目(ResumeTrainingConfig)だけを送る。
       parameters:
         - $ref: '#/components/parameters/ModelId'
       responses:
@@ -241,7 +241,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ResumeTrainingConfig'
+                $ref: '#/components/schemas/ModelTrainingConfig'
         '400':
           $ref: '#/components/responses/InvalidModelId'
         '404':
@@ -257,11 +257,11 @@ paths:
       operationId: resumeTraining
       summary: 学習を再開する
       description: |
-        /models/{model_id}/config の応答の、変えてよい項目だけを書き換えて送る。
-        - 固定項目(model_name / model_graph / data_spec / optimizer の type)は、フロントで読み取り専用にする。
-          今はバックエンドでは照合しないので、書き換えて送ると C++ が拒否する(409)か、意図しない学習になる。
+        再開時に変えてよい項目だけを送る。初期値は /models/{model_id}/config の応答から取る。
+        - 固定項目(model_name / model_graph / data_spec / seed)は送らない。サーバーが前回の学習設定の値を使う。
+        - optimizer はハイパーパラメータを変えてよいが、type は前回と同じにする(違うと 422)。
         - epoch は合計エポック数である。前回までに完了したエポック数より大きい値にする。
-        - 再開元の checkpoint は C++ が model_id から決める。
+        - 再開するモデルはパスの model_id で決める。再開元の checkpoint は C++ が model_id から決める。
         受理されると job_id が返り、進捗は /trainings/{job_id}/progress で購読する。
       parameters:
         - $ref: '#/components/parameters/ModelId'
@@ -279,7 +279,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/StartTrainingResponse'
         '400':
-          description: model_id の形が正しくない、またはパスと本体の model_id が違う
+          $ref: '#/components/responses/InvalidModelId'
         '404':
           $ref: '#/components/responses/ModelNotFound'
         '409':
@@ -287,7 +287,7 @@ paths:
             再開できない。すでに学習が実行中、checkpoint がない、epoch が完了済みのエポック数以下、
             モデル構造が保存されていない、C++ が設定を拒否した、のいずれか
         '422':
-          description: リクエストの形が合わない
+          description: リクエストの形が合わない、または optimizer の type が前回と違う
         '500':
           description: DB の読み書きに失敗した
         '502':
@@ -942,7 +942,7 @@ components:
 
     ModelSummary:
       type: object
-      required: [model_id, model_name, created_at]
+      required: [model_id, model_name, created_at, task_type, last_run, completed_epochs, resumable]
       properties:
         model_id:
           type: string
@@ -952,6 +952,36 @@ components:
         created_at:
           type: string
           description: モデルを作った日時(UTC)
+        task_type:
+          type: string
+          enum: [segmentation, classification]
+          description: 最新の run の data_spec のタスク
+        last_run:
+          $ref: '#/components/schemas/LastRunSummary'
+        completed_epochs:
+          type: integer
+          format: int32
+          minimum: 0
+          description: |
+            全 run を通して記録された完了エポック数。再開時の epoch(合計エポック数)はこれより大きくする。
+            save_last_every が 1 より大きいと、checkpoint はこれより前のエポックのことがある。
+        resumable:
+          type: boolean
+          description: 再開できるか(モデル構造が保存されているか)。false のモデルは /models/{model_id}/config が 409 を返す
+
+    LastRunSummary:
+      description: モデルの最新の run。status と reason は TrainingStatusResponse と同じ
+      allOf:
+        - $ref: '#/components/schemas/TrainingStatusResponse'
+        - type: object
+          required: [started_at, finished_at]
+          properties:
+            started_at:
+              type: string
+              description: 学習を始めた日時(UTC)
+            finished_at:
+              type: [string, 'null']
+              description: 学習が終わった日時(UTC)。学習中、または終了を記録できていなければ null
 
     ModelSummariesResponse:
       type: object
@@ -962,11 +992,10 @@ components:
           items:
             $ref: '#/components/schemas/ModelSummary'
 
-    ResumeTrainingConfig:
+    ModelTrainingConfig:
       description: |
-        StartTrainingRequest と同じ項目に model_id を足したもの(同じ階層に並ぶ)。
-        GET /models/{model_id}/config の応答と POST /models/{model_id}/resume の本体で共有する。
-        応答では seed を固定していない場合も、キーを省略せずに null を返す。
+        GET /models/{model_id}/config の応答。StartTrainingRequest と同じ項目に model_id を足したもの(同じ階層に並ぶ)。
+        seed を固定していない場合も、キーを省略せずに null を返す。
       allOf:
         - $ref: '#/components/schemas/StartTrainingRequest'
         - type: object
@@ -975,7 +1004,49 @@ components:
             model_id:
               type: string
               minLength: 1
-              description: パスの model_id と同じ値にする
+
+    ResumeTrainingConfig:
+      description: |
+        POST /models/{model_id}/resume の本体。再開時に変えてよい項目だけを持つ。
+        固定項目(model_name / model_graph / data_spec / seed)はサーバーが前回の学習設定から使う。
+        送られてきても無視する。
+      type: object
+      required:
+        - optimizer
+        - loss
+        - epoch
+        - batch
+        - dataset_path
+        - device
+        - save_last_every
+      properties:
+        optimizer:
+          $ref: '#/components/schemas/OptimizerConfig'
+          description: type は前回と同じにする(違うと 422)
+        loss:
+          $ref: '#/components/schemas/LossConfig'
+        epoch:
+          type: integer
+          format: int32
+          minimum: 1
+          description: 合計エポック数。前回までに完了したエポック数より大きい値にする
+        batch:
+          type: integer
+          format: int32
+          minimum: 1
+        dataset_path:
+          type: string
+          minLength: 1
+          description: 学習エンジンから見たサーバー上のパス
+        device:
+          type: string
+          minLength: 1
+          description: /capabilities の devices[].id から選ぶ
+        save_last_every:
+          type: integer
+          format: int32
+          minimum: 0
+          description: checkpoint を保存する間隔(エポック)。0 なら毎エポック
 
     # ------------------------------------------------------------
     # 学習の状態と進捗

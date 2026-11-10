@@ -1,16 +1,17 @@
+use entities::training::JobId;
 use entities::training::config::Loss as LossConfig;
 use entities::training::config::Optimizer as OptimizerConfig;
 use entities::training::config::TrainingConfig;
-use entities::training::JobId;
 use serde::{Deserialize, Serialize};
+use usecases::training::ResumeTrainingConfig;
 
 use super::data_spec::DataSpecDto;
 use super::model::ModelGraphDto;
 
-// TrainingConfig。次の 3 つで共有する(リクエストとレスポンスで JSON の形が同じになる)
+// TrainingConfig。次の 2 つで共有する(リクエストとレスポンスで JSON の形が同じになる)
 // - 新規学習の開始・整合性チェックのリクエスト
-// - GET /models/{model_id}/config のレスポンス(ResumeTrainingConfigDto の中身)
-// - POST /models/{model_id}/resume のリクエスト(同上)
+// - GET /models/{model_id}/config のレスポンス(ModelTrainingConfigDto の中身)
+// 学習再開のリクエストは、変えてよい項目だけの ResumeTrainingConfigDto を使う
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TrainingConfigDto {
     pub model_name: String,
@@ -64,15 +65,41 @@ impl From<TrainingConfig> for TrainingConfigDto {
     }
 }
 
-// 学習再開用の設定。GET /models/{model_id}/config の応答をそのまま POST /models/{model_id}/resume に送り返せる。
+// GET /models/{model_id}/config のレスポンス。再開フォームの初期値と、固定項目の表示に使う。
 // flatten なので JSON は { "model_id": ..., "model_name": ..., "epoch": ..., ... } とフラットになる。
-// TODO: 固定項目(model_name / model_graph / data_spec / Optimizer の種類)は、今はフロントで読み取り専用にしているだけ。
-//       バックエンドでの上書き・照合は issue doc 作業5 を参照。
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ResumeTrainingConfigDto {
+#[derive(Debug, Serialize)]
+pub struct ModelTrainingConfigDto {
     pub model_id: String,
     #[serde(flatten)]
     pub config: TrainingConfigDto,
+}
+
+// POST /models/{model_id}/resume のリクエスト。再開時に変えてよい項目だけを持つ。
+// 固定項目(model_name / model_graph / data_spec / seed)は受け取らず、ResumeTraining が DB の前回設定から使う。
+// 再開するモデルはパスの model_id で決めるので、本体には持たせない。
+#[derive(Debug, Deserialize)]
+pub struct ResumeTrainingConfigDto {
+    pub epoch: u32,
+    pub batch: u32,
+    pub device: String,
+    pub dataset_path: String,
+    pub optimizer: OptimizerConfigDto,
+    pub loss: LossConfigDto,
+    pub save_last_every: u32,
+}
+
+impl From<ResumeTrainingConfigDto> for ResumeTrainingConfig {
+    fn from(value: ResumeTrainingConfigDto) -> Self {
+        ResumeTrainingConfig {
+            epoch: value.epoch,
+            batch: value.batch,
+            device: value.device,
+            dataset_path: value.dataset_path,
+            optimizer: value.optimizer.into(),
+            loss: value.loss.into(),
+            save_last_every: value.save_last_every,
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -314,11 +341,10 @@ mod tests {
         assert_eq!(TrainingConfig::from(dto), config);
     }
 
-    // ResumeTrainingConfigDto は model_id と設定が同じ階層に並ぶこと(flatten)
+    // ModelTrainingConfigDto は model_id と設定が同じ階層に並ぶこと(flatten)
     #[test]
-    fn resume_config_is_flat_json() {
-        let json = serde_json::json!({
-            "model_id": "model-1",
+    fn model_config_is_flat_json() {
+        let mut json = serde_json::json!({
             "model_name": "test_model",
             "model_graph": { "nodes": [], "outputs": [] },
             "epoch": 10,
@@ -338,11 +364,47 @@ mod tests {
             "save_last_every": 1
         });
 
-        let dto: ResumeTrainingConfigDto = serde_json::from_value(json.clone()).unwrap();
-        assert_eq!(dto.model_id, "model-1");
-        assert_eq!(dto.config.epoch, 10);
-        // 送り返すときも同じ形になる
+        let dto = ModelTrainingConfigDto {
+            model_id: "model-1".to_string(),
+            config: serde_json::from_value(json.clone()).unwrap(),
+        };
+        json["model_id"] = serde_json::json!("model-1");
         assert_eq!(serde_json::to_value(&dto).unwrap(), json);
+    }
+
+    // 再開リクエストは変えてよい項目だけで ResumeTrainingConfig に変換できること
+    #[test]
+    fn resume_request_converts_to_resume_training_config() {
+        let json = serde_json::json!({
+            "epoch": 20,
+            "batch": 4,
+            "device": "cpu",
+            "dataset_path": "/data",
+            "optimizer": { "type": "adam", "learning_rate": 0.001, "weight_decay": 0.0, "beta1": 0.9, "beta2": 0.999, "eps": 1e-8 },
+            "loss": { "type": "dice" },
+            "save_last_every": 5
+        });
+
+        let dto: ResumeTrainingConfigDto = serde_json::from_value(json).unwrap();
+
+        assert_eq!(
+            ResumeTrainingConfig::from(dto),
+            ResumeTrainingConfig {
+                epoch: 20,
+                batch: 4,
+                device: "cpu".to_string(),
+                dataset_path: "/data".to_string(),
+                optimizer: OptimizerConfig::Adam {
+                    learning_rate: 0.001,
+                    weight_decay: 0.0,
+                    beta1: 0.9,
+                    beta2: 0.999,
+                    eps: 1e-8,
+                },
+                loss: LossConfig::Dice,
+                save_last_every: 5,
+            }
+        );
     }
     use entities::training::config::{
         DataSpec, ImageAnnotationConfig, ImageSpec, ImageTaskSpec, PascalVocConfig,

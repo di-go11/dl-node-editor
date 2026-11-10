@@ -42,6 +42,7 @@ type FetchResult = {
 /**
  * 状態コードごとの説明。契約のエラー応答には本文がないので、状態コードから文言を決める。
  * 409 と 422 は学習開始の意味で書いている(整合性チェックの 409 は callApiByStatus で先に結果にする)。
+ * 意味が違う API(学習再開など)は、callApi の messages で上書きする。
  */
 const HTTP_ERROR_MESSAGES: Readonly<Record<number, string>> = {
   404: '指定されたジョブが見つかりません。',
@@ -50,11 +51,15 @@ const HTTP_ERROR_MESSAGES: Readonly<Record<number, string>> = {
   502: '学習サーバーに接続できません。',
 }
 
-function httpError(response: Response): ApiError {
+/** 状態コード → 利用者に見せる説明(API ごとに既定の説明を上書きする) */
+export type HttpErrorMessages = Readonly<Record<number, string>>
+
+function httpError(response: Response, messages: HttpErrorMessages = {}): ApiError {
   return {
     kind: 'http',
     status: response.status,
     message:
+      messages[response.status] ??
       HTTP_ERROR_MESSAGES[response.status] ??
       `サーバーがエラーを返しました(HTTP ${response.status})。`,
   }
@@ -98,11 +103,15 @@ export async function callApiByStatus<T>(
  *
  * 4 つの場合の扱いを 1 か所にまとめ、各 API の実装は「どの schema で検証し、
  * どう変換するか」だけを書けばよいようにしている。
+ *
+ * messages を渡すと、エラーの状態コードの説明をその API の意味で上書きできる
+ * (学習再開の 404 は「モデルが見つからない」で、学習開始の 404 とは違う)。
  */
 export async function callApi<Json, T>(
   call: () => Promise<FetchResult>,
   schema: z.ZodType<Json>,
   convert: (json: Json) => T,
+  messages?: HttpErrorMessages,
 ): Promise<ApiResult<T>> {
   let result: FetchResult
   try {
@@ -112,7 +121,7 @@ export async function callApi<Json, T>(
     return apiError({ kind: 'network', message: `サーバーに接続できません: ${detail}` })
   }
 
-  if (!result.response.ok) return apiError(httpError(result.response))
+  if (!result.response.ok) return apiError(httpError(result.response, messages))
 
   const parsed = schema.safeParse(result.data, { error: japaneseErrors })
   if (!parsed.success) {

@@ -11,8 +11,10 @@ import { OPTIMIZER_TYPES } from '../entity/training/optimizer'
 import type { TrainingStatus } from '../entity/training/progress'
 import { variantKindsOf } from '../entity/training/variant'
 import type { TrainingProcessJson } from '../infrastructure/http/http-training-progress'
+import type { TrainedModelSummary } from '../entity/trained-model/trained-model'
 import type {
   RustDataSpec,
+  RustResumeTrainingRequest,
   RustStartTrainingRequest,
 } from '../infrastructure/http/rust-training-request'
 
@@ -156,6 +158,27 @@ describe('学習開始リクエスト', () => {
     const matches: Equal<OptionalKeys<RustStartTrainingRequest>, OptionalKeys<Request>> = true
     const expected: Equal<OptionalKeys<Request>, 'seed'> = true
     expect([matches, expected]).toEqual([true, true])
+  })
+})
+
+describe('学習再開', () => {
+  it('再開のリクエストのキーが一致する(変えてよい項目だけ)', () => {
+    const matches: Equal<keyof RustResumeTrainingRequest, keyof Schemas['ResumeTrainingConfig']> =
+      true
+    expect(matches).toBe(true)
+  })
+
+  it('一覧のタスクの名前はすべてエンティティのタスクにあり、状態の名前は一致する', () => {
+    // エンティティのタスクには物体検出もあるので、契約のタスクが含まれることだけを確かめる
+    const task: Equal<
+      TrainedModelSummary['task'] & Schemas['ModelSummary']['task_type'],
+      Schemas['ModelSummary']['task_type']
+    > = true
+    const status: Equal<
+      TrainedModelSummary['lastRun']['status'],
+      Schemas['LastRunSummary']['status']
+    > = true
+    expect([task, status]).toEqual([true, true])
   })
 })
 

@@ -19,7 +19,7 @@ import { useDocumentActions } from './use-document-actions'
 /**
  * エディタ画面のヘッダ(指示書 4.2)。
  *
- *   [データ形式 ▼][特徴抽出手法 ▼]  [保存][読込]  デバイス: CUDA ✓ (cuda:0)  [学習開始]
+ *   [データ形式 ▼][特徴抽出手法 ▼]  [保存][読込]  デバイス: CUDA ✓ (cuda:0)  [学習再開][学習開始]
  *
  * 選択肢はエンティティ層の DATA_DIM_OPTIONS / FEATURE_METHOD_OPTIONS から作る。
  * 1D と Transformer は「近日実装予定」だが、選べるようにしておく(指示書 4.3)。
@@ -127,6 +127,15 @@ export function Header() {
       <div className={styles.spacer} />
 
       <DeviceStatus />
+      <button
+        type="button"
+        title="学習済みのモデルを選んで、学習を続ける"
+        onClick={() => {
+          void navigate('/resume')
+        }}
+      >
+        学習再開
+      </button>
       <button
         type="button"
         className={styles.primary}

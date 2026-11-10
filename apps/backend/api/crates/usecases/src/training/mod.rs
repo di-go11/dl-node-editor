@@ -1,3 +1,4 @@
+mod config;
 mod error;
 mod get_training_progress;
 mod model_id_generator;
@@ -22,6 +23,7 @@ pub use record_training_process::{
     RecordTrainingProgress, TrainingProgressRecorder, TrainingRunRegistar,
 };
 pub use resume_recording::ResumeProgressRecordings;
+pub use config::ResumeTrainingConfig;
 pub use resume_training::ResumeTraining;
 pub use start_training::StartTraining;
 pub use stop_training::StopTraining;

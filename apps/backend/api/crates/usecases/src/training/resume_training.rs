@@ -1,12 +1,23 @@
 use super::ProgressRecordingScheduler;
 use super::TrainingResumer;
 use super::TrainingRunRegistar;
+use super::config::ResumeTrainingConfig;
 use super::error::{ResumeTrainingError, StartTrainingError};
 use crate::model::error::FetchModelError;
 use crate::model::ports::ModelTrainingConfigProvider;
 use entities::model::ModelId;
 use entities::training::JobId;
-use entities::training::config::TrainingConfig;
+use entities::training::config::Optimizer;
+use std::mem::discriminant;
+
+// エラーメッセージ用の Optimizer の種類名
+fn optimizer_kind(optimizer: &Optimizer) -> &'static str {
+    match optimizer {
+        Optimizer::Adam { .. } => "adam",
+        Optimizer::AdamW { .. } => "adamw",
+        Optimizer::Sgd { .. } => "sgd",
+    }
+}
 
 // 学習済みモデルの学習を再開する(新規学習は StartTraining)。
 // 再開元の .pt は C++ が <model_id>_last.pt に決めるので、Rust は model_id と resume = true を渡すだけ。
@@ -37,12 +48,10 @@ where
     pub async fn execute(
         &self,
         model_id: &ModelId,
-        config: &TrainingConfig,
+        input: &ResumeTrainingConfig,
     ) -> Result<JobId, ResumeTrainingError> {
-        // モデルと前回の学習設定があるかを確かめる
-        // TODO: 固定項目(model_name / model_graph / data_spec / Optimizer の種類)は、
-        //       今はフロントで読み取り専用にしているだけ。ここで取得した値で上書き・照合する(issue doc 作業5)。
-        let _saved = self.config.fetch(model_id).await.map_err(|e| match e {
+        // 前回の学習設定を読む。固定項目はこの値を使う
+        let saved = self.config.fetch(model_id).await.map_err(|e| match e {
             FetchModelError::NotFound(msg) => ResumeTrainingError::ModelNotFound(msg),
             FetchModelError::GraphNotSaved(msg) => ResumeTrainingError::NotResumable(msg),
             FetchModelError::InvalidQuery(msg) | FetchModelError::InvalidData(msg) => {
@@ -50,10 +59,20 @@ where
             }
         })?;
 
-        let job_id = self.resumer.resume_training(config, model_id).await?;
+        // Optimizer の種類が違うと、C++ は checkpoint の optimizer 状態を読めずに例外を投げるので、送る前に拒否する
+        if discriminant(&saved.optimizer) != discriminant(&input.optimizer) {
+            return Err(ResumeTrainingError::OptimizerTypeChanged(format!(
+                "saved: {}, requested: {}",
+                optimizer_kind(&saved.optimizer),
+                optimizer_kind(&input.optimizer)
+            )));
+        }
+        let config = input.apply_to(saved);
+
+        let job_id = self.resumer.resume_training(&config, model_id).await?;
         // 再開では model の行は作らず、同じ model_id に新しい run を追加する
         self.repository
-            .insert_training_run(&job_id, config, model_id)
+            .insert_training_run(&job_id, &config, model_id)
             .await
             .map_err(|e| StartTrainingError::RecordFailed(e.to_string()))?;
         self.scheduler.schedule(job_id.clone()); // insert_training_runが成功したときだけ呼ぶ
@@ -70,7 +89,7 @@ mod tests {
     use entities::training::TrainingJobStatus;
     use entities::training::config::{
         DataSpec, ImageAnnotationConfig, ImageSpec, ImageTaskSpec, Loss, Optimizer,
-        PascalVocConfig, SegmentationSpec,
+        PascalVocConfig, SegmentationSpec, TrainingConfig,
     };
     use std::sync::{Arc, Mutex};
 
@@ -141,15 +160,18 @@ mod tests {
         result: Result<JobId, StartTrainingError>,
         log: CallLog,
         model_id: Mutex<Option<ModelId>>,
+        // C++ に渡された設定(固定項目が DB の値になっているかの確認用)
+        config: Mutex<Option<TrainingConfig>>,
     }
     impl TrainingResumer for FakeResumer {
         async fn resume_training(
             &self,
-            _training_config: &TrainingConfig,
+            training_config: &TrainingConfig,
             model_id: &ModelId,
         ) -> Result<JobId, StartTrainingError> {
             self.log.lock().unwrap().push("resume_training");
             *self.model_id.lock().unwrap() = Some(model_id.clone());
+            *self.config.lock().unwrap() = Some(training_config.clone());
             self.result.clone()
         }
     }
@@ -158,6 +180,7 @@ mod tests {
         insert_training_run_result: Result<(), RecordError>,
         log: CallLog,
         run_model_id: Mutex<Option<ModelId>>,
+        run_config: Mutex<Option<TrainingConfig>>,
     }
     impl TrainingRunRegistar for FakeRepository {
         async fn insert_model(
@@ -172,11 +195,12 @@ mod tests {
         async fn insert_training_run(
             &self,
             _job_id: &JobId,
-            _config: &TrainingConfig,
+            config: &TrainingConfig,
             model_id: &ModelId,
         ) -> Result<(), RecordError> {
             self.log.lock().unwrap().push("insert_training_run");
             *self.run_model_id.lock().unwrap() = Some(model_id.clone());
+            *self.run_config.lock().unwrap() = Some(config.clone());
             self.insert_training_run_result.clone()
         }
         async fn update_training_run(
@@ -214,11 +238,13 @@ mod tests {
                 result: resume_result,
                 log: Arc::clone(&log),
                 model_id: Mutex::new(None),
+                config: Mutex::new(None),
             },
             FakeRepository {
                 insert_training_run_result,
                 log: Arc::clone(&log),
                 run_model_id: Mutex::new(None),
+                run_config: Mutex::new(None),
             },
             FakeScheduler {
                 log: Arc::clone(&log),
@@ -231,12 +257,90 @@ mod tests {
         ModelId::new("model-1").unwrap()
     }
 
+    // 前回(gen_config)から、変えてよい項目をすべて変えた入力
+    fn gen_input() -> ResumeTrainingConfig {
+        ResumeTrainingConfig {
+            epoch: 20,
+            batch: 4,
+            device: "cuda:0".to_string(),
+            dataset_path: "/data/other".to_string(),
+            optimizer: Optimizer::Adam {
+                learning_rate: 1e-4,
+                weight_decay: 1e-5,
+                beta1: 0.8,
+                beta2: 0.99,
+                eps: 1e-7,
+            },
+            loss: Loss::Dice,
+            save_last_every: 5,
+        }
+    }
+
+    #[tokio::test]
+    async fn uses_saved_fixed_fields_and_requested_editable_fields() {
+        let (usecase, _log) = gen_usecase(Ok(gen_config()), Ok(JobId::new("2").unwrap()), Ok(()));
+        let input = gen_input();
+
+        usecase.execute(&model_id(), &input).await.unwrap();
+
+        let saved = gen_config();
+        let expected = TrainingConfig {
+            // 固定項目は前回の値
+            model_name: saved.model_name,
+            model_graph: saved.model_graph,
+            data_spec: saved.data_spec,
+            seed: saved.seed,
+            // 変えてよい項目は入力の値
+            epoch: input.epoch,
+            batch: input.batch,
+            device: input.device,
+            dataset_path: input.dataset_path,
+            optimizer: input.optimizer,
+            loss: input.loss,
+            save_last_every: input.save_last_every,
+        };
+        // C++ に送る設定と、training_runs に記録する設定は同じ
+        assert_eq!(
+            *usecase.resumer.config.lock().unwrap(),
+            Some(expected.clone())
+        );
+        assert_eq!(
+            *usecase.repository.run_config.lock().unwrap(),
+            Some(expected)
+        );
+    }
+
+    #[tokio::test]
+    async fn rejects_optimizer_type_change_without_resuming() {
+        let (usecase, log) = gen_usecase(Ok(gen_config()), Ok(JobId::new("2").unwrap()), Ok(()));
+        let input = ResumeTrainingConfig {
+            optimizer: Optimizer::Sgd {
+                learning_rate: 1e-2,
+                weight_decay: 0.0,
+                momentum: 0.9,
+                nesterov: false,
+            },
+            ..gen_input()
+        };
+
+        let result = usecase.execute(&model_id(), &input).await;
+
+        assert_eq!(
+            result,
+            Err(ResumeTrainingError::OptimizerTypeChanged(
+                "saved: adam, requested: sgd".to_string()
+            ))
+        );
+        // C++ には送らない
+        assert!(log.lock().unwrap().is_empty());
+    }
+
     #[tokio::test]
     async fn resumes_with_given_model_id_without_inserting_model() {
         let expected = JobId::new("2").unwrap();
         let (usecase, log) = gen_usecase(Ok(gen_config()), Ok(expected.clone()), Ok(()));
 
-        let result = usecase.execute(&model_id(), &gen_config()).await;
+        let result = usecase.execute(&model_id(), &gen_input()).await;
 
         assert_eq!(result, Ok(expected));
         // 再開では model の行を作らない
@@ -260,7 +364,7 @@ mod tests {
             Ok(()),
         );
 
-        let result = usecase.execute(&model_id(), &gen_config()).await;
+        let result = usecase.execute(&model_id(), &gen_input()).await;
 
         assert!(matches!(result, Err(ResumeTrainingError::ModelNotFound(_))));
         assert!(log.lock().unwrap().is_empty());
@@ -274,7 +378,7 @@ mod tests {
             Ok(()),
         );
 
-        let result = usecase.execute(&model_id(), &gen_config()).await;
+        let result = usecase.execute(&model_id(), &gen_input()).await;
 
         assert!(matches!(result, Err(ResumeTrainingError::NotResumable(_))));
         assert!(log.lock().unwrap().is_empty());
@@ -285,7 +389,7 @@ mod tests {
         let err = StartTrainingError::ResumePreconditionFailed("checkpoint not found".to_string());
         let (usecase, log) = gen_usecase(Ok(gen_config()), Err(err.clone()), Ok(()));
 
-        let result = usecase.execute(&model_id(), &gen_config()).await;
+        let result = usecase.execute(&model_id(), &gen_input()).await;
 
         assert_eq!(result, Err(ResumeTrainingError::Start(err)));
         // 学習が始まっていないので、training_runs には insert しない
@@ -300,11 +404,13 @@ mod tests {
             Err(RecordError::RecordFailed("db locked".to_string())),
         );
 
-        let result = usecase.execute(&model_id(), &gen_config()).await;
+        let result = usecase.execute(&model_id(), &gen_input()).await;
 
         assert!(matches!(
             result,
-            Err(ResumeTrainingError::Start(StartTrainingError::RecordFailed(_)))
+            Err(ResumeTrainingError::Start(
+                StartTrainingError::RecordFailed(_)
+            ))
         ));
         // 記録できなかった run の進捗記録は始めない
         assert_eq!(

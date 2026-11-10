@@ -1,7 +1,10 @@
-use entities::model::{ModelGraph, ModelSummary, Node, NodeInput, PortRef};
+use entities::model::{
+    LastRunSummary, ModelGraph, ModelSummary, ModelTaskType, Node, NodeInput, PortRef,
+};
 use serde::{Deserialize, Serialize};
 
 use super::layer::NodeSpecDto;
+use super::training_stop::TrainingJobStatusDto;
 
 // ModelGraphのDTO
 #[derive(Debug, Serialize, Deserialize)]
@@ -115,6 +118,46 @@ pub struct ModelSummaryDto {
     pub model_id: String,
     pub model_name: String,
     pub created_at: String,
+    pub task_type: ModelTaskTypeDto,
+    pub last_run: LastRunSummaryDto,
+    pub completed_epochs: u32,
+    pub resumable: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelTaskTypeDto {
+    Segmentation,
+    Classification,
+}
+
+impl From<ModelTaskType> for ModelTaskTypeDto {
+    fn from(value: ModelTaskType) -> Self {
+        match value {
+            ModelTaskType::Segmentation => ModelTaskTypeDto::Segmentation,
+            ModelTaskType::Classification => ModelTaskTypeDto::Classification,
+        }
+    }
+}
+
+// 最新の run。状態は GET /trainings/{job_id}/status と同じ形({ "status": ..., "reason": ... })で並べる
+#[derive(Debug, Serialize)]
+pub struct LastRunSummaryDto {
+    #[serde(flatten)]
+    pub status: TrainingJobStatusDto,
+    pub started_at: String,
+    // 終了を記録できていなければ null
+    pub finished_at: Option<String>,
+}
+
+impl From<&LastRunSummary> for LastRunSummaryDto {
+    fn from(value: &LastRunSummary) -> Self {
+        LastRunSummaryDto {
+            status: value.status.clone().into(),
+            started_at: value.started_at.clone(),
+            finished_at: value.finished_at.clone(),
+        }
+    }
 }
 
 impl From<&ModelSummary> for ModelSummaryDto {
@@ -123,6 +166,10 @@ impl From<&ModelSummary> for ModelSummaryDto {
             model_id: summary.model_id().as_str().to_string(),
             model_name: summary.model_name().to_string(),
             created_at: summary.created_at().to_string(),
+            task_type: summary.task_type().into(),
+            last_run: summary.last_run().into(),
+            completed_epochs: summary.completed_epochs(),
+            resumable: summary.resumable(),
         }
     }
 }
@@ -137,5 +184,54 @@ impl From<&[ModelSummary]> for ModelSummariesDto {
         Self {
             models: summaries.iter().map(ModelSummaryDto::from).collect(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use entities::model::ModelId;
+    use entities::training::TrainingJobStatus;
+
+    // 一覧の要素は、最新の run の状態を status / reason と日時が同じ階層に並ぶ形で返すこと
+    #[test]
+    fn summary_json_shape() {
+        let summary = ModelSummary::new(
+            ModelId::new("model-1").unwrap(),
+            "segnet",
+            "2026-11-01 00:00:00",
+            ModelTaskType::Segmentation,
+            LastRunSummary {
+                status: TrainingJobStatus::Failed {
+                    reason: "out of memory".to_string(),
+                },
+                started_at: "2026-11-02 00:00:00".to_string(),
+                finished_at: None,
+            },
+            5,
+            true,
+        );
+
+        let json = serde_json::to_value(ModelSummariesDto::from([summary].as_slice())).unwrap();
+
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "models": [{
+                    "model_id": "model-1",
+                    "model_name": "segnet",
+                    "created_at": "2026-11-01 00:00:00",
+                    "task_type": "segmentation",
+                    "last_run": {
+                        "status": "failed",
+                        "reason": "out of memory",
+                        "started_at": "2026-11-02 00:00:00",
+                        "finished_at": null
+                    },
+                    "completed_epochs": 5,
+                    "resumable": true
+                }]
+            })
+        );
     }
 }

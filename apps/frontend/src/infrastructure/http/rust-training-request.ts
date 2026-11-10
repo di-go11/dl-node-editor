@@ -1,7 +1,13 @@
 import { z } from 'zod'
 
 import type { NodeSpecJson } from '../../entity/model-graph/proto-json/schema'
+import {
+  trainingSettingsFromJson,
+  trainingSettingsToJson,
+} from '../../entity/training/proto-json/convert'
 import type { StartTrainingRequestJson, VariantJson } from '../../entity/training/proto-json/schema'
+import { trainingSettingsJsonSchema } from '../../entity/training/proto-json/schema'
+import type { TrainingSettings } from '../../entity/training/training-settings'
 
 /**
  * 学習開始リクエストの、Rust の HTTP API 向けの形(スキーマと変換)。
@@ -231,4 +237,98 @@ export function toRustStartTrainingRequest(json: StartTrainingRequestJson): Rust
   const first = parsed.error.issues[0]
   const where = first === undefined ? '' : first.path.join('.')
   return { ok: false, message: `学習開始のリクエストを作れませんでした(${where})。` }
+}
+
+// ------------------------------------------------------------
+// 学習再開(/models 以下)
+// ------------------------------------------------------------
+
+/**
+ * 学習再開のリクエスト(POST /models/{model_id}/resume)。再開時に変えてよい項目だけを持つ。
+ * 固定項目(model_name / model_graph / data_spec / seed)はサーバーが前回の設定を使うので送らない。
+ */
+export const rustResumeTrainingRequestSchema = rustStartTrainingRequestSchema.pick({
+  optimizer: true,
+  loss: true,
+  epoch: true,
+  batch: true,
+  dataset_path: true,
+  device: true,
+  save_last_every: true,
+})
+
+export type RustResumeTrainingRequest = z.infer<typeof rustResumeTrainingRequestSchema>
+
+export type RustResumeRequestConversion =
+  | { readonly ok: true; readonly value: RustResumeTrainingRequest }
+  | { readonly ok: false; readonly message: string }
+
+/** 学習設定から、再開で変えてよい項目だけを Rust の HTTP API の形にする */
+export function toRustResumeTrainingRequest(
+  settings: TrainingSettings,
+): RustResumeRequestConversion {
+  const json = trainingSettingsToJson(settings)
+  const parsed = rustResumeTrainingRequestSchema.safeParse({
+    optimizer: tagged(json.optimizer),
+    loss: tagged(json.loss),
+    epoch: json.epoch,
+    batch: json.batch,
+    dataset_path: json.dataset_path,
+    device: json.device,
+    save_last_every: json.save_last_every,
+  })
+  if (parsed.success) return { ok: true, value: parsed.data }
+  const first = parsed.error.issues[0]
+  const where = first === undefined ? '' : first.path.join('.')
+  return { ok: false, message: `学習再開のリクエストを作れませんでした(${where})。` }
+}
+
+/**
+ * 学習設定の取得(GET /models/{model_id}/config)の応答。学習開始のリクエストと同じ形に model_id が付く。
+ * モデル構造は再開画面で使わない(サーバーが保存済みの構造で再開する)ので、検証もしない。
+ */
+export const rustModelConfigSchema = rustStartTrainingRequestSchema.omit({ model_graph: true })
+
+export type RustModelConfig = z.infer<typeof rustModelConfigSchema>
+
+export type RustConfigConversion =
+  | { readonly ok: true; readonly value: TrainingSettings }
+  | { readonly ok: false; readonly message: string }
+
+/**
+ * `{ "type": "種類", ...パラメータ }` を `{ "種類": { ...パラメータ } }` に戻す(tagged の逆)。
+ * 形は直後に trainingSettingsJsonSchema で確かめるので、ここでは型を付けない
+ */
+function untagged(json: Readonly<{ type: string }>): Record<string, unknown> {
+  const { type, ...params } = json
+  return { [type]: params }
+}
+
+/** Rust の形の学習設定を、学習設定の型にする(proto-json を通して、カタログにない種類を弾く) */
+export function fromRustModelConfig(json: RustModelConfig): RustConfigConversion {
+  const parsed = trainingSettingsJsonSchema.safeParse({
+    model_name: json.model_name,
+    optimizer: untagged(json.optimizer),
+    loss: untagged(json.loss),
+    epoch: json.epoch,
+    batch: json.batch,
+    dataset_path: json.dataset_path,
+    device: json.device,
+    data_spec: {
+      image: {
+        annotation: untagged(json.data_spec.image_annotation_config),
+        input_width: json.data_spec.input_width,
+        input_height: json.data_spec.input_height,
+        task_specs: untagged(json.data_spec.image_task_spec),
+      },
+    },
+    save_last_every: json.save_last_every,
+    resume_from: '',
+    // null(固定しない)は、proto-json ではキーごと省く
+    ...(json.seed === null || json.seed === undefined ? {} : { seed: { value: json.seed } }),
+  })
+  if (parsed.success) return { ok: true, value: trainingSettingsFromJson(parsed.data) }
+  const first = parsed.error.issues[0]
+  const where = first === undefined ? '' : first.path.join('.')
+  return { ok: false, message: `サーバーの学習設定を読めませんでした(${where})。` }
 }

@@ -35,6 +35,9 @@ pub enum ResumeTrainingError {
     // DB からの読み出しに失敗した
     #[error("failed to read model: {0}")]
     ReadFailed(String),
+    // Optimizer の種類が前回と違う(種類を変えると checkpoint の optimizer 状態を引き継げない)
+    #[error("optimizer type changed: {0}")]
+    OptimizerTypeChanged(String),
     // C++ での学習開始・記録の失敗。AlreadyRunning / ResumePreconditionFailed などは新規学習と同じ扱い
     #[error(transparent)]
     Start(#[from] StartTrainingError),

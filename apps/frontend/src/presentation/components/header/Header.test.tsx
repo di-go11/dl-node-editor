@@ -32,6 +32,7 @@ function renderHeader(capabilities: ApiResult<Capabilities>) {
           <Routes>
             <Route path="/" element={<Header />} />
             <Route path="/training" element={<h1>学習設定</h1>} />
+            <Route path="/resume" element={<h1>学習再開</h1>} />
           </Routes>
         </MemoryRouter>
       </EditorStoreContext>
@@ -96,5 +97,11 @@ describe('Header - ボタン', () => {
     renderHeader(apiOk(gpuCapabilities))
     await userEvent.click(screen.getByRole('button', { name: '学習開始' }))
     expect(await screen.findByRole('heading', { name: '学習設定' })).toBeInTheDocument()
+  })
+
+  it('[学習再開] で学習再開の一覧へ移る', async () => {
+    renderHeader(apiOk(gpuCapabilities))
+    await userEvent.click(screen.getByRole('button', { name: '学習再開' }))
+    expect(await screen.findByRole('heading', { name: '学習再開' })).toBeInTheDocument()
   })
 })

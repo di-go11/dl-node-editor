@@ -37,7 +37,7 @@ export interface paths {
          * 学習を開始する
          * @description 受理されると job_id が返り、進捗は /trainings/{job_id}/progress で購読する。
          *     新規学習専用。同じ model_name のモデルがすでにあるかは /trainings/validate で先に確かめる。
-         *     学習の再開は別のエンドポイントで行う(未実装)。
+         *     学習の再開は /models/{model_id}/resume で行う。
          */
         post: operations["startTraining"];
         delete?: never;
@@ -145,6 +145,73 @@ export interface paths {
          *     停止の完了は SSE の stopped で分かる。停止済みのジョブを停止しても 200 を返す。
          */
         post: operations["stopTraining"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 学習済みモデルの一覧を取得する
+         * @description 学習再開画面(/resume)の一覧に使う。最近学習した(最新の run を始めた)モデルが先に並ぶ。
+         *     学習の記録(run)が 1 件もないモデルは含めない。0 件でも 200 で空の配列を返す。
+         */
+        get: operations["listModels"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/models/{model_id}/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * モデルの最新の学習設定を取得する
+         * @description 再開フォームの初期値と、固定項目(model_name / data_spec / optimizer の type など)の表示に使う。
+         *     /models/{model_id}/resume には、この応答のうち変えてよい項目(ResumeTrainingConfig)だけを送る。
+         */
+        get: operations["getModelConfig"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/models/{model_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 学習を再開する
+         * @description 再開時に変えてよい項目だけを送る。初期値は /models/{model_id}/config の応答から取る。
+         *     - 固定項目(model_name / model_graph / data_spec / seed)は送らない。サーバーが前回の学習設定の値を使う。
+         *     - optimizer はハイパーパラメータを変えてよいが、type は前回と同じにする(違うと 422)。
+         *     - epoch は合計エポック数である。前回までに完了したエポック数より大きい値にする。
+         *     - 再開するモデルはパスの model_id で決める。再開元の checkpoint は C++ が model_id から決める。
+         *     受理されると job_id が返り、進捗は /trainings/{job_id}/progress で購読する。
+         */
+        post: operations["resumeTraining"];
         delete?: never;
         options?: never;
         head?: never;
@@ -462,6 +529,69 @@ export interface components {
         StartTrainingResponse: {
             job_id: string;
         };
+        ModelSummary: {
+            model_id: string;
+            model_name: string;
+            /** @description モデルを作った日時(UTC) */
+            created_at: string;
+            /**
+             * @description 最新の run の data_spec のタスク
+             * @enum {string}
+             */
+            task_type: "segmentation" | "classification";
+            last_run: components["schemas"]["LastRunSummary"];
+            /**
+             * Format: int32
+             * @description 全 run を通して記録された完了エポック数。再開時の epoch(合計エポック数)はこれより大きくする。
+             *     save_last_every が 1 より大きいと、checkpoint はこれより前のエポックのことがある。
+             */
+            completed_epochs: number;
+            /** @description 再開できるか(モデル構造が保存されているか)。false のモデルは /models/{model_id}/config が 409 を返す */
+            resumable: boolean;
+        };
+        /** @description モデルの最新の run。status と reason は TrainingStatusResponse と同じ */
+        LastRunSummary: components["schemas"]["TrainingStatusResponse"] & {
+            /** @description 学習を始めた日時(UTC) */
+            started_at: string;
+            /** @description 学習が終わった日時(UTC)。学習中、または終了を記録できていなければ null */
+            finished_at: string | null;
+        };
+        ModelSummariesResponse: {
+            models: components["schemas"]["ModelSummary"][];
+        };
+        /**
+         * @description GET /models/{model_id}/config の応答。StartTrainingRequest と同じ項目に model_id を足したもの(同じ階層に並ぶ)。
+         *     seed を固定していない場合も、キーを省略せずに null を返す。
+         */
+        ModelTrainingConfig: components["schemas"]["StartTrainingRequest"] & {
+            model_id: string;
+        };
+        /**
+         * @description POST /models/{model_id}/resume の本体。再開時に変えてよい項目だけを持つ。
+         *     固定項目(model_name / model_graph / data_spec / seed)はサーバーが前回の学習設定から使う。
+         *     送られてきても無視する。
+         */
+        ResumeTrainingConfig: {
+            /** @description type は前回と同じにする(違うと 422) */
+            optimizer: components["schemas"]["OptimizerConfig"];
+            loss: components["schemas"]["LossConfig"];
+            /**
+             * Format: int32
+             * @description 合計エポック数。前回までに完了したエポック数より大きい値にする
+             */
+            epoch: number;
+            /** Format: int32 */
+            batch: number;
+            /** @description 学習エンジンから見たサーバー上のパス */
+            dataset_path: string;
+            /** @description /capabilities の devices[].id から選ぶ */
+            device: string;
+            /**
+             * Format: int32
+             * @description checkpoint を保存する間隔(エポック)。0 なら毎エポック
+             */
+            save_last_every: number;
+        };
         /** @enum {string} */
         TrainingStatus: "idle" | "running" | "completed" | "failed" | "stopped";
         TrainingStatusResponse: {
@@ -540,6 +670,20 @@ export interface components {
             };
             content?: never;
         };
+        /** @description model_id の形が正しくない */
+        InvalidModelId: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content?: never;
+        };
+        /** @description 指定した model_id のモデル(または学習の記録)が見つからない */
+        ModelNotFound: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content?: never;
+        };
         /** @description 学習エンジン(C++ / gRPC)との通信に失敗した */
         UpstreamError: {
             headers: {
@@ -551,6 +695,8 @@ export interface components {
     parameters: {
         /** @description /trainings の応答で返る学習ジョブの識別子 */
         JobId: string;
+        /** @description /models の応答で返る学習済みモデルの識別子 */
+        ModelId: string;
     };
     requestBodies: never;
     headers: never;
@@ -762,6 +908,126 @@ export interface operations {
             };
             400: components["responses"]["InvalidJobId"];
             404: components["responses"]["NotFound"];
+            502: components["responses"]["UpstreamError"];
+        };
+    };
+    listModels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 取得できた */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelSummariesResponse"];
+                };
+            };
+            /** @description DB の読み取りに失敗した */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getModelConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description /models の応答で返る学習済みモデルの識別子 */
+                model_id: components["parameters"]["ModelId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 取得できた */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelTrainingConfig"];
+                };
+            };
+            400: components["responses"]["InvalidModelId"];
+            404: components["responses"]["ModelNotFound"];
+            /** @description モデル構造が保存されていない古いモデルなので再開できない */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description DB の読み取りに失敗した */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    resumeTraining: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description /models の応答で返る学習済みモデルの識別子 */
+                model_id: components["parameters"]["ModelId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResumeTrainingConfig"];
+            };
+        };
+        responses: {
+            /** @description 受理した */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StartTrainingResponse"];
+                };
+            };
+            400: components["responses"]["InvalidModelId"];
+            404: components["responses"]["ModelNotFound"];
+            /**
+             * @description 再開できない。すでに学習が実行中、checkpoint がない、epoch が完了済みのエポック数以下、
+             *     モデル構造が保存されていない、C++ が設定を拒否した、のいずれか
+             */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description リクエストの形が合わない、または optimizer の type が前回と違う */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description DB の読み書きに失敗した */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             502: components["responses"]["UpstreamError"];
         };
     };

@@ -1,11 +1,12 @@
 // 学習済みモデルの一覧・学習設定を DB から読み出す処理(学習再開の画面と API 用)
 use super::SqliteTrainingRepository;
 use crate::model;
-use entities::model::{ModelId, ModelSummary};
+use entities::model::{LastRunSummary, ModelId, ModelSummary, ModelTaskType};
 use entities::training::config::{
     DataSpec, ImageAnnotationConfig, ImageSpec, ImageTaskSpec, Loss, Optimizer, PascalVocConfig,
     SegmentationSpec, TrainingConfig,
 };
+use entities::training::TrainingJobStatus;
 use sqlx::sqlite::SqliteRow;
 use sqlx::Row;
 use usecases::model::error::FetchModelError;
@@ -13,28 +14,83 @@ use usecases::model::ports::{ModelSummaryProvider, ModelTrainingConfigProvider};
 
 impl ModelSummaryProvider for SqliteTrainingRepository {
     async fn fetch(&self) -> Result<Vec<ModelSummary>, FetchModelError> {
-        // training_runs が 1 件もないモデルは出さない
-        // (insert_model の後に C++ の学習開始が失敗した場合などにできる。issue doc 作業8)
+        // 各モデルの最新の run(ModelTrainingConfigProvider と同じ順で選ぶ)と、その設定のタスクを結合する。
+        // run が 1 件もないモデルは JOIN で落ちる
+        // (insert_model の後に C++ の学習開始が失敗した場合などにできる。issue doc 作業8)。
+        // 完了エポック数は、そのモデルの全 run の training_epochs.epoch の最大値(0 始まり)から求める。
+        // 最近学習したモデルほど上に出す。
         let rows = sqlx::query(
-            "SELECT m.model_id, m.model_name, m.created_at FROM model m \
-             WHERE EXISTS (SELECT 1 FROM training_runs r WHERE r.model_id = m.model_id) \
-             ORDER BY m.created_at DESC",
+            "SELECT m.model_id, m.model_name, m.created_at, \
+                    m.model_graph IS NOT NULL AS has_graph, \
+                    r.status, r.failure_reason, r.started_at, r.finished_at, \
+                    c.task_type, \
+                    (SELECT MAX(e.epoch) FROM training_epochs e \
+                       JOIN training_runs er ON er.job_id = e.job_id \
+                      WHERE er.model_id = m.model_id) AS last_epoch \
+             FROM model m \
+             JOIN training_runs r ON r.job_id = ( \
+                 SELECT lr.job_id FROM training_runs lr WHERE lr.model_id = m.model_id \
+                 ORDER BY lr.started_at DESC, lr.rowid DESC LIMIT 1) \
+             JOIN training_config c ON c.job_id = r.job_id \
+             ORDER BY r.started_at DESC, r.rowid DESC",
         )
         .fetch_all(&self.pool)
         .await
         .map_err(|e| FetchModelError::InvalidQuery(e.to_string()))?;
 
-        rows.iter()
-            .map(|row| {
-                let model_id = ModelId::new(get::<String>(row, "model_id")?).map_err(invalid)?;
-                Ok(ModelSummary::new(
-                    model_id,
-                    get::<String>(row, "model_name")?,
-                    get::<String>(row, "created_at")?,
-                ))
-            })
-            .collect()
+        rows.iter().map(read_summary).collect()
     }
+}
+
+fn read_summary(row: &SqliteRow) -> Result<ModelSummary, FetchModelError> {
+    let model_id = ModelId::new(get::<String>(row, "model_id")?).map_err(invalid)?;
+    let task_type = match get::<String>(row, "task_type")?.as_str() {
+        "segmentation" => ModelTaskType::Segmentation,
+        "classification" => ModelTaskType::Classification,
+        other => {
+            return Err(FetchModelError::InvalidData(format!(
+                "unknown task_type: {other}"
+            )))
+        }
+    };
+    let last_run = LastRunSummary {
+        status: read_status(row)?,
+        started_at: get(row, "started_at")?,
+        finished_at: get(row, "finished_at")?,
+    };
+    // epoch は 0 始まりなので、記録があれば最大値 + 1 が完了したエポック数
+    let completed_epochs = match get::<Option<u32>>(row, "last_epoch")? {
+        Some(last_epoch) => last_epoch + 1,
+        None => 0,
+    };
+    Ok(ModelSummary::new(
+        model_id,
+        get::<String>(row, "model_name")?,
+        get::<String>(row, "created_at")?,
+        task_type,
+        last_run,
+        completed_epochs,
+        get(row, "has_graph")?,
+    ))
+}
+
+// training_runs.status の文字列(sql_recorder.rs の update_training_run で書く値)を読む
+fn read_status(row: &SqliteRow) -> Result<TrainingJobStatus, FetchModelError> {
+    let status: String = get(row, "status")?;
+    Ok(match status.as_str() {
+        "idle" => TrainingJobStatus::Idle,
+        "running" => TrainingJobStatus::Running,
+        "completed" => TrainingJobStatus::Completed,
+        "failed" => TrainingJobStatus::Failed {
+            reason: get::<Option<String>>(row, "failure_reason")?.unwrap_or_default(),
+        },
+        "stopped" => TrainingJobStatus::Stopped,
+        other => {
+            return Err(FetchModelError::InvalidData(format!(
+                "unknown status: {other}"
+            )))
+        }
+    })
 }
 
 impl ModelTrainingConfigProvider for SqliteTrainingRepository {
@@ -61,8 +117,8 @@ impl ModelTrainingConfigProvider for SqliteTrainingRepository {
 
         // 0002 より前に作ったモデルは構造が保存されていないので再開できない
         let graph_json: Option<String> = get(&row, "model_graph")?;
-        let graph_json =
-            graph_json.ok_or_else(|| FetchModelError::GraphNotSaved(model_id.as_str().to_string()))?;
+        let graph_json = graph_json
+            .ok_or_else(|| FetchModelError::GraphNotSaved(model_id.as_str().to_string()))?;
         let model_graph = model::from_json(&graph_json).map_err(invalid)?;
 
         Ok(TrainingConfig {
@@ -383,14 +439,143 @@ mod tests {
             .await
             .unwrap();
         // C++ の学習開始に失敗して run がないモデル
-        repo.insert_model(&ModelId::new("model-2").unwrap(), "orphan", &config.model_graph)
-            .await
-            .unwrap();
+        repo.insert_model(
+            &ModelId::new("model-2").unwrap(),
+            "orphan",
+            &config.model_graph,
+        )
+        .await
+        .unwrap();
 
         let summaries = ModelSummaryProvider::fetch(&repo).await.unwrap();
 
         assert_eq!(summaries.len(), 1);
         assert_eq!(summaries[0].model_id(), &model_id());
         assert_eq!(summaries[0].model_name(), "trained");
+    }
+
+    // training_epochs に 1 行足す(メトリクスは一覧に使わないので入れない)
+    async fn insert_epoch_row(repo: &SqliteTrainingRepository, job_id: &str, epoch: u32) {
+        sqlx::query(
+            "INSERT INTO training_epochs (job_id, epoch, epoch_elapsed_ms) VALUES (?, ?, 0)",
+        )
+        .bind(job_id)
+        .bind(epoch)
+        .execute(&repo.pool)
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn summary_has_latest_run_task_and_completed_epochs_over_all_runs() {
+        let repo = gen_repository().await;
+        let config = gen_config();
+        repo.insert_model(&model_id(), "trained", &config.model_graph)
+            .await
+            .unwrap();
+        let first = JobId::new("job-1").unwrap();
+        let second = JobId::new("job-2").unwrap();
+        repo.insert_training_run(&first, &config, &model_id())
+            .await
+            .unwrap();
+        for epoch in 0..3 {
+            insert_epoch_row(&repo, "job-1", epoch).await;
+        }
+        repo.update_training_run(&first, &TrainingJobStatus::Stopped)
+            .await
+            .unwrap();
+        // 再開した run(epoch 3, 4 を記録して失敗)
+        repo.insert_training_run(&second, &config, &model_id())
+            .await
+            .unwrap();
+        insert_epoch_row(&repo, "job-2", 3).await;
+        insert_epoch_row(&repo, "job-2", 4).await;
+        repo.update_training_run(
+            &second,
+            &TrainingJobStatus::Failed {
+                reason: "out of memory".to_string(),
+            },
+        )
+        .await
+        .unwrap();
+
+        let summaries = ModelSummaryProvider::fetch(&repo).await.unwrap();
+
+        assert_eq!(summaries.len(), 1);
+        let summary = &summaries[0];
+        assert_eq!(summary.task_type(), ModelTaskType::Segmentation);
+        // 状態は最新の run(job-2)のもの
+        assert_eq!(
+            summary.last_run().status,
+            TrainingJobStatus::Failed {
+                reason: "out of memory".to_string()
+            }
+        );
+        assert!(summary.last_run().finished_at.is_some());
+        // epoch 0〜4 を記録したので 5 エポック完了
+        assert_eq!(summary.completed_epochs(), 5);
+        assert!(summary.resumable());
+    }
+
+    #[tokio::test]
+    async fn summary_of_running_model_without_epochs() {
+        let repo = gen_repository().await;
+        let config = TrainingConfig {
+            data_spec: DataSpec::Image(ImageSpec {
+                input_width: 32,
+                input_height: 32,
+                image_task_spec: ImageTaskSpec::Classification,
+                image_annotation_config: ImageAnnotationConfig::PascalVoc(PascalVocConfig {
+                    include_difficult: false,
+                }),
+            }),
+            ..gen_config()
+        };
+        repo.insert_model(&model_id(), "trained", &config.model_graph)
+            .await
+            .unwrap();
+        repo.insert_training_run(&JobId::new("job-1").unwrap(), &config, &model_id())
+            .await
+            .unwrap();
+        // 0002 より前に作られたモデル(構造がない)
+        sqlx::query("UPDATE model SET model_graph = NULL")
+            .execute(&repo.pool)
+            .await
+            .unwrap();
+
+        let summaries = ModelSummaryProvider::fetch(&repo).await.unwrap();
+
+        let summary = &summaries[0];
+        assert_eq!(summary.task_type(), ModelTaskType::Classification);
+        assert_eq!(summary.last_run().status, TrainingJobStatus::Running);
+        assert_eq!(summary.last_run().finished_at, None);
+        assert_eq!(summary.completed_epochs(), 0);
+        assert!(!summary.resumable());
+    }
+
+    #[tokio::test]
+    async fn lists_recently_trained_models_first() {
+        let repo = gen_repository().await;
+        let config = gen_config();
+        let older = ModelId::new("model-old").unwrap();
+        let newer = ModelId::new("model-new").unwrap();
+        repo.insert_model(&older, "old", &config.model_graph)
+            .await
+            .unwrap();
+        repo.insert_model(&newer, "new", &config.model_graph)
+            .await
+            .unwrap();
+        repo.insert_training_run(&JobId::new("job-1").unwrap(), &config, &newer)
+            .await
+            .unwrap();
+        // 先に作ったモデルを後から再開した
+        repo.insert_training_run(&JobId::new("job-2").unwrap(), &config, &older)
+            .await
+            .unwrap();
+
+        let summaries = ModelSummaryProvider::fetch(&repo).await.unwrap();
+
+        let names: Vec<&str> = summaries.iter().map(|s| s.model_name()).collect();
+        assert_eq!(names, vec!["old", "new"]);
     }
 }

@@ -28,6 +28,13 @@ import { VariantField } from './VariantField'
  *
  * 入力のたびに onChange で学習設定を書き換える。書き換えると文書の training の参照が変わり、
  * 整合性チェックの状態機械が自動で「再チェックが必要」になる(application/run-state)。
+ *
+ * ## 学習再開(resume を渡したとき)
+ *
+ * 学習再開画面でも同じフォームを使い、再開で変えられない欄だけを外す(issue doc 作業 7)。
+ *   - 外す欄: model_name、データ(入力サイズ・アノテーション・タスク)、seed
+ *   - optimizer は種類の選択だけを無効にし、ハイパーパラメータは変えられる
+ *   - epoch は合計エポック数なので、前回までに完了したエポック数を添える
  */
 
 export type TrainingFormProps = {
@@ -37,7 +44,34 @@ export type TrainingFormProps = {
   readonly issues: readonly Issue[]
   /** 選べるデバイス。capabilities を取得できていなければ null(自由に入力させる) */
   readonly deviceIds: readonly string[] | null
+  /** 学習再開のフォームにする(省略すれば新規学習) */
+  readonly resume?: {
+    /** 前回までに完了したエポック数 */
+    readonly completedEpochs: number
+  }
 }
+
+/** 数値の項目 1 つぶんの欄(ParamField を使う)を作る関数 */
+function numberFieldOf(onChange: TrainingFormProps['onChange']) {
+  return (
+    name: string,
+    def: IntParamDef,
+    value: number,
+    apply: (settings: TrainingSettings, value: number) => TrainingSettings,
+  ) => (
+    <ParamField
+      name={name}
+      def={def}
+      value={value}
+      onCommit={(next: ParamValue) => {
+        if (typeof next === 'number') onChange((current) => apply(current, next))
+      }}
+    />
+  )
+}
+
+const OPTIMIZER_LOCKED_REASON =
+  '再開では optimizer の種類を変えられません(checkpoint の optimizer の状態を引き継ぐため)。'
 
 const LOSS_INPUT_HINT: Readonly<Record<LossInput, string>> = {
   logits:
@@ -93,27 +127,12 @@ function TextField({
   )
 }
 
-export function TrainingForm({ settings, onChange, issues, deviceIds }: TrainingFormProps) {
+export function TrainingForm({ settings, onChange, issues, deviceIds, resume }: TrainingFormProps) {
   const deviceId = useId()
   const seedId = useId()
   const task = settings.dataSpec.task.kind
-
-  /** 数値の項目 1 つぶんの欄(ParamField を使う) */
-  const numberField = (
-    name: string,
-    def: IntParamDef,
-    value: number,
-    apply: (settings: TrainingSettings, value: number) => TrainingSettings,
-  ) => (
-    <ParamField
-      name={name}
-      def={def}
-      value={value}
-      onCommit={(next: ParamValue) => {
-        if (typeof next === 'number') onChange((current) => apply(current, next))
-      }}
-    />
-  )
+  const resuming = resume !== undefined
+  const numberField = numberFieldOf(onChange)
 
   // 一覧にないデバイス(保存ファイルに残っていた値など)も、選択肢に残して見えるようにする
   const deviceOptions =
@@ -125,13 +144,16 @@ export function TrainingForm({ settings, onChange, issues, deviceIds }: Training
     <div className={styles.form}>
       <fieldset className={styles.fieldset}>
         <legend className={styles.legend}>基本</legend>
-        <TextField
-          label="モデル名"
-          name="model_name"
-          value={settings.modelName}
-          onChange={(modelName) => onChange((s) => ({ ...s, modelName }))}
-          messages={messagesFor(issues, 'model_name')}
-        />
+        {/* 再開ではモデル名は変えられない(画面の見出しに出す) */}
+        {!resuming && (
+          <TextField
+            label="モデル名"
+            name="model_name"
+            value={settings.modelName}
+            onChange={(modelName) => onChange((s) => ({ ...s, modelName }))}
+            messages={messagesFor(issues, 'model_name')}
+          />
+        )}
         <TextField
           label="データセットのパス(サーバー上)"
           name="dataset_path"
@@ -183,6 +205,7 @@ export function TrainingForm({ settings, onChange, issues, deviceIds }: Training
         catalog={OPTIMIZER_TYPES}
         variant={settings.optimizer}
         onChange={(optimizer) => onChange((s) => ({ ...s, optimizer }))}
+        {...(resuming ? { kindLockedReason: OPTIMIZER_LOCKED_REASON } : {})}
       />
 
       <VariantField<LossKind>
@@ -211,6 +234,21 @@ export function TrainingForm({ settings, onChange, issues, deviceIds }: Training
           ...s,
           epoch,
         }))}
+        {resume !== undefined && (
+          <>
+            <p className={styles.hint}>
+              合計のエポック数です。前回までに {resume.completedEpochs}{' '}
+              エポック完了しているので、続きの {resume.completedEpochs + 1} エポック目から学習します。
+            </p>
+            {issues
+              .filter((issue) => issue.code === 'training/epoch-not-increased')
+              .map((issue) => (
+                <p key={issue.message} className={styles.error}>
+                  {issue.message}
+                </p>
+              ))}
+          </>
+        )}
         {numberField('batch', TRAINING_NUMBER_DEFS.batch, settings.batch, (s, batch) => ({
           ...s,
           batch,
@@ -221,30 +259,52 @@ export function TrainingForm({ settings, onChange, issues, deviceIds }: Training
           settings.saveLastEvery,
           (s, saveLastEvery) => ({ ...s, saveLastEvery }),
         )}
-        <div className={styles.field}>
-          <label htmlFor={seedId} className={styles.checkboxLabel}>
-            <input
-              id={seedId}
-              type="checkbox"
-              checked={settings.seed !== null}
-              // 0 も有効なシードなので、「固定しない」は null で表す(training.proto の Seed)
-              onChange={(event) =>
-                onChange((s) => ({
-                  ...s,
-                  seed: event.target.checked ? (s.seed ?? TRAINING_NUMBER_DEFS.seed.default) : null,
-                }))
-              }
-            />
-            乱数シードを固定する(再現性のため)
-          </label>
-        </div>
-        {settings.seed !== null &&
+        {/* 再開では seed は効かない(C++ が checkpoint の乱数の状態を書き戻す)ので出さない */}
+        {!resuming && (
+          <div className={styles.field}>
+            <label htmlFor={seedId} className={styles.checkboxLabel}>
+              <input
+                id={seedId}
+                type="checkbox"
+                checked={settings.seed !== null}
+                // 0 も有効なシードなので、「固定しない」は null で表す(training.proto の Seed)
+                onChange={(event) =>
+                  onChange((s) => ({
+                    ...s,
+                    seed: event.target.checked
+                      ? (s.seed ?? TRAINING_NUMBER_DEFS.seed.default)
+                      : null,
+                  }))
+                }
+              />
+              乱数シードを固定する(再現性のため)
+            </label>
+          </div>
+        )}
+        {!resuming &&
+          settings.seed !== null &&
           numberField('seed', TRAINING_NUMBER_DEFS.seed, settings.seed, (s, seed) => ({
             ...s,
             seed,
           }))}
       </fieldset>
 
+      {/* データの仕様は再開では変えられない(出力チャンネル数や前回の条件と合わなくなる) */}
+      {!resuming && <DataSpecFields settings={settings} onChange={onChange} issues={issues} />}
+    </div>
+  )
+}
+
+/** データ(入力サイズ・アノテーション・タスク)の欄。新規学習でだけ出す */
+function DataSpecFields({
+  settings,
+  onChange,
+  issues,
+}: Pick<TrainingFormProps, 'settings' | 'onChange' | 'issues'>) {
+  const numberField = numberFieldOf(onChange)
+
+  return (
+    <>
       <fieldset className={styles.fieldset}>
         <legend className={styles.legend}>データ(画像)</legend>
         {numberField(
@@ -285,6 +345,6 @@ export function TrainingForm({ settings, onChange, issues, deviceIds }: Training
           .filter((issue) => issue.code === 'training/task-unavailable')
           .map((issue) => issue.message)}
       />
-    </div>
+    </>
   )
 }

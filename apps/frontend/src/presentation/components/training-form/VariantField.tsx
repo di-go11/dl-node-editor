@@ -38,6 +38,11 @@ export type VariantFieldProps<K extends string> = {
   readonly messages?: readonly string[]
   /** 説明の下に出す補足(loss が期待する入力など) */
   readonly hint?: ReactNode
+  /**
+   * 種類を変えられないときの理由(学習再開の optimizer など)。渡すと種類の選択欄を無効にし、
+   * 理由を横に出す。パラメータは変えられる
+   */
+  readonly kindLockedReason?: string
 }
 
 export function VariantField<K extends string>({
@@ -49,6 +54,7 @@ export function VariantField<K extends string>({
   optionLabel,
   messages = [],
   hint,
+  kindLockedReason,
 }: VariantFieldProps<K>) {
   const selectId = useId()
   const def = catalog[variant.kind]
@@ -67,6 +73,7 @@ export function VariantField<K extends string>({
         className={styles.select}
         value={variant.kind}
         aria-invalid={messages.length > 0}
+        disabled={kindLockedReason !== undefined}
         onChange={(event) => {
           const next = event.target.value
           if (isVariantKind(catalog, next)) onChange(changeVariantKind(catalog, variant, next))
@@ -78,6 +85,7 @@ export function VariantField<K extends string>({
           </option>
         ))}
       </select>
+      {kindLockedReason !== undefined && <p className={styles.hint}>{kindLockedReason}</p>}
       {messages.map((message) => (
         <p key={message} className={styles.error}>
           {message}

@@ -2,7 +2,11 @@ import { HttpResponse, http } from 'msw'
 
 import type { components } from '../../api/schema'
 import { API_BASE_PATH } from '../http/api-client'
-import { rustStartTrainingRequestSchema } from '../http/rust-training-request'
+import type { RustStartTrainingRequest } from '../http/rust-training-request'
+import {
+  rustResumeTrainingRequestSchema,
+  rustStartTrainingRequestSchema,
+} from '../http/rust-training-request'
 
 /**
  * MSW(Mock Service Worker)のリクエストハンドラ - モック API(指示書 6.3)。
@@ -63,6 +67,16 @@ const FAILING_MODEL_NAME = 'mock-fail'
 type MockJob = {
   readonly failing: boolean
   stopRequested: boolean
+}
+
+/**
+ * モックで学習を始めたモデル(学習再開の画面用)。本物の DB と同じく、学習を始めると一覧に載る。
+ * モックの学習は必ず最後まで進んだものとみなし、完了エポック数は学習の epoch にする。
+ */
+type MockModel = {
+  config: RustStartTrainingRequest
+  completedEpochs: number
+  startedAt: string
 }
 
 /** 学習の経過を模した進捗の 1 件。epoch 0 はまだ何も終わっていない状態である */
@@ -131,7 +145,16 @@ export function createHandlers(options: MockOptions = {}) {
   const intervalMs = options.progressIntervalMs ?? 1000
   const jobs = new Map<string, MockJob>()
   const usedModelNames = new Set(options.usedModelNames ?? [])
+  const models = new Map<string, MockModel>()
   let jobCount = 0
+
+  /** 学習ジョブを 1 つ作る(新規学習と再開で共通) */
+  const createJob = (failing: boolean): string => {
+    jobCount += 1
+    const jobId = `mock-job-${jobCount}`
+    jobs.set(jobId, { failing, stopRequested: false })
+    return jobId
+  }
 
   return [
     http.get(`${base}/capabilities`, () => HttpResponse.json(capabilities)),
@@ -148,12 +171,65 @@ export function createHandlers(options: MockOptions = {}) {
       const parsed = rustStartTrainingRequestSchema.safeParse(await request.json())
       if (!parsed.success) return new HttpResponse(null, { status: 422 })
       usedModelNames.add(parsed.data.model_name)
-      jobCount += 1
-      const response: Schemas['StartTrainingResponse'] = { job_id: `mock-job-${jobCount}` }
-      jobs.set(response.job_id, {
-        failing: parsed.data.model_name === FAILING_MODEL_NAME,
-        stopRequested: false,
+      const response: Schemas['StartTrainingResponse'] = {
+        job_id: createJob(parsed.data.model_name === FAILING_MODEL_NAME),
+      }
+      models.set(`mock-model-${models.size + 1}`, {
+        config: parsed.data,
+        completedEpochs: parsed.data.epoch,
+        startedAt: new Date().toISOString(),
       })
+      return HttpResponse.json(response)
+    }),
+
+    http.get(`${base}/models`, () => {
+      const response: Schemas['ModelSummariesResponse'] = {
+        // 最近学習したモデルが先(本物と同じ並び)
+        models: [...models.entries()].reverse().map(([modelId, model]) => ({
+          model_id: modelId,
+          model_name: model.config.model_name,
+          created_at: model.startedAt,
+          task_type: model.config.data_spec.image_task_spec.type,
+          last_run: { status: 'completed', started_at: model.startedAt, finished_at: null },
+          completed_epochs: model.completedEpochs,
+          resumable: true,
+        })),
+      }
+      return HttpResponse.json(response)
+    }),
+
+    http.get<{ modelId: string }>(`${base}/models/:modelId/config`, ({ params }) => {
+      const model = models.get(params.modelId)
+      if (model === undefined) return new HttpResponse(null, { status: 404 })
+      // 本物と同じく、seed を固定していなくても null で返す
+      return HttpResponse.json({
+        model_id: params.modelId,
+        ...model.config,
+        seed: model.config.seed ?? null,
+      })
+    }),
+
+    http.post<{ modelId: string }>(`${base}/models/:modelId/resume`, async ({ params, request }) => {
+      const model = models.get(params.modelId)
+      if (model === undefined) return new HttpResponse(null, { status: 404 })
+      if (options.alreadyRunning === true) return new HttpResponse(null, { status: 409 })
+      const parsed = rustResumeTrainingRequestSchema.safeParse(await request.json())
+      if (!parsed.success) return new HttpResponse(null, { status: 422 })
+      // 本物と同じ規則: optimizer の種類は変えられない、epoch は完了済みより大きくする
+      if (parsed.data.optimizer.type !== model.config.optimizer.type) {
+        return new HttpResponse(null, { status: 422 })
+      }
+      if (parsed.data.epoch <= model.completedEpochs) return new HttpResponse(null, { status: 409 })
+
+      model.config = { ...model.config, ...parsed.data }
+      model.completedEpochs = parsed.data.epoch
+      model.startedAt = new Date().toISOString()
+      // 再開した run は一覧の先頭に来る
+      models.delete(params.modelId)
+      models.set(params.modelId, model)
+      const response: Schemas['StartTrainingResponse'] = {
+        job_id: createJob(model.config.model_name === FAILING_MODEL_NAME),
+      }
       return HttpResponse.json(response)
     }),
 

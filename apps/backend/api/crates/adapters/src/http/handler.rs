@@ -1,27 +1,27 @@
 use super::dto::{
-    CapabilitiesDto, ModelSummariesDto, ResumeTrainingConfigDto, StartTrainingResponseDto,
-    TrainingConfigDto, TrainingJobStatusDto, TrainingProcessDto,
+    CapabilitiesDto, ModelSummariesDto, ModelTrainingConfigDto, ResumeTrainingConfigDto,
+    StartTrainingResponseDto, TrainingConfigDto, TrainingJobStatusDto, TrainingProcessDto,
 };
 use axum::{
+    Json,
     extract::{Path, State},
     http::StatusCode,
-    Json,
 };
 use entities::{
     model::ModelId,
-    training::{config::TrainingConfig, JobId, TrainingProcess},
+    training::{JobId, TrainingProcess, config::TrainingConfig},
 };
 use futures_util::StreamExt;
 use usecases::{
     capabilities::{CapabilityProvider, GetCapabilities},
     model::{
+        GetModelSummary, GetModelTrainingConfig,
         error::{FetchModelError, ModelRepositoryError},
         ports::{ModelSummaryProvider, ModelTrainingConfigProvider},
-        GetModelSummary, GetModelTrainingConfig,
     },
     training::{
         GetTrainingProcess, ModelIdGenerator, ProgressRecordingScheduler, ResumeTraining,
-        ResumeTrainingError, StartTraining, StartTrainingError, StopTraining,
+        ResumeTrainingConfig, ResumeTrainingError, StartTraining, StartTrainingError, StopTraining,
         TrainingProgressProvider, TrainingProgressProviderError, TrainingRecordReader,
         TrainingResumer, TrainingRunRegistar, TrainingStarter, TrainingStopper,
         ValidateTrainingConfig, ValidateTrainingConfigError,
@@ -215,11 +215,11 @@ where
 }
 
 // 学習済みモデルの最新の学習設定取得GETリクエストハンドラ(再開フォームの初期値と固定項目の表示用)
-// 応答はそのまま POST /models/{model_id}/resume の本体として送り返せる
+// 再開リクエスト(ResumeTrainingConfigDto)には、この応答のうち変えてよい項目だけを送る
 pub async fn get_model_config<T>(
     State(usecase): State<Arc<GetModelTrainingConfig<T>>>,
     Path(model_id): Path<String>,
-) -> Result<Json<ResumeTrainingConfigDto>, StatusCode>
+) -> Result<Json<ModelTrainingConfigDto>, StatusCode>
 where
     T: ModelTrainingConfigProvider + Send + Sync + 'static,
 {
@@ -228,7 +228,7 @@ where
         .get_config(&model_id)
         .await
         .map_err(status_code_from_model_error)?;
-    Ok(Json(ResumeTrainingConfigDto {
+    Ok(Json(ModelTrainingConfigDto {
         model_id: model_id.as_str().to_string(),
         config: config.into(),
     }))
@@ -246,7 +246,7 @@ fn status_code_from_model_error(error: ModelRepositoryError) -> StatusCode {
     }
 }
 
-// 学習再開POSTリクエストハンドラ。本体は GET /models/{model_id}/config の応答と同じ形
+// 学習再開POSTリクエストハンドラ。本体は再開時に変えてよい項目だけ(固定項目は ResumeTraining が DB から使う)
 // TODO(設計改善): 型パラメータは作業12(入力ポート)で U 1つにする。
 pub async fn resume_training<C, S, R, K>(
     State(usecase): State<Arc<ResumeTraining<C, S, R, K>>>,
@@ -259,19 +259,16 @@ where
     R: TrainingRunRegistar + Send + Sync + 'static,
     K: ProgressRecordingScheduler + Send + Sync + 'static,
 {
-    // パスと本体で別のモデルを指していたら、どちらを再開すべきか分からないので拒否する
-    if dto.model_id != model_id {
-        return Err(StatusCode::BAD_REQUEST);
-    }
     let model_id = ModelId::new(model_id).map_err(|_| StatusCode::BAD_REQUEST)?;
-    let config = TrainingConfig::from(dto.config);
+    let input = ResumeTrainingConfig::from(dto);
     let job_id = usecase
-        .execute(&model_id, &config)
+        .execute(&model_id, &input)
         .await
         .map_err(|e| match e {
             ResumeTrainingError::ModelNotFound(_) => StatusCode::NOT_FOUND,
             ResumeTrainingError::NotResumable(_) => StatusCode::CONFLICT,
             ResumeTrainingError::ReadFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            ResumeTrainingError::OptimizerTypeChanged(_) => StatusCode::UNPROCESSABLE_ENTITY,
             ResumeTrainingError::Start(e) => status_code_from_start_error(e),
         })?;
     Ok(Json(job_id.into()))

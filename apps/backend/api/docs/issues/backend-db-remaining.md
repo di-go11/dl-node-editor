@@ -19,9 +19,11 @@
 ```
 
 - 再開画面はエディタのドキュメント(`document.training` やグラフ)を使わない。前回の `training_config` を初期値として読み込む
-- **(2026-11-09 変更)** 再開リクエストの本体は、`GET /models/{model_id}/config` の応答と同じ `ResumeTrainingConfigDto`(全設定 + `model_id`)にする。取得した設定の変えてよい項目だけを書き換えて、そのまま送り返す
-  - 当初は「`model_id` と変えてよい項目だけを送り、名前・構造・データ仕様は Rust が DB から組み立てる」予定だった。DTO を新規学習・設定取得・再開で共有し、往復できる形を優先して変更した
-  - 固定項目は**当面はフロントで読み取り専用にするだけ**。バックエンドでの上書き・照合は作業 14 で行う(それまでは、書き換えて送ると C++ が `FailedPrecondition` などで拒否するか、意図しない学習になる)
+- **(2026-11-10 変更)** 再開リクエストの本体は、変えてよい項目だけを持つ再開専用の `ResumeTrainingConfigDto` にする。再開するモデルはパスの `model_id` で決める
+  - HTTP の `ResumeTrainingConfigDto` は usecase の入力 `ResumeTrainingConfig`(`usecases/src/training/config/`)に変換して `ResumeTraining::execute` に渡す
+  - `ResumeTraining` は DB の前回設定(`ModelTrainingConfigProvider::fetch`)に変えてよい項目を上書きして、全設定の `TrainingConfig` を組み立てる。固定項目は型に存在しないので、書き換えて送られることはない
+  - `GET /models/{model_id}/config` の応答は、全設定 + `model_id` の `ModelTrainingConfigDto` に名前を変えた(表示用)
+  - 経緯: 当初は「`model_id` と変えてよい項目だけを送る」予定だったが、2026-11-09 に「全設定を往復させる」形に変えた。固定項目をバックエンドで守るために、2026-11-10 に変えてよい項目だけを送る形に戻した
 
 再開時に変えられる項目は次のとおり(C++ の現在の実装に合わせる)。
 
@@ -32,7 +34,8 @@
 | Optimizer の**種類** | 固定 | 種類が違うと C++ は `optimizer type mismatch` で例外を投げる(`CheckpointArchiveIO.cpp`) |
 | Optimizer のハイパーパラメータ(lr など) | 変えられる | C++ 側で load 後に上書きする(作業 6) |
 | `epoch` | 変えられる(**合計**エポック数) | C++ と `training_config.epochs` の意味に合わせる。前回の完了エポック数より大きい値が必要 |
-| `batch` / `device` / `loss` / `save_last_every` / `seed` / `dataset_path` | 変えられる | checkpoint に依存しない |
+| `batch` / `device` / `loss` / `save_last_every` / `dataset_path` | 変えられる | checkpoint に依存しない |
+| `seed` | 固定(画面に出さない)(**2026-11-10 変更**) | 再開時に指定しても効かない。C++ は seed を適用した後、`CheckpointModelLoader` で checkpoint の `rng_state_cpu` を書き戻すので上書きされる。初期重みも checkpoint の値になる。例外は `rng_state_cpu` を持たない古い checkpoint と、GPU の乱数(保存していない)。ただし今の学習ループには乱数を使う処理がないので、実際の差は出ない |
 | `resume_from` | 送らない | 再開元は `<model_id>_last.pt` に決まる(作業 4) |
 
 Optimizer の種類も変えたい(重みだけ引き継いで、optimizer の状態は捨てる)場合は「再開」ではなく「重みを引き継いだ新しい学習」とみなし、別機能として扱う(新しい `model_id` と `parent_model_id` を持たせる)。今回は対象外。
@@ -154,17 +157,18 @@ Optimizer の種類も変えたい(重みだけ引き継いで、optimizer の�
 ```
 GET  /api/v1/models                     学習済みモデルの一覧
 GET  /api/v1/models/{model_id}/config   最新の run の training_config(フォームの初期値と固定項目の表示用)
-POST /api/v1/models/{model_id}/resume   学習再開。本体は GET /config の応答と同じ形(全設定 + model_id)
+POST /api/v1/models/{model_id}/resume   学習再開。本体は変えてよい項目だけ(2026-11-10 変更)
 ```
-- 一覧の各要素: `model_id`, `model_name`, `created_at`(その他の項目の追加は作業 7 に回した)
+- 一覧の各要素: `model_id`, `model_name`, `created_at`(2026-11-10 に作業 7 でタスク・最新の run・完了エポック数・再開できるかを足した)
   - `training_runs` が 1 件もないモデルは出さない(`insert_model` の後に C++ の学習開始が失敗した場合などにできる。作業 8 を参照)
-- 再開の本体: `ResumeTrainingConfigDto`(`GET /config` の応答と同じ形。上の「学習再開の設計方針」を参照)。パスと本体の `model_id` が違えば 400
+- 設定取得の応答: `ModelTrainingConfigDto`(全設定 + `model_id`)
+- 再開の本体: `ResumeTrainingConfigDto`(`epoch` / `batch` / `device` / `dataset_path` / `optimizer` / `loss` / `save_last_every`)。上の「学習再開の設計方針」を参照
 - 応答: 新規学習と同じ `{ "job_id": ... }`
 
 **状況(2026-11-09)**
 3 本のエンドポイントは実装済み(`cargo test` は通過。実機での確認はまだ)。
 - `GetModelSummary` / `GetModelTrainingConfig` / `ResumeTraining` ユースケースと、SQL の実装(`adapters/src/training/sql/sql_model_reader.rs`)
-- HTTP の DTO(`TrainingConfigDto` 以下)を双方向(Serialize + Deserialize)にし、`ResumeTrainingConfigDto { model_id, #[serde(flatten)] config }` を追加した
+- HTTP の DTO(`TrainingConfigDto` 以下)を双方向(Serialize + Deserialize)にし、`ResumeTrainingConfigDto { model_id, #[serde(flatten)] config }` を追加した(2026-11-10 に `ModelTrainingConfigDto` に名前を変え、設定取得の応答専用にした)
 - `ResumeTraining` の依存は `AppState` の既存の型パラメータを使い回している(resumer = `S`、`GrpcTrainingStarter` が両方を実装)。作業 12 で分ける
 - `ResumeTraining` は、モデルと前回の設定があるかだけを確かめる(なければ 404、`model_graph` が NULL なら 409)。下の手順 3・4 は作業 14 に回した
 - 一覧の項目追加(`task_type` / 最後の run の `status` / 日時 / 完了エポック数 / 再開できるか)は、再開画面で初めて必要になるので作業 7 に回した
@@ -176,7 +180,7 @@ POST /api/v1/models/{model_id}/resume   学習再開。本体は GET /config の
 - `ResumeTraining` ユースケース(`StartTraining` は新規専用のまま)
   1. `ModelTrainingConfigProvider::fetch` → なければ `ModelNotFound`(404)、`model_graph` が NULL なら `NotResumable`(409)
   2. `resume_training(config, model_id)`(gRPC で `resume = true`)→ `insert_training_run`(`insert_model` はしない)→ 進捗の記録を schedule
-  - Optimizer の種類の照合(`OptimizerTypeChanged`、422)と、固定項目を DB の値で上書きする処理は作業 14 に回した
+  - Optimizer の種類の照合(`OptimizerTypeChanged`、422)と、固定項目を DB の値で上書きする処理は作業 14 に回した(2026-11-10 に実装済み)
 - C++ の `FailedPrecondition`(checkpoint がない・エポック数が足りない)は `StartTrainingError::ResumePreconditionFailed` として 409 にする
 - 「そのモデルを学習中か」は DB の `status` では判定しない。C++ は同時に 1 ジョブしか動かさず、`AlreadyRunning` で弾けるため。また、Rust が落ちると `running` のままの行が残り、そのモデルを永久に再開できなくなるため
 
@@ -223,11 +227,30 @@ POST /api/v1/models/{model_id}/resume   学習再開。本体は GET /config の
 - ノードエディタのヘッダーに [学習再開] を追加し、`/resume` に移動する
 - `/resume`: `GET /models` の一覧を表示する(名前・タスク・最終学習日時・状態・完了エポック数)
 - `/resume/:modelId`: `GET /models/{model_id}/config` で初期値を読み込む
-  - 固定項目(名前・構造・`data_spec`・Optimizer の種類)は表示だけにする。フォームの部品は新規画面の `TrainingForm` を再利用し、固定項目を読み取り専用にできるようにする
+  - 画面は新規学習の画面とほぼ同じにし、設定できない欄だけを外す(2026-11-10 決定)。フォームの部品は新規画面の `TrainingForm` を再利用し、prop で切り替える
+  - 上部の見出し(入力欄にしない): モデル名・タスク(`data_spec` から)・前回の完了エポック数
+  - フォームから外す欄: `model_name`、`data_spec` 関連(タスク・入力サイズ・アノテーション)、`seed`
+  - Optimizer: 種類の選択は無効にして表示だけにし、ハイパーパラメータは編集できるようにする
+  - フォームで編集できる欄: `epoch`(合計)/ `batch` / `device` / `dataset_path` / `loss` / `save_last_every` / Optimizer のハイパーパラメータ
   - `epoch` には「前回 N エポック完了」と表示し、N + 1 以上を必須にする
+  - 送るのは編集できる欄だけの `ResumeTrainingConfig`(openapi.yaml)。外した欄(`model_graph` や `seed` も含む)は送らない
   - 状態はこの画面の中だけで持つ(エディタのドキュメントを変えない)
 - 整合性チェックは React のフォーム検証だけにする。サーバー側の検証は再開 API の中で行う(チェックと開始の間に DB が変わっても安全なため)
 - 再開に成功したら `/progress/:jobId` に移動する
+
+**状況(2026-11-10)**
+バックエンドの前作業と React の画面を実装した。`cargo test` は通過。フロントのテスト(`npm run verify`)と実機での確認はまだ。
+- バックエンド
+  - 一覧の各要素に `task_type` / `last_run`(`status` / `reason` / `started_at` / `finished_at`)/ `completed_epochs` / `resumable` を足した。`last_run` は最新の run(`GET /config` と同じ順で選ぶ)
+  - `completed_epochs` は全 run の `MAX(training_epochs.epoch) + 1`(C++ の epoch は 0 始まり)。記録がなければ 0
+  - 並び順を「モデルを作った日時」から「最新の run を始めた日時」の新しい順に変えた(再開したモデルが上に来る)
+  - `resumable` は `model_graph` があるかだけで決める(`status` は見ない。作業 5 の方針)
+- フロント
+  - ポート `TrainedModelApi`(一覧・設定の取得・再開)、ユースケース `resumeTraining`、検証 `validateResumeSettings`(変えられる項目のルール + `epoch` > 完了済み)
+  - 画面 `ResumeListPage`(`/resume`)と `ResumeSettingsPage`(`/resume/:modelId`)。`TrainingForm` は `resume` の prop を渡すと再開用になる(`mode` ではなく、完了エポック数を持たせるため)
+  - MSW のモックにも `/models` 以下を足した(モックで学習を始めたモデルが一覧に載る)
+  - `src/api/schema.d.ts` は手で更新した。`npm run gen:api` で生成し直すこと
+- 残り: `npm run verify`、実機での確認
 
 ---
 
@@ -480,19 +503,21 @@ where
 ## 14. 学習再開で固定項目をバックエンドでも守る(2026-11-09 提案)
 
 **背景**
-再開リクエストの本体は全設定を含む `ResumeTrainingConfigDto` にしたので(作業 5)、クライアントは `model_name` / `model_graph` / `data_spec` / Optimizer の種類を書き換えて送ることができる。
-今はフロントで読み取り専用にしているだけで、バックエンドでは確かめていない。
+再開リクエストの本体を全設定を含む形にしていたので(作業 5)、クライアントは `model_name` / `model_graph` / `data_spec` / `seed` / Optimizer の種類を書き換えて送ることができた。
 - curl などで直接呼んだ場合や、フロントのバグ(state の取り違えなど)で、checkpoint と合わない設定が C++ に届く
 - 構造が違えば C++ が `.pt` の読み込みで失敗するが、分かるのは学習を始めるときで、エラーも分かりにくい
 
-**作業内容**
-- `ResumeTraining::execute` では、すでに `ModelTrainingConfigProvider::fetch` で前回の設定を読んでいる(今は存在確認にしか使っていない)。これを使って次の処理を行う
-  - `model_name` / `model_graph` / `data_spec` は、リクエストの値を使わず DB の値で上書きする(フロントには表示用に返しているだけなので、送り返された値は信用しない)
-  - Optimizer の種類が前回と違えば `OptimizerTypeChanged`(422)を返す(C++ は `optimizer type mismatch` で例外を投げるため)
+**状況(2026-11-10)**
+次の 2 つは実装済み(`cargo test` は通過。実機での確認はまだ)。
+- 再開の入力を変えてよい項目だけの `ResumeTrainingConfig`(usecase)/ `ResumeTrainingConfigDto`(HTTP)にした。`ResumeTraining::execute` は DB の前回設定に入力を上書きして `TrainingConfig` を組み立てるので、`model_name` / `model_graph` / `data_spec` / `seed` は必ず DB の値になる。C++ に送る設定と `training_runs` に記録する設定は同じ
+- Optimizer の種類が前回と違えば `OptimizerTypeChanged`(422)を返し、C++ には送らない
+
+**残り**
 - 余力があれば、`epoch` が前回の完了エポック数以下なら、C++ に送る前に 409 を返す(作業 2 の `last_saved_epoch` をモデル単位で使う)
+- 実機での確認(下の「完了条件」)
 
 **完了条件**
-- 再開リクエストの `model_graph` を書き換えて送っても、保存されている構造で再開される
+- 再開リクエストに `model_graph` などの固定項目を入れて送っても、無視されて保存されている構造で再開される
 - Optimizer の種類を変えて送ると 422 が返り、C++ には送られない
 
 ---

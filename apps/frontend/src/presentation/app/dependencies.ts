@@ -3,6 +3,7 @@ import { createContext, useContext } from 'react'
 import type { CapabilitiesApi } from '../../application/ports/capabilities-api'
 import type { DocumentStorage } from '../../application/ports/document-storage'
 import type { NodeCatalogSource } from '../../application/ports/node-catalog-source'
+import type { TrainedModelApi } from '../../application/ports/trained-model-api'
 import type { TrainingApi } from '../../application/ports/training-api'
 
 /**
@@ -28,6 +29,7 @@ export type Dependencies = {
   readonly capabilitiesApi: CapabilitiesApi
   readonly documentStorage: DocumentStorage
   readonly trainingApi: TrainingApi
+  readonly trainedModelApi: TrainedModelApi
 }
 
 export const DependenciesContext = createContext<Dependencies | null>(null)

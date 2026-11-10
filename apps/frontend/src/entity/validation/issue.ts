@@ -54,6 +54,8 @@ export type IssueCode =
   | 'training/task-unavailable'
   | 'training/loss-task-mismatch'
   | 'training/output-activation'
+  // 学習再開: epoch(合計)が完了済みのエポック数以下
+  | 'training/epoch-not-increased'
   // サーバーでの整合性チェック(POST /trainings/validate)
   | 'training/model-name-used'
   | 'training/server-check-failed'
