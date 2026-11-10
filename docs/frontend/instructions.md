@@ -420,7 +420,6 @@ apps/frontend/
 ├── Dockerfile               # ai-engine-dev 用
 ├── Dockerfile.rust          # api-dev 用
 ├── docker-compose.yml       # 全サービスの定義(ローカル開発)
-├── docker-compose.server.yml
 ├── ai-engine/devcontainer.json   # サービスごとの VS Code Dev Container 設定
 └── api/devcontainer.json
 ```
@@ -441,7 +440,7 @@ apps/frontend/
 3. **コンテナの生成はユーザーが行う。** VS Code の「Dev Containers: Reopen in Container」で `web` を選んでもらう。今のコンテナの中からはコンテナを生成できないためである。手順をユーザーに案内し、生成できたことを確認してから次へ進む。
 4. 生成された `web-dev` コンテナの中で、`apps/frontend/` の雛形の作成(`npm create vite` など)を行う。**Node.js がないコンテナで、雛形の作成を先に行ってはならない。**
 
-`docker-compose.server.yml` にも web-dev を追加するかどうかは、ユーザーに確認すること。
+サーバーには開発用のコンテナを置かない。サーバーの構成は `.deploy/compose.prod.yml`(runtime イメージ)で定義する。
 
 **`web/devcontainer.json` の内容**:既存の `api/devcontainer.json` の形と、コメントの書き方(各設定の横に理由を書く)にそろえる。
 
