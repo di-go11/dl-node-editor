@@ -3,7 +3,7 @@ services:
   ai-engine-dev:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.ai-engine
       target: dev
     volumes:
       - ../:/workspaces:cached # リポジトリルートをマウント(.gitを含めるため。backend単体マウントだとコンテナ内でgit操作ができなくなる)
@@ -32,7 +32,8 @@ services:
   api-dev:
     build:
       context: .
-      dockerfile: Dockerfile.rust
+      dockerfile: Dockerfile.api
+      target: dev
     volumes:
       - ../:/workspaces:cached
       - ~/.claude:/root/.claude:cached # ホスト側のClaude設定(CLAUDE.md等)を共有
@@ -47,6 +48,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.web
+      target: dev
     volumes:
       - ../:/workspaces:cached # リポジトリルートをマウント(.gitを含めるため。既存サービスと同じ)
       - ~/.claude:/root/.claude:cached # ホスト側のClaude設定(CLAUDE.md等)を共有

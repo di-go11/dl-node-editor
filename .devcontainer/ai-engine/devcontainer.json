@@ -1,5 +1,5 @@
 {
-  "name": "AI-Engine C++ Dev",
+  "name": "AI-Engine C++",
   "dockerComposeFile": "../docker-compose.yml",
   "service": "ai-engine-dev",
   "runServices": ["ai-engine-dev"], // このサービスだけ起動する(未指定だと compose の全サービスが起動する)

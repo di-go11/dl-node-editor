@@ -1,4 +1,4 @@
-FROM node:24-bookworm-slim
+FROM node:24-bookworm-slim AS dev
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -11,3 +11,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspaces/apps/frontend
+
+# ====本番用====
+## ====builder====
+FROM node:24-bookworm-slim AS builder
+WORKDIR /src/frontend
+COPY apps/frontend/package.json apps/frontend/package-lock.json ./
+RUN npm ci
+COPY apps/frontend ./
+RUN npm run build
+
+## ====runtime====
+FROM nginx:1.27-alpine AS runtime
+COPY --from=builder /src/frontend/dist /usr/share/nginx/html
+COPY .deploy/nginx.conf /etc/nginx/conf.d/default.conf

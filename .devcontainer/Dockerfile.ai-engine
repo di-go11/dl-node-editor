@@ -104,3 +104,41 @@ FROM base AS dev
 
 # 6. docker-compose.yml に合わせて作業ディレクトリを戻す
 WORKDIR /workspaces/apps/backend/ai-engine
+
+# ==== 本番用====
+## ==== ビルドを行うステージ ====
+FROM base AS builder
+COPY apps/backend/ai-engine /src/ai-engine
+COPY apps/backend/proto /src/proto
+WORKDIR /src/ai-engine
+
+RUN cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+&& cmake --build build --target ai_engine_app -j2
+
+## ====実行するステージ====
+FROM nvidia/cuda:13.2.1-cudnn-runtime-ubuntu22.04 AS runtime
+# apt で実行時ライブラリ(-dev なし)+ ldconfig 設定
+RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
+    && apt-get install -y --no-install-recommends \
+    libgrpc++1 \
+    libprotobuf23 \
+    libopencv-core4.5d \
+    libopencv-imgproc4.5d \
+    libopencv-imgcodecs4.5d \
+    cuda-cupti-13-2 \
+    libcusparselt0-cuda-13 \
+    libnvshmem3-cuda-13 \
+    libnccl2 \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    # libcusparseLt/libnvshmemはバージョン別サブディレクトリに配置され、
+    # 標準のライブラリ検索パスに含まれないため、ldconfigに明示的に追加する
+    && echo "/usr/lib/x86_64-linux-gnu/libcusparseLt/13" > /etc/ld.so.conf.d/cusparselt.conf \
+    && echo "/usr/lib/x86_64-linux-gnu/nvshmem/13" > /etc/ld.so.conf.d/nvshmem.conf \
+    && ldconfig
+
+COPY --from=builder /opt/libtorch/lib /opt/libtorch/lib
+COPY --from=builder /src/ai-engine/build/ai_engine_app /app/ai_engine_app
+
+WORKDIR /app
+CMD ["/app/ai_engine_app", "--serve"]
