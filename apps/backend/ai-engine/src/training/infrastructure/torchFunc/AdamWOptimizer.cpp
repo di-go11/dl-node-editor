@@ -1,4 +1,5 @@
 #include "training/infrastructure/torchFunc/AdamWOptimizer.hpp"
+#include "training/infrastructure/torchFunc/OptimizerLoadKeepingOptions.hpp"
 #include "training/infrastructure/torchFunc/OptimizerStateDeviceSync.hpp"
 #include "training/infrastructure/torchModel/TorchCheckpointArchive.hpp"
 
@@ -30,7 +31,10 @@ void AdamWOptimizer::writeTo(ICheckpointWriter &archive) const
 
 void AdamWOptimizer::readFrom(ICheckpointReader &archive)
 {
-    _optim->load(toTorchArchive(archive));
+    // 状態(exp_avg / exp_avg_sq / step)は checkpoint から引き継ぎ、lr などは今回の指定値のまま残す
+    // (学習再開時にハイパーパラメータを変えられるようにするため)。
+    training::infrastructure::torchFunc::loadStateKeepingOptions<torch::optim::AdamWOptions>(
+        *_optim, toTorchArchive(archive));
 
     // load 直後は state が保存時の device 上にあるため、param の device へ揃える
     // (CPU 保存 → GPU 再開 などで step() が壊れるのを防ぐ)。

@@ -199,6 +199,14 @@ POST /api/v1/models/{model_id}/resume   学習再開。本体は GET /config の
 - まず、再開時に lr を変えて、実際に使われる lr をログで確認する
 - 上書きされていたら、`readFrom` の後で、`command.optimizer` の値を各 param_group の options に設定し直す(モーメントなどの状態は引き継ぐ)
 
+**状況(2026-11-10)**
+完了した。
+- 上書きされることは libtorch のソース(`torch/optim/serialize.h` の `current_options = saved_options;`)で確かめた。lr だけでなく、betas / eps / weight_decay(Adam・AdamW)、momentum / nesterov / weight_decay(SGD)も checkpoint の値になっていた
+- `torchFunc/OptimizerLoadKeepingOptions.hpp` に `loadStateKeepingOptions<Options>` を追加した。load の前に各 param_group の options(構築時の値 = `command.optimizer`)を退避し、load の後に戻す。Adam / AdamW / SGD の `readFrom` はこれを使う
+- `IOptimizer` / `CheckpointArchiveIO` / `CheckpointModelLoader` は変えていない(`CheckpointModelLoader` は、もともと `command.optimizer` で Optimizer を作ってから `readFrom` している)
+- テスト: `tests/optimizer_resume_options_test.cpp`。3 種類それぞれで「状態を引き継いだうえで、新しい options で 1 ステップ進む」ことを確かめる。古い options のままの場合と、状態を引き継がない場合は結果が変わることも確かめている(テストが変化を見分けられることの確認)
+- 実機でのログ確認はしていない(テストで代えた)
+
 ---
 
 ## 7. 学習再開画面(React)

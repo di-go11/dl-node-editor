@@ -69,11 +69,18 @@ std::string TrainingJobManager::start(const StartTrainingCommand &command)
                 const TrainingStatus status = runner(command, store, stopToken.get());
                 store->onFinished(status, "");
             }
+            // torchに関するエラー(モデル構造やOOMなど)
             catch (const c10::Error &e)
             {
                 std::cerr << e.what() << std::endl;
                 store->onFinished(TrainingStatus::Failed, e.what_without_backtrace());
             }
+            // データ参照などでデータが見つからないなどにtorch外のエラー
+            catch (const std::exception &e)
+            {
+                store->onFinished(TrainingStatus::Failed, e.what());
+            }
+
             catch (...)
             {
                 store->onFinished(TrainingStatus::Failed, "unknown error");
