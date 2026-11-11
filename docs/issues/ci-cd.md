@@ -16,27 +16,28 @@ Jenkins 基盤そのものの経緯は [ci-jenkins.md](../../apps/backend/ai-eng
 
 | 項目 | 決定 | 理由 |
 |---|---|---|
-| CD の方式 | **SSH の強制コマンド**。agent はホストへ SSH し、`/opt/deploy/deploy.sh` しか実行できない鍵でデプロイを依頼する | `docker.sock` を agent に渡さない方針([ci-jenkins.md](../../apps/backend/ai-engine/docs/issues/ci-jenkins.md))を守るため。agent が乗っ取られても「origin/main で再デプロイ」しかできない |
+| CD の方式 | **SSH の強制コマンド**。agent はホストへ SSH し、`/opt/deploy/deploy.sh` しか実行できない鍵でデプロイを依頼する | `docker.sock` を agent に渡さない方針([ci-jenkins.md](../../apps/backend/ai-engine/docs/issues/ci-jenkins.md))を守るため。agent が乗っ取られても「origin/release で再デプロイ」しかできない |
 | CI の範囲 | C++ に加えて Rust と フロントも CI する。**機能(コンポーネント)ごとに agent を分ける**(ラベル `ai-engine` / `api` / `web`) | 既存の方針「agent は開発用 Dockerfile を土台にして、開発環境と CI 環境を一致させる」を各コンポーネントに広げる。ラベル名は Dockerfile(`Dockerfile.ai-engine` / `.api` / `.web`)と揃える(2026-11-11、言語名から変更) |
 | ジョブ定義 | **casc.yaml の Job DSL**(`jobs:`)で Multibranch ジョブを定義する | GUI で作らず、controller を作り直しても再現できるようにする |
-| ブランチ | **Multibranch Pipeline に移行**し、`main` と `feat/*` を見る。`feat/*` は CI だけ、`main` は CI の後にデプロイ | `feat/*` も検証することにした(2026-11-11)。単一ジョブの Branch Specifier に `*/feat/*` を足す方法もあるが、ブランチごとに履歴が分かれず、「main のときだけデプロイ」の条件も自前で書く必要があるため Multibranch にする |
+| ブランチ | **Multibranch Pipeline に移行**し、`main` / `release` / `feat/*` を見る。`feat/*` と `main` は CI だけ、**`release` は CI の後にデプロイ** | `feat/*` も検証することにした(2026-11-11)。単一ジョブの Branch Specifier に `*/feat/*` を足す方法もあるが、ブランチごとに履歴が分かれず、「特定ブランチのときだけデプロイ」の条件も自前で書く必要があるため Multibranch にする |
+| デプロイするブランチ | **`release`**。main は開発の統合先で、本番に出すときに main → release をマージする(2026-11-11、main から変更) | 研究室サーバーでは他の人の学習も動くため、本番に出すタイミングを自分で選べるようにする。複数の変更をまとめて出せ、本番だけを前のコミットに戻すこともできる。既存の運用(`Merge branch 'main' into release`)とも一致する |
 
 ## 完成形
 
 ```
-GitHub ──(定期スキャン、main と feat/*)──→ Jenkins controller (Multibranch)
+GitHub ──(定期スキャン、main / release / feat/*)──→ Jenkins controller (Multibranch)
                                │
          ┌─────────────────────┼─────────────────────┐   ← 並列
          ▼                     ▼                     ▼
    ai-engine agent        api agent             web agent
    cmake / ctest -L cpu   fmt / clippy / test   npm ci / verify / build
          └─────────────────────┼─────────────────────┘
-                               ▼  (main で、CI が全部成功したら)
+                               ▼  (release で、CI が全部成功したら)
                         Deploy ステージ (label 'deploy')
                                │  ssh deploy@ホスト
                                ▼
                  ホスト: /opt/deploy/deploy.sh
-                   学習中なら中止 → git checkout origin/main
+                   学習中なら中止 → git checkout origin/release
                    → compose up -d --build → ヘルスチェック → image prune
 ```
 
@@ -47,8 +48,8 @@ GitHub ──(定期スキャン、main と feat/*)──→ Jenkins controller 
 | 作業 | 内容 | 確認できること |
 |---|---|---|
 | 0 | 既存 agent の Dockerfile 参照を直す | agent をリビルドしても今のジョブが動く |
-| 1 | Multibranch へ移行(C++ だけのまま) | `feat/*` と `main` がそれぞれ別のジョブとしてビルドされる |
-| 2 | CD(deploy ユーザー・deploy.sh・SSH・Deploy ステージ) | `main` にマージすると本番が更新され、`feat/*` ではデプロイされない |
+| 1 | Multibranch へ移行(C++ だけのまま) | `feat/*` / `main` / `release` がそれぞれ別のジョブとしてビルドされる |
+| 2 | CD(deploy ユーザー・deploy.sh・SSH・Deploy ステージ) | `release` にマージすると本番が更新され、`main` と `feat/*` ではデプロイされない |
 | 3 | api / web agent を追加し、Jenkinsfile を機能別ステージにする | 3 コンポーネントの CI が並列で回る |
 | 4 | 通知([ci-jenkins.md](../../apps/backend/ai-engine/docs/issues/ci-jenkins.md) の Phase 3) | 失敗と復旧のときだけ通知が届く |
 
@@ -60,6 +61,8 @@ CD(作業 2)を agent の追加(作業 3)より先にするのは、早く「pus
 
 ## 作業 0: 既存 agent の Dockerfile 参照を直す
 
+> **完了(2026-11-11)**
+
 `.devcontainer/Dockerfile` は `Dockerfile.ai-engine` に改名した(コミット 3ff0918)。
 サーバー上の Jenkins 用 compose の `jenkins-agent` は `dockerfile: Dockerfile` のままなので、次にリビルドすると失敗する。
 
@@ -70,6 +73,8 @@ CD(作業 2)を agent の追加(作業 3)より先にするのは、早く「pus
 
 ## 作業 1: Multibranch Pipeline へ移行
 
+> **完了(2026-11-11)**: Job DSL で `dl-node-editor` ジョブを作成。agent は `ai-engine-agent`(ラベル `ai-engine`)。main / release / feat/* のビルドを確認済み。
+
 > 経緯(2026-11-11): 一度は「main だけで十分」として保留にしたが、`feat/*` も見ることにして再開した。
 
 ### 手順
@@ -78,7 +83,7 @@ CD(作業 2)を agent の追加(作業 3)より先にするのは、早く「pus
 2. [ ] casc.yaml のトップレベル(`jenkins:` と同じ階層)に `jobs:` を足し、Job DSL で Multibranch ジョブを定義する。YAML は `|`(改行を保持)で書く
    - `multibranchPipelineJob('dl-node-editor')`
    - Branch Source: `git { id('dl-node-editor'); remote('git@github.com:HT-lab-git/dl-node-editor'); credentialsId('github-deploy-key') }`。`id` は固定(変えるとブランチのジョブと履歴が作り直される)
-   - traits: `gitBranchDiscovery()` と `headWildcardFilter { includes('main feat/*'); excludes('') }`。traits がないとブランチが検出されない。パターンは必ず文字列で書く(`feat/*` を裸で書くと `/*` がコメントになる)
+   - traits: `gitBranchDiscovery()` と `headWildcardFilter { includes('main release feat/*'); excludes('') }`。traits がないとブランチが検出されない。パターンは必ず文字列で書く(`feat/*` を裸で書くと `/*` がコメントになる)
    - `triggers { periodicFolderTrigger { interval('1h') } }`: 時間帯は指定できないが、スキャンは `git ls-remote` 相当で軽く、ビルドはコミットがあるときだけなので 24 時間で問題ない(9〜22 時の制限は負荷対策だったため不要と判断)
    - `orphanedItemStrategy { discardOldItems { numToKeep(10) } }`: 削除されたブランチのジョブを破棄
    - 正確な構文は `http://<jenkins>/plugin/job-dsl/api-viewer/index.html`(インストール済みプラグインに合わせた API)で確認する
@@ -89,11 +94,12 @@ CD(作業 2)を agent の追加(作業 3)より先にするのは、早く「pus
 
 ### 注意
 
-- `when { branch 'main' }` は Multibranch でだけ使える。作業 2 の Deploy ステージはこれを前提にする
+- `when { branch 'release' }` は Multibranch でだけ使える。作業 2 の Deploy ステージはこれを前提にする
+- Multibranch は GitHub 上の**各ブランチの** Jenkinsfile を使う。Jenkinsfile を変えたら main に入れ、release にもマージする
 - `disableConcurrentBuilds()` は「同じブランチのジョブの同時実行」を防ぐだけ。別ブランチ同士は agent の `numExecutors: 1` によってキューで順番待ちになる
 - Jenkinsfile の `agent { label ... }` は casc.yaml の `labelString` と一致させる。一致しないとビルドが「待機中」のまま止まる。作業 1 の時点では C++ の agent を `ai-engine` にする(下の「ラベルの付け方」)
 
-確認: `feat/SQL` と `main` のそれぞれでジョブが自動作成され、C++ のテストが通る。
+確認: `feat/SQL` / `main` / `release` のそれぞれでジョブが自動作成され、C++ のテストが通る。
 
 ### ラベルの付け方(機能別)
 
@@ -130,7 +136,7 @@ CD(作業 2)を agent の追加(作業 3)より先にするのは、早く「pus
 |---|---|---|
 | 1 | 多重実行の防止 | `flock -n` でロックを取る。取れなければ失敗 |
 | 2 | 学習中なら中止 | ホストから DB を読む: `sqlite3 .deploy/data/api-data/training.db "SELECT count(*) FROM training_runs WHERE status = 'running'"` が 0 でなければ失敗。ホストに `sqlite3` が要る |
-| 3 | ソースの更新 | `git fetch origin` → `git checkout --detach origin/main`。参照先は固定し、外から指定させない |
+| 3 | ソースの更新 | `git fetch origin` → `git checkout --detach origin/release`。参照先は固定し、外から指定させない |
 | 4 | ビルドと起動 | `docker compose -f .deploy/compose.prod.yml up -d --build`。イメージのビルドに失敗した場合、コンテナは作り直されない |
 | 5 | ヘルスチェック | `curl -fsS --retry 10 --retry-delay 3 http://127.0.0.1:25812/api/v1/capabilities`。capabilities は nginx → Rust → C++ を通るので全体の疎通確認になる |
 | 6 | 古いイメージの削除 | `docker image prune -f`。ai-engine のイメージは数 GB あり、デプロイのたびに古いものが残ってディスクを埋めるため |
@@ -156,7 +162,7 @@ command="/opt/deploy/deploy.sh",restrict,from="<Jenkins ネットワークのサ
 2. [ ] ホストの公開鍵(`ssh-keyscan <ホスト>` の結果)を「Secret file」で登録し、`known_hosts` として使う。`StrictHostKeyChecking=no` は使わない
 3. [ ] plugins.txt に `credentials-binding`(`withCredentials` に必要)と `ssh-credentials` があるか確認する
 4. [ ] Jenkinsfile に Deploy ステージを追加する
-   - `when { branch 'main'; beforeAgent true }`: `feat/*` ではデプロイしない。`beforeAgent true` で、main 以外では agent も確保しない(`when { branch }` は Multibranch でだけ効くので、作業 1 が前提)
+   - `when { branch 'release'; beforeAgent true }`: `main` と `feat/*` ではデプロイしない。`beforeAgent true` で、release 以外では agent も確保しない(`when { branch }` は Multibranch でだけ効くので、作業 1 が前提)
    - 前のステージ(テスト)が失敗すると Deploy は実行されない
    - agent は `label 'deploy'`(C++ の `ci-agent` に付けるラベル。`openssh-client` が入っている)
    - `withCredentials([sshUserPrivateKey(...), file(...)])` で鍵と known_hosts を受け取り、`ssh -i "$KEY" -o UserKnownHostsFile="$KNOWN_HOSTS" deploy@<ホスト>` を実行する
@@ -167,7 +173,7 @@ command="/opt/deploy/deploy.sh",restrict,from="<Jenkins ネットワークのサ
 
 1. [ ] ホストで `sudo -u deploy /opt/deploy/deploy.sh` → スクリプト単体で動く
 2. [ ] 手元から `ssh -i <鍵> deploy@<ホスト>` → スクリプトが実行される。さらに `ssh -i <鍵> deploy@<ホスト> ls` で、`ls` ではなくスクリプトが実行されること(強制コマンドが効いていること)を確かめる
-3. [ ] main に push → Jenkins の Deploy ステージから本番が更新される。学習中に push して、デプロイが中止されることも確かめる
+3. [ ] main → release をマージして push → Jenkins の Deploy ステージから本番が更新される。main への push ではデプロイされないこと、学習中に release を push するとデプロイが中止されることも確かめる
 
 ### 既知の制約
 
@@ -210,7 +216,7 @@ command="/opt/deploy/deploy.sh",restrict,from="<Jenkins ネットワークのサ
 | C++ | `ai-engine` | `cmake -S . -B build -G Ninja` → `cmake --build build -j2` → `ctest --test-dir build --output-on-failure -j2 -L cpu` | `apps/backend/ai-engine` |
 | Rust | `api` | `cargo fmt --check` → `cargo clippy --all-targets -- -D warnings` → `cargo test` | `apps/backend/api` |
 | Web | `web` | `npm ci` → `npm run verify` → `npm run build` | `apps/frontend` |
-| Deploy | `deploy` | 作業 2 のとおり(parallel の後に置く。`when { branch 'main' }`) | - |
+| Deploy | `deploy` | 作業 2 のとおり(parallel の後に置く。`when { branch 'release' }`) | - |
 
 - Rust の `build.rs` は `../../../proto` を、フロントのテストは `../../../backend/ai-engine/modelconfigs/...` を読む。どちらもリポジトリ全体が checkout されるので問題ない
 - sqlx はコンパイル時チェックのマクロ(`query!`)を使っていないので、Rust の CI に DB は要らない
@@ -218,7 +224,7 @@ command="/opt/deploy/deploy.sh",restrict,from="<Jenkins ネットワークのサ
 - **初回は clippy や fmt で落ちる可能性がある**。まず `-D warnings` なしで回し、指摘を直してから厳しくする、でもよい
 - 並列にすると、3 つの agent が同時に CPU を使う。サーバーの負荷が気になるなら `parallel` をやめて順番に実行する
 
-確認: `feat/*` に push して、3 ステージが並列で動き、それぞれ成功・失敗が独立に表示される(Deploy はスキップされる)。main ではどれか 1 つでも失敗すると Deploy に進まない。
+確認: `feat/*` に push して、3 ステージが並列で動き、それぞれ成功・失敗が独立に表示される(Deploy はスキップされる)。release ではどれか 1 つでも失敗すると Deploy に進まない。
 
 ## 作業 4: 通知
 
