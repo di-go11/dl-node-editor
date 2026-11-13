@@ -732,14 +732,26 @@ mod tests {
         }"#;
         let graph = from_json(json).unwrap();
         assert_eq!(graph.nodes.len(), 2);
-        assert!(matches!(graph.nodes[0].spec, NodeSpec::Conv2D(Conv2DSpec { out_channels: 8, .. })));
+        assert!(matches!(
+            graph.nodes[0].spec,
+            NodeSpec::Conv2D(Conv2DSpec {
+                out_channels: 8,
+                ..
+            })
+        ));
         assert!(matches!(graph.nodes[1].spec, NodeSpec::Concat(ConcatSpec)));
-        assert_eq!(graph.nodes[1].inputs[0].source.as_ref().unwrap().node_id, "conv");
+        assert_eq!(
+            graph.nodes[1].inputs[0].source.as_ref().unwrap().node_id,
+            "conv"
+        );
     }
 
     #[test]
     fn broken_json_is_error() {
         assert!(from_json("not json").is_err());
-        assert!(from_json(r#"{"nodes": [{"id": "a", "spec": {"type": "unknown"}, "inputs": []}], "outputs": []}"#).is_err());
+        assert!(from_json(
+            r#"{"nodes": [{"id": "a", "spec": {"type": "unknown"}, "inputs": []}], "outputs": []}"#
+        )
+        .is_err());
     }
 }

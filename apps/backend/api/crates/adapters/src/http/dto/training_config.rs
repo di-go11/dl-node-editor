@@ -1,7 +1,7 @@
-use entities::training::JobId;
 use entities::training::config::Loss as LossConfig;
 use entities::training::config::Optimizer as OptimizerConfig;
 use entities::training::config::TrainingConfig;
+use entities::training::JobId;
 use serde::{Deserialize, Serialize};
 use usecases::training::ResumeTrainingConfig;
 

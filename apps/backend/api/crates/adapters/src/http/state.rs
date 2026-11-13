@@ -98,8 +98,7 @@ where
 }
 
 impl<C, S, R, G, K, V, P, T, D, MSummary, MConfig>
-    FromRef<AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig>>
-    for Arc<GetTrainingProcess<P>>
+    FromRef<AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig>> for Arc<GetTrainingProcess<P>>
 where
     C: CapabilityProvider,
     V: TrainingRecordReader,

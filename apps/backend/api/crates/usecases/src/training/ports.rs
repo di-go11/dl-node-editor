@@ -1,5 +1,8 @@
 use entities::training::config::TrainingConfig;
-use entities::{model::ModelId, training::{JobId, TrainingJobStatus}};
+use entities::{
+    model::ModelId,
+    training::{JobId, TrainingJobStatus},
+};
 
 use super::error::{StartTrainingError, StopTrainingError};
 

@@ -1,7 +1,10 @@
 use std::result;
 
 use axum::http::{request, response};
-use entities::{model::ModelId, training::{config::TrainingConfig, JobId}};
+use entities::{
+    model::ModelId,
+    training::{config::TrainingConfig, JobId},
+};
 use tonic::{transport::Channel, Code, Status};
 use usecases::training::StartTrainingError;
 use usecases::training::{TrainingResumer, TrainingStarter};

@@ -4,8 +4,8 @@ use super::ModelIdGenerator;
 use super::TrainingRunRegistar;
 use super::TrainingStarter;
 use super::error::StartTrainingError;
-use entities::training::JobId;
 use entities::model::ModelId;
+use entities::training::JobId;
 use entities::training::config::TrainingConfig;
 
 pub struct StartTraining<S, R, G, K> {
@@ -60,7 +60,10 @@ mod tests {
         DataSpec, ImageAnnotationConfig, ImageSpec, ImageTaskSpec, Loss, Optimizer,
         PascalVocConfig, SegmentationSpec, TrainingConfig,
     };
-    use entities::{model::ModelId, training::{JobId, TrainingJobStatus}};
+    use entities::{
+        model::ModelId,
+        training::{JobId, TrainingJobStatus},
+    };
     use std::sync::{Arc, Mutex};
 
     // Conv2D -> ReLU -> Conv2D の最小構成のセグメンテーションモデル

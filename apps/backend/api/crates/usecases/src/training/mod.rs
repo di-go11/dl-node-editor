@@ -11,6 +11,7 @@ mod start_training;
 mod stop_training;
 mod validate_training_config;
 
+pub use config::ResumeTrainingConfig;
 pub use error::{
     RecordError, RepositoryError, ResumeTrainingError, StartTrainingError, StopTrainingError,
     TrainingProgressProviderError, ValidateTrainingConfigError,
@@ -23,7 +24,6 @@ pub use record_training_process::{
     RecordTrainingProgress, TrainingProgressRecorder, TrainingRunRegistar,
 };
 pub use resume_recording::ResumeProgressRecordings;
-pub use config::ResumeTrainingConfig;
 pub use resume_training::ResumeTraining;
 pub use start_training::StartTraining;
 pub use stop_training::StopTraining;

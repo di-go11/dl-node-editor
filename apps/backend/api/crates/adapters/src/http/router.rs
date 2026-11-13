@@ -1,7 +1,6 @@
 use super::handler::{
-    get_capabilities, get_model_config, get_model_lists, get_training_process,
-    get_training_status, resume_training, start_training, stop_training, stream_training_process,
-    validate_training,
+    get_capabilities, get_model_config, get_model_lists, get_training_process, get_training_status,
+    resume_training, start_training, stop_training, stream_training_process, validate_training,
 };
 
 use super::state::AppState;
@@ -56,7 +55,10 @@ where
             .route("/trainings/{job_id}/status", get(get_training_status::<P>))
             // 学習済みモデル(学習再開の画面用)
             .route("/models", get(get_model_lists::<MSummary>))
-            .route("/models/{model_id}/config", get(get_model_config::<MConfig>))
+            .route(
+                "/models/{model_id}/config",
+                get(get_model_config::<MConfig>),
+            )
             .route(
                 "/models/{model_id}/resume",
                 post(resume_training::<MConfig, S, R, K>),

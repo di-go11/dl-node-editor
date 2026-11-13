@@ -1,5 +1,5 @@
-use entities::training::JobId;
 use entities::model::ModelId;
+use entities::training::JobId;
 
 use super::RecordError;
 use futures_util::Future;

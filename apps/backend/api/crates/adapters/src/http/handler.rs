@@ -3,21 +3,21 @@ use super::dto::{
     StartTrainingResponseDto, TrainingConfigDto, TrainingJobStatusDto, TrainingProcessDto,
 };
 use axum::{
-    Json,
     extract::{Path, State},
     http::StatusCode,
+    Json,
 };
 use entities::{
     model::ModelId,
-    training::{JobId, TrainingProcess, config::TrainingConfig},
+    training::{config::TrainingConfig, JobId, TrainingProcess},
 };
 use futures_util::StreamExt;
 use usecases::{
     capabilities::{CapabilityProvider, GetCapabilities},
     model::{
-        GetModelSummary, GetModelTrainingConfig,
         error::{FetchModelError, ModelRepositoryError},
         ports::{ModelSummaryProvider, ModelTrainingConfigProvider},
+        GetModelSummary, GetModelTrainingConfig,
     },
     training::{
         GetTrainingProcess, ModelIdGenerator, ProgressRecordingScheduler, ResumeTraining,

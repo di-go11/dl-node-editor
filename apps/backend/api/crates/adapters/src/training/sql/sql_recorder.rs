@@ -2,12 +2,12 @@ use super::SqliteTrainingRepository;
 use crate::model;
 use chrono::Utc;
 use entities::model::ModelGraph;
+use entities::model::ModelId;
 use entities::training::config::{
     DataSpec, ImageAnnotationConfig, ImageTaskSpec, Loss, Optimizer, TrainingConfig,
 };
 use entities::training::JobId;
 use entities::training::Metrics;
-use entities::model::ModelId;
 use entities::training::TrainingJobStatus;
 use entities::training::TrainingProcess;
 
@@ -23,8 +23,8 @@ impl TrainingRunRegistar for SqliteTrainingRepository {
         model_graph: &ModelGraph,
     ) -> Result<(), RecordError> {
         // JSON の形は model::graph_json が決める(HTTP の DTO とは独立)
-        let model_graph_json = model::to_json(model_graph)
-            .map_err(|e| RepositoryError::InvalidData(e.to_string()))?;
+        let model_graph_json =
+            model::to_json(model_graph).map_err(|e| RepositoryError::InvalidData(e.to_string()))?;
         sqlx::query(
             "INSERT INTO model (model_id,model_name,model_graph,created_at)VALUES (?,?,?,?)",
         )
@@ -32,9 +32,9 @@ impl TrainingRunRegistar for SqliteTrainingRepository {
         .bind(model_name)
         .bind(model_graph_json)
         .bind(Utc::now())
-            .execute(&self.pool)
-            .await
-            .map_err(|e| RepositoryError::QueryFailed(e.to_string()))?;
+        .execute(&self.pool)
+        .await
+        .map_err(|e| RepositoryError::QueryFailed(e.to_string()))?;
         Ok(())
     }
     async fn insert_training_run(
