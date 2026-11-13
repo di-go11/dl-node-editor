@@ -224,7 +224,9 @@ mod tests {
         job_ids: Mutex<Vec<JobId>>,
     }
     impl ProgressRecordingScheduler for FakeScheduler {
-        fn schedule(&self, job_id: JobId) {}
+        fn schedule(&self, job_id: JobId) {
+            self.job_ids.lock().unwrap().push(job_id);
+        }
     }
 
     fn gen_usecase(

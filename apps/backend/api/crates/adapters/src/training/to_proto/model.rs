@@ -37,10 +37,7 @@ impl From<&NodeInput> for model_pb::NodeInput {
     fn from(value: &NodeInput) -> Self {
         model_pb::NodeInput {
             port: value.port.clone(),
-            source: match &value.source {
-                Some(port_ref) => Some((port_ref).into()),
-                None => None,
-            },
+            source: value.source.as_ref().map(Into::into),
         }
     }
 }

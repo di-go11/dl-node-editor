@@ -50,7 +50,7 @@ mod tests {
     #[test]
     fn non_empty_job_id_is_accepted() {
         let result = JobId::new("1");
-        assert!(matches!(result, Ok(_)));
+        assert!(result.is_ok());
     }
 
     #[test]

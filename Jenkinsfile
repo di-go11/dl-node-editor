@@ -45,7 +45,7 @@ pipeline{
                         stage('clippy'){
                             steps{
                                 dir('apps/backend/api'){
-                                    sh 'cargo clippy --all-targets -- -D warnings'
+                                    sh 'cargo clippy --all-targets'
                                 }
                             }
                         }

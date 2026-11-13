@@ -1,5 +1,5 @@
-mod capabilities;
+mod capability_set;
 mod device_type;
 
-pub use capabilities::{Capabilities, CapabilitiesError};
+pub use capability_set::{Capabilities, CapabilitiesError};
 pub use device_type::{Device, DeviceType};

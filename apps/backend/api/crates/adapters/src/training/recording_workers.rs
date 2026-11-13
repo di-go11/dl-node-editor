@@ -63,15 +63,15 @@ mod tests {
     use super::*;
     #[tokio::test]
     async fn test_two_times_same_job_id() -> Result<(), Box<dyn std::error::Error>> {
-        let (schedule, mut rx) = recording_channel();
-        let mut count = Arc::new(AtomicUsize::new(0));
+        let (schedule, rx) = recording_channel();
+        let count = Arc::new(AtomicUsize::new(0));
         let job_id = JobId::new("1".to_string())?;
         schedule.schedule(job_id.clone());
         schedule.schedule(job_id);
         drop(schedule); // チャネルを閉じる。->タスク終了後にワーカーが終了する
 
         let c = Arc::clone(&count);
-        let record = |job_id: JobId| {
+        let record = |_job_id: JobId| {
             c.fetch_add(1, Ordering::SeqCst); //起動された回数を共有カウンタで数える
             async {
                 // 記録が続いている状況を再現する（1回目がまだ動いている間に2回目が届くようにする
@@ -84,11 +84,11 @@ mod tests {
     }
     #[tokio::test(start_paused = true)]
     async fn test_work_same_job_id_after_finished_first() {
-        let (schedule, mut rx) = recording_channel();
-        let mut count = Arc::new(AtomicUsize::new(0));
+        let (schedule, rx) = recording_channel();
+        let count = Arc::new(AtomicUsize::new(0));
 
         let c = Arc::clone(&count);
-        let record = move |job_id: JobId| {
+        let record = move |_job_id: JobId| {
             c.fetch_add(1, Ordering::SeqCst); //起動された回数を共有カウンタで数える
             async {
                 tokio::time::sleep(std::time::Duration::from_secs(10)).await;

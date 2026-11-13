@@ -1,6 +1,3 @@
-use std::result;
-
-use axum::http::{request, response};
 use entities::{
     model::ModelId,
     training::{config::TrainingConfig, JobId},

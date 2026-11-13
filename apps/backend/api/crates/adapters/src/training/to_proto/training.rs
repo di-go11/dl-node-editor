@@ -2,7 +2,7 @@ use crate::pb::training::v1::{self as training_pb};
 
 use entities::training::config::TrainingConfig;
 use entities::training::config::{Loss, Optimizer};
-use entities::{model::ModelId, training::JobId};
+use entities::training::JobId;
 
 use crate::pb::training::v1::optimizer_config::Config as OptimizerConfig;
 
@@ -31,13 +31,13 @@ impl From<&TrainingConfig> for training_pb::StartTrainingRequest {
             device: value.device.clone(),
             data_spec: Some((&value.data_spec).into()),
             save_last_every: value.save_last_every,
-            // 新規学習では再開しないので空にする(proto 側は「空文字列なら再開しない」)。
-            // 学習再開は proto の resume フラグと <model_id>_last.pt で行う予定のため、resume_from は使わない
-            resume_from: String::new(),
             // proto 側は Seed で包んで「未指定」と 0 を区別するので、Some の中身だけ包む
             seed: value.seed.map(|v| training_pb::Seed { value: v }),
             model_id: String::new(),
             resume: false,
+            // resume_from は deprecated(学習再開は resume フラグと <model_id>_last.pt で行う)。
+            // 名前で書くと deprecated 警告になるので、既定値(空文字列=再開しない)に任せる
+            ..Default::default()
         }
     }
 }
@@ -95,13 +95,13 @@ impl From<&Optimizer> for training_pb::OptimizerConfig {
 impl From<&Loss> for training_pb::LossConfig {
     fn from(value: &Loss) -> Self {
         match value {
-            Loss::CrossEntropy {} => training_pb::LossConfig {
+            Loss::CrossEntropy => training_pb::LossConfig {
                 config: Some(LossConfig::CrossEntropy(training_pb::CrossEntropyConfig {})),
             },
-            Loss::Mse {} => training_pb::LossConfig {
+            Loss::Mse => training_pb::LossConfig {
                 config: Some(LossConfig::Mse(training_pb::MseLossConfig {})),
             },
-            Loss::Dice {} => training_pb::LossConfig {
+            Loss::Dice => training_pb::LossConfig {
                 config: Some(LossConfig::Dice(training_pb::DiceLossConfig {})),
             },
             Loss::Focal { gamma, alpha } => training_pb::LossConfig {
@@ -115,7 +115,7 @@ impl From<&Loss> for training_pb::LossConfig {
                     alpha: *alpha,
                 })),
             },
-            Loss::Boundary {} => training_pb::LossConfig {
+            Loss::Boundary => training_pb::LossConfig {
                 config: Some(LossConfig::Boundary(training_pb::BoundaryLossConfig {})),
             },
         }

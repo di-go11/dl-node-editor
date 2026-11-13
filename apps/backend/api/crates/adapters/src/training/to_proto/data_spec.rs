@@ -42,11 +42,9 @@ impl From<&ImageAnnotationConfig> for training_pb::ImageAnnotationConfig {
 impl From<&ImageTaskSpec> for training_pb::ImageTaskSpecs {
     fn from(value: &ImageTaskSpec) -> Self {
         let spec = match value {
-            ImageTaskSpec::Classification {} => {
-                training_pb::image_task_specs::Spec::Classification(
-                    training_pb::ClassificationSpec {},
-                )
-            }
+            ImageTaskSpec::Classification => training_pb::image_task_specs::Spec::Classification(
+                training_pb::ClassificationSpec {},
+            ),
             ImageTaskSpec::Segmentation(segmentation_spec) => {
                 training_pb::image_task_specs::Spec::Segmentation(training_pb::SegmentationSpec {
                     ignore_index: segmentation_spec.ignore_index,
