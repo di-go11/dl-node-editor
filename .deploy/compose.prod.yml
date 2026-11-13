@@ -1,4 +1,4 @@
-name: easy-deeplearning-creator
+name: dl-node-editor
 services:
   ai-engine:
     build:
