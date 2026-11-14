@@ -2,6 +2,14 @@
     "folders": [
         {
             "path": "."
+        },
+        {
+            "path": "../../../docs/issues",
+            "name": "issues"
+        },
+        {
+            "path": "../../../docs/notes",
+            "name": "notes"
         }
     ],
     "settings": {
