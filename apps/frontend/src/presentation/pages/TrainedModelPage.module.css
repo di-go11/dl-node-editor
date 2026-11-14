@@ -1,4 +1,4 @@
-/* 学習再開の 2 画面(一覧 /resume と設定 /resume/:modelId)で共有する */
+/* 学習済みモデルの 2 画面(一覧 /models と詳細 /models/:modelId)で共有する */
 
 .page {
   display: grid;

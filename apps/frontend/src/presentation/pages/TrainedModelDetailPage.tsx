@@ -13,10 +13,10 @@ import { useDependencies } from '../app/dependencies'
 import { useCapabilities } from '../components/header/use-capabilities'
 import { TrainingForm } from '../components/training-form/TrainingForm'
 
-import styles from './ResumePage.module.css'
+import styles from './TrainedModelPage.module.css'
 
 /**
- * 学習再開の設定画面(/resume/:modelId。issue doc 作業 7)。
+ * 学習済みモデルの詳細画面(/models/:modelId。今は学習再開の設定のみ。issue doc 作業 7)。
  *
  *   [← 一覧]  学習再開: <モデル名>   状態   [学習再開]
  *   モデル名・タスク・完了エポック数(表示だけ)
@@ -28,7 +28,7 @@ import styles from './ResumePage.module.css'
  * 整合性チェックのボタンはない。フォームの検証で問題がなければ再開でき、DB との整合性は
  * サーバーが再開 API の中で確かめる。再開できたら進捗画面に移る。
  */
-export function ResumeSettingsPage() {
+export function TrainedModelDetailPage() {
   const { modelId } = useParams()
   // ルートの定義上 modelId は必ずある。ないのはルーティングの誤り
   if (modelId === undefined) return <p role="alert">モデルが指定されていません。</p>
@@ -88,7 +88,7 @@ function ResumeSettingsLoader({ modelId }: { readonly modelId: string }) {
   return (
     <div className={styles.page}>
       <header className={styles.header}>
-        <Link to="/resume" className={styles.back}>
+        <Link to="/models" className={styles.back}>
           ← 一覧
         </Link>
         <h1 className={styles.title}>学習再開</h1>
@@ -169,7 +169,7 @@ function ResumeSettingsContent({
   return (
     <div className={styles.page}>
       <header className={styles.header}>
-        <Link to="/resume" className={styles.back}>
+        <Link to="/models" className={styles.back}>
           ← 一覧
         </Link>
         <h1 className={styles.title}>学習再開: {summary.modelName}</h1>

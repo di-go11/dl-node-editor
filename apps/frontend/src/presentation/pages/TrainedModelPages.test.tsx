@@ -11,8 +11,8 @@ import { defaultTrainingSettings } from '../../entity/training/training-settings
 import { DependenciesContext } from '../app/dependencies'
 import { fakeDependencies } from '../test-utils/fake-dependencies'
 
-import { ResumeListPage } from './ResumeListPage'
-import { ResumeSettingsPage } from './ResumeSettingsPage'
+import { TrainedModelListPage } from './TrainedModelListPage'
+import { TrainedModelDetailPage } from './TrainedModelDetailPage'
 
 /**
  * 学習再開の 2 画面(issue doc 作業 7)を、偽物の TrainedModelApi で描いて確かめる。
@@ -63,8 +63,8 @@ function renderAt(path: string, api: Partial<TrainedModelApi> = {}) {
     <DependenciesContext value={fakeDependencies({ trainedModelApi })}>
       <MemoryRouter initialEntries={[path]}>
         <Routes>
-          <Route path="/resume" element={<ResumeListPage />} />
-          <Route path="/resume/:modelId" element={<ResumeSettingsPage />} />
+          <Route path="/models" element={<TrainedModelListPage />} />
+          <Route path="/models/:modelId" element={<TrainedModelDetailPage />} />
           <Route path="/progress/:jobId" element={<ProgressStub />} />
         </Routes>
       </MemoryRouter>
@@ -75,20 +75,20 @@ function renderAt(path: string, api: Partial<TrainedModelApi> = {}) {
 
 const resumeButton = () => screen.getByRole('button', { name: '学習再開' })
 
-describe('学習再開の一覧', () => {
-  it('学習済みモデルを並べ、選ぶと再開の設定画面へ移る', async () => {
-    renderAt('/resume')
+describe('学習済みモデルの一覧', () => {
+  it('学習済みモデルを並べ、選ぶと詳細画面へ移る', async () => {
+    renderAt('/models')
     const table = await screen.findByRole('table', { name: '学習済みモデル' })
     expect(table).toHaveTextContent('segnet')
     expect(table).toHaveTextContent('セグメンテーション')
     expect(table).toHaveTextContent('停止')
 
-    await userEvent.click(screen.getByRole('link', { name: '再開' }))
+    await userEvent.click(screen.getByRole('link', { name: 'パラメータ一覧&学習再開' }))
     expect(await screen.findByRole('heading', { name: '学習再開: segnet' })).toBeInTheDocument()
   })
 
   it('モデル構造がないモデルは再開できない', async () => {
-    renderAt('/resume', {
+    renderAt('/models', {
       list: () => Promise.resolve(apiOk([{ ...summary, resumable: false }])),
     })
     expect(await screen.findByText('再開できません')).toBeInTheDocument()
@@ -98,7 +98,7 @@ describe('学習再開の一覧', () => {
 
 describe('学習再開の設定', () => {
   it('変えられない欄(モデル名・seed・データ)を出さず、optimizer の種類は選べない', async () => {
-    renderAt('/resume/model-1')
+    renderAt('/models/model-1')
     await screen.findByRole('heading', { name: '学習再開: segnet' })
 
     expect(screen.queryByRole('textbox', { name: /モデル名/ })).not.toBeInTheDocument()
@@ -110,7 +110,7 @@ describe('学習再開の設定', () => {
   })
 
   it('epoch が完了済みのエポック数以下なら、理由を出して再開できない', async () => {
-    renderAt('/resume/model-1', {
+    renderAt('/models/model-1', {
       getConfig: () => Promise.resolve(apiOk({ ...savedSettings, epoch: 5 })),
     })
     await screen.findByRole('heading', { name: '学習再開: segnet' })
@@ -120,7 +120,7 @@ describe('学習再開の設定', () => {
   })
 
   it('再開できたら、進捗画面へ移る', async () => {
-    const { resume } = renderAt('/resume/model-1')
+    const { resume } = renderAt('/models/model-1')
     await screen.findByRole('heading', { name: '学習再開: segnet' })
 
     await userEvent.click(resumeButton())

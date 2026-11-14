@@ -7,15 +7,15 @@ import { IMAGE_TASK_TYPES } from '../../entity/training/data-spec'
 import { TRAINING_STATUS_LABELS } from '../../entity/training/progress'
 import { useDependencies } from '../app/dependencies'
 
-import styles from './ResumePage.module.css'
+import styles from './TrainedModelPage.module.css'
 
 /**
- * 学習再開の一覧画面(/resume。issue doc 作業 7)。
+ * 学習済みモデルの一覧画面(/models。issue doc 作業 7)。
  *
- *   [← エディタ]  学習再開
- *   名前 | タスク | 最終学習日時 | 状態 | 完了エポック数 | [再開]
+ *   [← エディタ]  モデル一覧
+ *   名前 | タスク | 最終学習日時 | 状態 | 完了エポック数 | [パラメータ一覧&学習再開]
  *
- * 学習済みのモデルを一覧にし、選ぶと再開の設定画面(/resume/:modelId)に移る。
+ * 学習済みのモデルを一覧にし、選ぶと詳細画面(/models/:modelId)に移る。
  * エディタの文書(グラフや学習設定)は使わない。再開するモデルの構造はサーバーが持っている。
  */
 
@@ -24,7 +24,7 @@ type ListState =
   | { readonly status: 'ready'; readonly models: readonly TrainedModelSummary[] }
   | { readonly status: 'error'; readonly error: ApiError }
 
-export function ResumeListPage() {
+export function TrainedModelListPage() {
   const { trainedModelApi } = useDependencies()
   const [state, setState] = useState<ListState>({ status: 'loading' })
 
@@ -50,7 +50,7 @@ export function ResumeListPage() {
         <Link to="/" className={styles.back}>
           ← エディタ
         </Link>
-        <h1 className={styles.title}>学習再開</h1>
+        <h1 className={styles.title}>モデル一覧</h1>
       </header>
 
       <main className={styles.main}>
@@ -62,7 +62,8 @@ export function ResumeListPage() {
         )}
         {state.status === 'ready' && state.models.length === 0 && (
           <p className={styles.muted}>
-            学習済みのモデルはまだありません。エディタの [学習開始] から学習すると、ここに表示されます。
+            学習済みのモデルはまだありません。エディタの [学習開始]
+            から学習すると、ここに表示されます。
           </p>
         )}
         {state.status === 'ready' && state.models.length > 0 && (
@@ -105,7 +106,9 @@ function ModelTable({ models }: { readonly models: readonly TrainedModelSummary[
             <td className={styles.number}>{model.completedEpochs}</td>
             <td>
               {model.resumable ? (
-                <Link to={`/resume/${encodeURIComponent(model.modelId)}`}>再開</Link>
+                <Link to={`/models/${encodeURIComponent(model.modelId)}`}>
+                  パラメータ一覧&学習再開
+                </Link>
               ) : (
                 <span className={styles.muted} title="モデル構造が保存されていない古いモデルです">
                   再開できません
