@@ -2,8 +2,6 @@
 CREATE TABLE model (
     model_id TEXT PRIMARY KEY,
     model_name TEXT NOT NULL UNIQUE,
-    -- TODO: ModelGraphのJSON化を実装するまで保存しない
-    -- model_graph TEXT NOT NULL, --JSONのメタデータ
     created_at DATETIME NOT NULL
 );
 

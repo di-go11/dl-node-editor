@@ -1,8 +1,10 @@
 pub mod capabilities;
 pub mod database;
+mod dataset;
 pub mod http;
 mod model;
 pub mod training;
+pub mod utils;
 
 pub use capabilities::GrpcCapabilityProvider;
 pub use database::connect_database;
