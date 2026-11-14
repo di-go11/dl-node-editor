@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use crate::dataset::{
     dataset_id_generator::DatasetIdGenerator,
     error::DatasetError,

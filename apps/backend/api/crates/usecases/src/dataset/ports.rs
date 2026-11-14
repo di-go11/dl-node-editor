@@ -38,5 +38,5 @@ pub trait DatasetCaller {
 }
 
 pub trait DatasetReader {
-    fn read(&self) -> impl Future<Output = Result<Vec<Dataset>, DatasetError>>;
+    fn read(&self) -> impl Future<Output = Result<Vec<DatasetConfig>, DatasetError>>;
 }

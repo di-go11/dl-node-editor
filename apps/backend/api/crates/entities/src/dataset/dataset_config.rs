@@ -1,3 +1,5 @@
+use thiserror::Error;
+
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub struct DatasetConfig {
     pub dataset_id: DatasetId,
@@ -16,9 +18,6 @@ pub enum DatasetIdError {
     #[error("dataset id must not be empty")]
     Empty,
 }
-
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub struct DatasetId(String);
 
 impl DatasetId {
     pub fn new(value: impl Into<String>) -> Result<Self, DatasetIdError> {
