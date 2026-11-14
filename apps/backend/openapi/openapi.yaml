@@ -49,14 +49,14 @@ paths:
       summary: 使えるデバイスの一覧を取得する
       description: 学習設定画面の device の選択肢と、エディタ画面ヘッダのデバイス表示に使う。
       responses:
-        '200':
+        "200":
           description: 取得できた
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CapabilitiesResponse'
-        '502':
-          $ref: '#/components/responses/UpstreamError'
+                $ref: "#/components/schemas/CapabilitiesResponse"
+        "502":
+          $ref: "#/components/responses/UpstreamError"
 
   /trainings:
     post:
@@ -72,20 +72,20 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/StartTrainingRequest'
+              $ref: "#/components/schemas/StartTrainingRequest"
       responses:
-        '200':
+        "200":
           description: 受理した
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StartTrainingResponse'
-        '409':
+                $ref: "#/components/schemas/StartTrainingResponse"
+        "409":
           description: すでに学習が実行中
-        '422':
+        "422":
           description: リクエストの形が合わない、または C++ が設定を拒否した
-        '502':
-          $ref: '#/components/responses/UpstreamError'
+        "502":
+          $ref: "#/components/responses/UpstreamError"
 
   /trainings/validate:
     post:
@@ -100,15 +100,15 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/StartTrainingRequest'
+              $ref: "#/components/schemas/StartTrainingRequest"
       responses:
-        '204':
+        "204":
           description: 問題なし。学習を開始できる
-        '409':
+        "409":
           description: model_name がすでに使用されている
-        '422':
+        "422":
           description: リクエストの形が合わない
-        '500':
+        "500":
           description: DB の読み取りに失敗した
 
   /trainings/{job_id}:
@@ -118,20 +118,20 @@ paths:
       summary: 学習プロセス全体の現在の状態を取得する
       description: SSE の progress イベントの data と同じ形を返す。
       parameters:
-        - $ref: '#/components/parameters/JobId'
+        - $ref: "#/components/parameters/JobId"
       responses:
-        '200':
+        "200":
           description: 取得できた
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TrainingProcess'
-        '400':
-          $ref: '#/components/responses/InvalidJobId'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '502':
-          $ref: '#/components/responses/UpstreamError'
+                $ref: "#/components/schemas/TrainingProcess"
+        "400":
+          $ref: "#/components/responses/InvalidJobId"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "502":
+          $ref: "#/components/responses/UpstreamError"
 
   /trainings/{job_id}/status:
     get:
@@ -139,20 +139,20 @@ paths:
       operationId: getTrainingStatus
       summary: 学習の状態だけを取得する
       parameters:
-        - $ref: '#/components/parameters/JobId'
+        - $ref: "#/components/parameters/JobId"
       responses:
-        '200':
+        "200":
           description: 取得できた
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TrainingStatusResponse'
-        '400':
-          $ref: '#/components/responses/InvalidJobId'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '502':
-          $ref: '#/components/responses/UpstreamError'
+                $ref: "#/components/schemas/TrainingStatusResponse"
+        "400":
+          $ref: "#/components/responses/InvalidJobId"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "502":
+          $ref: "#/components/responses/UpstreamError"
 
   /trainings/{job_id}/progress:
     get:
@@ -168,20 +168,20 @@ paths:
           クライアントは EventSource.close() を呼ぶ。
         - openapi-fetch は SSE を扱えないため、フロントは EventSource を使う。
       parameters:
-        - $ref: '#/components/parameters/JobId'
+        - $ref: "#/components/parameters/JobId"
       responses:
-        '200':
+        "200":
           description: ストリームを開始した
           content:
             text/event-stream:
               schema:
-                $ref: '#/components/schemas/TrainingProcess'
-        '400':
-          $ref: '#/components/responses/InvalidJobId'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '502':
-          $ref: '#/components/responses/UpstreamError'
+                $ref: "#/components/schemas/TrainingProcess"
+        "400":
+          $ref: "#/components/responses/InvalidJobId"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "502":
+          $ref: "#/components/responses/UpstreamError"
 
   /trainings/{job_id}/stop:
     post:
@@ -192,20 +192,20 @@ paths:
         停止はエポックの区切りで行われるので、応答の status が running でも正常である。
         停止の完了は SSE の stopped で分かる。停止済みのジョブを停止しても 200 を返す。
       parameters:
-        - $ref: '#/components/parameters/JobId'
+        - $ref: "#/components/parameters/JobId"
       responses:
-        '200':
+        "200":
           description: 停止要求を受け付けた
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TrainingStatusResponse'
-        '400':
-          $ref: '#/components/responses/InvalidJobId'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '502':
-          $ref: '#/components/responses/UpstreamError'
+                $ref: "#/components/schemas/TrainingStatusResponse"
+        "400":
+          $ref: "#/components/responses/InvalidJobId"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "502":
+          $ref: "#/components/responses/UpstreamError"
 
   /models:
     get:
@@ -213,16 +213,16 @@ paths:
       operationId: listModels
       summary: 学習済みモデルの一覧を取得する
       description: |
-        学習再開画面(/resume)の一覧に使う。最近学習した(最新の run を始めた)モデルが先に並ぶ。
+        パラメータ一覧&学習再開(/models)の一覧に使う。最近学習した(最新の run を始めた)モデルが先に並ぶ。
         学習の記録(run)が 1 件もないモデルは含めない。0 件でも 200 で空の配列を返す。
       responses:
-        '200':
+        "200":
           description: 取得できた
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ModelSummariesResponse'
-        '500':
+                $ref: "#/components/schemas/ModelSummariesResponse"
+        "500":
           description: DB の読み取りに失敗した
 
   /models/{model_id}/config:
@@ -234,21 +234,21 @@ paths:
         再開フォームの初期値と、固定項目(model_name / data_spec / optimizer の type など)の表示に使う。
         /models/{model_id}/resume には、この応答のうち変えてよい項目(ResumeTrainingConfig)だけを送る。
       parameters:
-        - $ref: '#/components/parameters/ModelId'
+        - $ref: "#/components/parameters/ModelId"
       responses:
-        '200':
+        "200":
           description: 取得できた
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ModelTrainingConfig'
-        '400':
-          $ref: '#/components/responses/InvalidModelId'
-        '404':
-          $ref: '#/components/responses/ModelNotFound'
-        '409':
+                $ref: "#/components/schemas/ModelTrainingConfig"
+        "400":
+          $ref: "#/components/responses/InvalidModelId"
+        "404":
+          $ref: "#/components/responses/ModelNotFound"
+        "409":
           description: モデル構造が保存されていない古いモデルなので再開できない
-        '500':
+        "500":
           description: DB の読み取りに失敗した
 
   /models/{model_id}/resume:
@@ -264,34 +264,34 @@ paths:
         - 再開するモデルはパスの model_id で決める。再開元の checkpoint は C++ が model_id から決める。
         受理されると job_id が返り、進捗は /trainings/{job_id}/progress で購読する。
       parameters:
-        - $ref: '#/components/parameters/ModelId'
+        - $ref: "#/components/parameters/ModelId"
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ResumeTrainingConfig'
+              $ref: "#/components/schemas/ResumeTrainingConfig"
       responses:
-        '200':
+        "200":
           description: 受理した
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StartTrainingResponse'
-        '400':
-          $ref: '#/components/responses/InvalidModelId'
-        '404':
-          $ref: '#/components/responses/ModelNotFound'
-        '409':
+                $ref: "#/components/schemas/StartTrainingResponse"
+        "400":
+          $ref: "#/components/responses/InvalidModelId"
+        "404":
+          $ref: "#/components/responses/ModelNotFound"
+        "409":
           description: |
             再開できない。すでに学習が実行中、checkpoint がない、epoch が完了済みのエポック数以下、
             モデル構造が保存されていない、C++ が設定を拒否した、のいずれか
-        '422':
+        "422":
           description: リクエストの形が合わない、または optimizer の type が前回と違う
-        '500':
+        "500":
           description: DB の読み書きに失敗した
-        '502':
-          $ref: '#/components/responses/UpstreamError'
+        "502":
+          $ref: "#/components/responses/UpstreamError"
 
 components:
   parameters:
@@ -347,7 +347,7 @@ components:
         devices:
           type: array
           items:
-            $ref: '#/components/schemas/DeviceInfo'
+            $ref: "#/components/schemas/DeviceInfo"
 
     # ------------------------------------------------------------
     # モデル構造
@@ -377,8 +377,8 @@ components:
         source:
           description: null はグラフ入力(画像)を意味する
           oneOf:
-            - $ref: '#/components/schemas/PortRef'
-            - type: 'null'
+            - $ref: "#/components/schemas/PortRef"
+            - type: "null"
 
     Node:
       type: object
@@ -387,17 +387,17 @@ components:
         id:
           type: string
           minLength: 1
-          pattern: '^[A-Za-z0-9_-]+$'
+          pattern: "^[A-Za-z0-9_-]+$"
           description: グラフ内で重複しない。英数字と - _ のみ
         spec:
-          $ref: '#/components/schemas/NodeSpec'
+          $ref: "#/components/schemas/NodeSpec"
         inputs:
           type: array
           description: |
             入力ポートへの接続。入力ポートには必要な本数だけつなぐ
             (通常 1 本。Add / Concat の x は 2 本以上で、並び順に意味がある)。
           items:
-            $ref: '#/components/schemas/NodeInput'
+            $ref: "#/components/schemas/NodeInput"
 
     ModelGraph:
       type: object
@@ -411,32 +411,41 @@ components:
             同じ構造でも並び順が違えば別のモデルとして扱われる。
             実行順は接続から決まるので、実行順に並べる必要はない。
           items:
-            $ref: '#/components/schemas/Node'
+            $ref: "#/components/schemas/Node"
         outputs:
           type: array
           minItems: 1
           maxItems: 1
           description: モデルの出力。当面 1 つだけ
           items:
-            $ref: '#/components/schemas/PortRef'
+            $ref: "#/components/schemas/PortRef"
 
     NodeSpec:
       description: 層の種類とパラメータ。Input / Output はエディタ専用のノードであり、ここには含まれない
       oneOf:
-        - $ref: '#/components/schemas/Conv2DSpec'
-        - $ref: '#/components/schemas/Pooling2DSpec'
-        - $ref: '#/components/schemas/BatchNormSpec'
-        - $ref: '#/components/schemas/LinearSpec'
-        - $ref: '#/components/schemas/ActivationSpec'
-        - $ref: '#/components/schemas/IndexedPoolingSpec'
-        - $ref: '#/components/schemas/UnpoolingSpec'
-        - $ref: '#/components/schemas/UpsampleSpec'
-        - $ref: '#/components/schemas/AddSpec'
-        - $ref: '#/components/schemas/ConcatSpec'
+        - $ref: "#/components/schemas/Conv2DSpec"
+        - $ref: "#/components/schemas/Pooling2DSpec"
+        - $ref: "#/components/schemas/BatchNormSpec"
+        - $ref: "#/components/schemas/LinearSpec"
+        - $ref: "#/components/schemas/ActivationSpec"
+        - $ref: "#/components/schemas/IndexedPoolingSpec"
+        - $ref: "#/components/schemas/UnpoolingSpec"
+        - $ref: "#/components/schemas/UpsampleSpec"
+        - $ref: "#/components/schemas/AddSpec"
+        - $ref: "#/components/schemas/ConcatSpec"
 
     Conv2DSpec:
       type: object
-      required: [type, in_channels, out_channels, kernel_size, stride, padding, dilation]
+      required:
+        [
+          type,
+          in_channels,
+          out_channels,
+          kernel_size,
+          stride,
+          padding,
+          dilation,
+        ]
       properties:
         type:
           type: string
@@ -478,7 +487,7 @@ components:
           type: string
           enum: [pooling2d]
         pooling_type:
-          $ref: '#/components/schemas/PoolingType'
+          $ref: "#/components/schemas/PoolingType"
         kernel_size:
           type: integer
           format: int64
@@ -546,7 +555,7 @@ components:
           type: string
           enum: [activation]
         activation_type:
-          $ref: '#/components/schemas/ActivationType'
+          $ref: "#/components/schemas/ActivationType"
         dim:
           type: integer
           format: int32
@@ -606,7 +615,7 @@ components:
           type: string
           enum: [upsample]
         upsample_mode:
-          $ref: '#/components/schemas/UpsampleMode'
+          $ref: "#/components/schemas/UpsampleMode"
         scale_factor:
           type: integer
           format: int64
@@ -717,9 +726,9 @@ components:
 
     OptimizerConfig:
       oneOf:
-        - $ref: '#/components/schemas/AdamConfig'
-        - $ref: '#/components/schemas/AdamWConfig'
-        - $ref: '#/components/schemas/SGDConfig'
+        - $ref: "#/components/schemas/AdamConfig"
+        - $ref: "#/components/schemas/AdamWConfig"
+        - $ref: "#/components/schemas/SGDConfig"
 
     # ------------------------------------------------------------
     # loss
@@ -793,12 +802,12 @@ components:
     LossConfig:
       description: num_classes と ignore_index はデータセット由来なのでここには持たない
       oneOf:
-        - $ref: '#/components/schemas/CrossEntropyConfig'
-        - $ref: '#/components/schemas/MseLossConfig'
-        - $ref: '#/components/schemas/DiceLossConfig'
-        - $ref: '#/components/schemas/FocalLossConfig'
-        - $ref: '#/components/schemas/ComboLossConfig'
-        - $ref: '#/components/schemas/BoundaryLossConfig'
+        - $ref: "#/components/schemas/CrossEntropyConfig"
+        - $ref: "#/components/schemas/MseLossConfig"
+        - $ref: "#/components/schemas/DiceLossConfig"
+        - $ref: "#/components/schemas/FocalLossConfig"
+        - $ref: "#/components/schemas/ComboLossConfig"
+        - $ref: "#/components/schemas/BoundaryLossConfig"
 
     # ------------------------------------------------------------
     # data
@@ -818,7 +827,7 @@ components:
     ImageAnnotationConfig:
       description: 現在は pascal_voc のみ
       oneOf:
-        - $ref: '#/components/schemas/PascalVocConfig'
+        - $ref: "#/components/schemas/PascalVocConfig"
 
     SegmentationSpec:
       type: object
@@ -846,13 +855,20 @@ components:
     ImageTaskSpec:
       description: object_detection は Rust の DTO にないので送れない
       oneOf:
-        - $ref: '#/components/schemas/SegmentationSpec'
-        - $ref: '#/components/schemas/ClassificationSpec'
+        - $ref: "#/components/schemas/SegmentationSpec"
+        - $ref: "#/components/schemas/ClassificationSpec"
 
     DataSpec:
       type: object
       description: 現在は image のみ
-      required: [type, input_width, input_height, image_task_spec, image_annotation_config]
+      required:
+        [
+          type,
+          input_width,
+          input_height,
+          image_task_spec,
+          image_annotation_config,
+        ]
       properties:
         type:
           type: string
@@ -868,9 +884,9 @@ components:
           minimum: 1
           default: 256
         image_task_spec:
-          $ref: '#/components/schemas/ImageTaskSpec'
+          $ref: "#/components/schemas/ImageTaskSpec"
         image_annotation_config:
-          $ref: '#/components/schemas/ImageAnnotationConfig'
+          $ref: "#/components/schemas/ImageAnnotationConfig"
 
     # ------------------------------------------------------------
     # 学習の開始
@@ -894,11 +910,11 @@ components:
           type: string
           minLength: 1
         model_graph:
-          $ref: '#/components/schemas/ModelGraph'
+          $ref: "#/components/schemas/ModelGraph"
         optimizer:
-          $ref: '#/components/schemas/OptimizerConfig'
+          $ref: "#/components/schemas/OptimizerConfig"
         loss:
-          $ref: '#/components/schemas/LossConfig'
+          $ref: "#/components/schemas/LossConfig"
         epoch:
           type: integer
           format: int32
@@ -916,14 +932,14 @@ components:
           minLength: 1
           description: /capabilities の devices[].id から選ぶ
         data_spec:
-          $ref: '#/components/schemas/DataSpec'
+          $ref: "#/components/schemas/DataSpec"
         save_last_every:
           type: integer
           format: int32
           minimum: 0
           description: checkpoint を保存する間隔(エポック)。0 なら毎エポック
         seed:
-          type: [integer, 'null']
+          type: [integer, "null"]
           format: int64
           minimum: 0
           description: 乱数シード。0 も有効な値である。固定しない場合はキーごと省略する
@@ -942,7 +958,16 @@ components:
 
     ModelSummary:
       type: object
-      required: [model_id, model_name, created_at, task_type, last_run, completed_epochs, resumable]
+      required:
+        [
+          model_id,
+          model_name,
+          created_at,
+          task_type,
+          last_run,
+          completed_epochs,
+          resumable,
+        ]
       properties:
         model_id:
           type: string
@@ -957,7 +982,7 @@ components:
           enum: [segmentation, classification]
           description: 最新の run の data_spec のタスク
         last_run:
-          $ref: '#/components/schemas/LastRunSummary'
+          $ref: "#/components/schemas/LastRunSummary"
         completed_epochs:
           type: integer
           format: int32
@@ -972,7 +997,7 @@ components:
     LastRunSummary:
       description: モデルの最新の run。status と reason は TrainingStatusResponse と同じ
       allOf:
-        - $ref: '#/components/schemas/TrainingStatusResponse'
+        - $ref: "#/components/schemas/TrainingStatusResponse"
         - type: object
           required: [started_at, finished_at]
           properties:
@@ -980,7 +1005,7 @@ components:
               type: string
               description: 学習を始めた日時(UTC)
             finished_at:
-              type: [string, 'null']
+              type: [string, "null"]
               description: 学習が終わった日時(UTC)。学習中、または終了を記録できていなければ null
 
     ModelSummariesResponse:
@@ -990,14 +1015,14 @@ components:
         models:
           type: array
           items:
-            $ref: '#/components/schemas/ModelSummary'
+            $ref: "#/components/schemas/ModelSummary"
 
     ModelTrainingConfig:
       description: |
         GET /models/{model_id}/config の応答。StartTrainingRequest と同じ項目に model_id を足したもの(同じ階層に並ぶ)。
         seed を固定していない場合も、キーを省略せずに null を返す。
       allOf:
-        - $ref: '#/components/schemas/StartTrainingRequest'
+        - $ref: "#/components/schemas/StartTrainingRequest"
         - type: object
           required: [model_id]
           properties:
@@ -1021,10 +1046,10 @@ components:
         - save_last_every
       properties:
         optimizer:
-          $ref: '#/components/schemas/OptimizerConfig'
+          $ref: "#/components/schemas/OptimizerConfig"
           description: type は前回と同じにする(違うと 422)
         loss:
-          $ref: '#/components/schemas/LossConfig'
+          $ref: "#/components/schemas/LossConfig"
         epoch:
           type: integer
           format: int32
@@ -1061,14 +1086,15 @@ components:
       required: [status]
       properties:
         status:
-          $ref: '#/components/schemas/TrainingStatus'
+          $ref: "#/components/schemas/TrainingStatus"
         reason:
           type: string
           description: status が failed のときの原因
 
     SegmentationMetrics:
       type: object
-      required: [type, pixel_accuracy, miou, fw_iou, mean_class_accuracy, per_class_iou]
+      required:
+        [type, pixel_accuracy, miou, fw_iou, mean_class_accuracy, per_class_iou]
       properties:
         type:
           type: string
@@ -1113,7 +1139,16 @@ components:
     TrainingProcess:
       type: object
       description: 学習プロセス全体の状態。SSE の progress イベントの data に入る JSON 1 件
-      required: [epoch, train_loss, val_loss, status, metrics, epoch_elapsed_ms, total_elapsed_ms]
+      required:
+        [
+          epoch,
+          train_loss,
+          val_loss,
+          status,
+          metrics,
+          epoch_elapsed_ms,
+          total_elapsed_ms,
+        ]
       properties:
         epoch:
           type: integer
@@ -1121,24 +1156,24 @@ components:
           minimum: 0
           description: 終了したエポック数
         train_loss:
-          type: [number, 'null']
+          type: [number, "null"]
           format: double
           description: 値が NaN や inf だと null になる
         val_loss:
-          type: [number, 'null']
+          type: [number, "null"]
           format: double
           description: 値が NaN や inf だと null になる
         status:
-          $ref: '#/components/schemas/TrainingStatus'
+          $ref: "#/components/schemas/TrainingStatus"
         reason:
           type: string
           description: status が failed のときの原因
         metrics:
           description: メトリクスをまだ計算していないエポックでは null
           oneOf:
-            - $ref: '#/components/schemas/SegmentationMetrics'
-            - $ref: '#/components/schemas/ClassificationMetrics'
-            - type: 'null'
+            - $ref: "#/components/schemas/SegmentationMetrics"
+            - $ref: "#/components/schemas/ClassificationMetrics"
+            - type: "null"
         epoch_elapsed_ms:
           type: integer
           format: int64

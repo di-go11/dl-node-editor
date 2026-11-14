@@ -7,6 +7,7 @@ import { defaultTrainingSettings } from '../../entity/training/training-settings
 import { defaultVariant } from '../../entity/training/variant'
 import { OPTIMIZER_TYPES } from '../../entity/training/optimizer'
 import { validSegnetGraph } from '../../entity/validation/test-fixtures'
+import { MOCK_TRAINED_MODELS, createHandlers } from '../mock/handlers'
 import { TEST_BASE_URL, createMockServer } from '../mock/server'
 
 import { createApiClient } from './api-client'
@@ -114,6 +115,35 @@ describe('createHttpTrainedModelApi', () => {
     const result = await createHttpTrainedModelApi(client()).resume(modelId, settings)
 
     expect(result).toMatchObject({ ok: false, error: { kind: 'http', status: 409 } })
+  })
+
+  it('ブラウザのモックの初期データは、一覧と設定の取得をそのまま通る', async () => {
+    // 初期データ入りのハンドラを前に差し込む(afterEach の resetHandlers で外れる)
+    server.use(...createHandlers({ baseUrl: TEST_BASE_URL, initialModels: MOCK_TRAINED_MODELS }))
+    const api = createHttpTrainedModelApi(client())
+
+    const list = await api.list()
+    if (!list.ok) throw new Error(list.error.message)
+    // 最近学習したモデルが先
+    expect(list.value.map((model) => model.modelId)).toEqual(
+      MOCK_TRAINED_MODELS.map((model) => model.modelId).reverse(),
+    )
+    expect(list.value.find((model) => model.modelId === 'mock-seed-oom')?.lastRun).toMatchObject({
+      status: 'failed',
+      failureReason: 'CUDA out of memory',
+    })
+
+    for (const model of MOCK_TRAINED_MODELS) {
+      const config = await api.getConfig(model.modelId)
+      if (model.resumable) {
+        expect(config, model.modelId).toMatchObject({ ok: true })
+      } else {
+        expect(config, model.modelId).toMatchObject({
+          ok: false,
+          error: { kind: 'http', status: 409 },
+        })
+      }
+    }
   })
 
   it('一覧の応答が契約の形でなければ invalid-response になる', async () => {

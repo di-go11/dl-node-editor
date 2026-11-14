@@ -131,10 +131,10 @@ export function Header() {
         type="button"
         title="学習済みのモデルを選んで、学習を続ける"
         onClick={() => {
-          void navigate('/resume')
+          void navigate('/models')
         }}
       >
-        学習再開
+        モデル一覧
       </button>
       <button
         type="button"

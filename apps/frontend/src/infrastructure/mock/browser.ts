@@ -1,6 +1,6 @@
 import { setupWorker } from 'msw/browser'
 
-import { createHandlers } from './handlers'
+import { MOCK_TRAINED_MODELS, createHandlers } from './handlers'
 
 /**
  * ブラウザでモック API を動かす(開発時、VITE_USE_MOCK=true のとき)。
@@ -10,7 +10,8 @@ import { createHandlers } from './handlers'
  * MSW が本番のバンドルに入らない。
  */
 export async function startMockWorker(): Promise<void> {
-  const worker = setupWorker(...createHandlers())
+  // 学習済みモデルの一覧を、学習を始めなくても確かめられるよう、初期データを載せておく
+  const worker = setupWorker(...createHandlers({ initialModels: MOCK_TRAINED_MODELS }))
   await worker.start({
     // ハンドラのないリクエスト(Vite が配る JS や CSS など)は、そのまま本物に流す
     onUnhandledFrame: 'bypass',
