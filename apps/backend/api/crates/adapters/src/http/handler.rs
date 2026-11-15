@@ -26,6 +26,9 @@ use usecases::{
         TrainingResumer, TrainingRunRegistar, TrainingStarter, TrainingStopper,
         ValidateTrainingConfig, ValidateTrainingConfigError,
     },
+    dataset::{
+        upload_dataset::UploadDataset
+    }
 };
 
 use axum::response::sse::{Event, KeepAlive, Sse};
@@ -273,6 +276,12 @@ where
         })?;
     Ok(Json(job_id.into()))
 }
+
+// データセット保存用PUTリクエストハンドラ。データセットのアップロードは multipart/form-data でzipファイルを受け取る。アップロード後にデータセットのメタデータを登録する。
+pub async fn upload_dataset<G, S, R>(
+    State(usecase): State<Arc<UploadDataset<G,S,R>>>,
+    
+)
 
 #[cfg(test)]
 mod tests {

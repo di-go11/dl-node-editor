@@ -9,7 +9,6 @@
 #include "training/infrastructure/torchFunc/CudaCapabilityProvider.hpp"
 #include "training/infrastructure/torchFunc/SeedApplier.hpp"
 
-#include <filesystem>
 #include <iostream>
 
 namespace
@@ -19,12 +18,19 @@ namespace
     // (ジョブの依頼の部分は gRPC のリクエストから来るので、.config のものは使わない)
     ServerConfig loadServerConfig()
     {
-        const std::string path = ".config";
-        if (!std::filesystem::exists(path))
+        ServerConfig config;
+        const char *raw = std::getenv("AI_ENGINE_LOAD_IMAGE_THREADS");// 環境変数から得られるのはC言語の文字列(末尾が"\0"のchar*型)
+        if (raw == nullptr)
         {
-            std::cout << "server config: " << path << " が見つからないため既定値を使います" << std::endl;
-            return ServerConfig{};
+            std::cerr << "AI_ENGINE_LOAD_IMAGE_THREADS is not set. Using default threads(1) " << config.threadCount << std::endl;
+            return config;
         }
+
+        // 文字列を整数に変換する。
+        const std::string_view value(raw); // (C++17)文字列を所有せず、参照するだけの軽量な型(変更できない。)
+        size_t parsed = 0;
+        const auto [end, ec] = std::from_chars(value.data(), value.data() + value.size(), parsed);
+
         return ConfigReader{}.readAll(path).server;
     }
 }
