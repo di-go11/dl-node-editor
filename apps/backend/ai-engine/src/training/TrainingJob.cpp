@@ -96,9 +96,9 @@ namespace
     }
 
     // resume = true のときの再開元(<modelId>_last.pt)。ファイルがなければ TrainingPreconditionError。
-    std::string requireResumeCheckpointPath(const ServerConfig &server, const StartTrainingCommand &command)
+    std::string requireResumeCheckpointPath(const TrainingRuntimeConfig &runtime, const StartTrainingCommand &command)
     {
-        const std::string path = TorchCheckpointStore::lastCheckpointPath(server.checkpointOutputDirPath, command.modelId);
+        const std::string path = TorchCheckpointStore::lastCheckpointPath(runtime.checkpointOutputDirPath, command.modelId);
         if (!std::filesystem::exists(path))
         {
             throw TrainingPreconditionError("resume が指定されましたが、再開用の checkpoint がありません: " + path);
@@ -122,7 +122,7 @@ namespace
 
 } // namespace
 
-void checkTrainingJobPreconditions(const ServerConfig &server, const StartTrainingCommand &command)
+void checkTrainingJobPreconditions(const TrainingRuntimeConfig &runtime, const StartTrainingCommand &command)
 {
     requireModelId(command);
     if (!command.resume)
@@ -130,7 +130,7 @@ void checkTrainingJobPreconditions(const ServerConfig &server, const StartTraini
         return;
     }
 
-    const std::string path = requireResumeCheckpointPath(server, command);
+    const std::string path = requireResumeCheckpointPath(runtime, command);
     CheckpointMeta meta;
     try
     {
@@ -146,7 +146,7 @@ void checkTrainingJobPreconditions(const ServerConfig &server, const StartTraini
     requireEpochsRemaining(meta, command.epochSize, path);
 }
 
-TrainingStatus runTrainingJob(const ServerConfig &server,
+TrainingStatus runTrainingJob(const TrainingRuntimeConfig &runtime,
                               const StartTrainingCommand &command,
                               const std::shared_ptr<ITrainingProgressObserver> &progressObserver,
                               const ISeed &seedApplier,
@@ -171,10 +171,10 @@ TrainingStatus runTrainingJob(const ServerConfig &server,
     auto param = std::make_shared<TrainParam>(command.epochSize, command.batchSize);
 
     // ParallelExecutorの生成。(現在は逐次処理のみだが、将来的に並列化する場合は追加する。)
-    auto parallelExecutor = createParallelExecutor(server.threadCount);
+    auto parallelExecutor = createParallelExecutor(runtime.imageLoadThreadCount);
 
     // ITimeRecorderの生成。(enableTimeMeasurement が false ならダミー実装)
-    auto timeRecorder = createTimeRecorder(server.enableProcessTimeMeasurement);
+    auto timeRecorder = createTimeRecorder(runtime.enableProcessTimeMeasurement);
 
     // labelmap.txt からクラス数を決める(モデル出力チャンネル数の単一の参照元)。
     const std::string labelMapPath =
@@ -195,7 +195,7 @@ TrainingStatus runTrainingJob(const ServerConfig &server,
     // gRPC では checkTrainingJobPreconditions で確認済みだが、CLI からの呼び出しや、
     // 確認後にファイルが消された場合に備えて、ここでも同じ確認をする。
     requireModelId(command);
-    const std::string resumePath = command.resume ? requireResumeCheckpointPath(server, command) : std::string{};
+    const std::string resumePath = command.resume ? requireResumeCheckpointPath(runtime, command) : std::string{};
 
     if (command.seed.has_value())
     {
@@ -254,7 +254,7 @@ TrainingStatus runTrainingJob(const ServerConfig &server,
 
     auto trainer = std::make_shared<TorchModelTrainer>(model, loss, optimizer);
     auto evaluator = std::make_shared<TorchModelEvaluator>(*model, *loss, numClasses, imageSpec->taskSpecs);
-    auto checkpointStore = std::make_shared<TorchCheckpointStore>(model, optimizer, server.checkpointOutputDirPath, command.modelId, graph);
+    auto checkpointStore = std::make_shared<TorchCheckpointStore>(model, optimizer, runtime.checkpointOutputDirPath, command.modelId, graph);
 
     TrainModelUsecase usecase(param, command.saveLastEvery, trainer, evaluator, checkpointStore, progressObserver);
 

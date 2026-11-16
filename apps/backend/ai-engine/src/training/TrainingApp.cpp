@@ -52,7 +52,7 @@ void runTraining()
     auto progressObserver = std::make_shared<ConsoleProgressObserver>();
     try
     {
-        const TrainingStatus status = runTrainingJob(config.server, config.command, progressObserver, *seedApplier);
+        const TrainingStatus status = runTrainingJob(config.runtime, config.command, progressObserver, *seedApplier);
         progressObserver->onFinished(status, "");
     }
     catch (const std::exception &e)
