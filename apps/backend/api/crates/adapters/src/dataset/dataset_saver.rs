@@ -60,17 +60,15 @@ fn save_archive(zip_path: &Path, root: &Path, id: &str) -> Result<PathBuf, FileE
     let final_dir = root.join(id);
 
     fs::create_dir_all(&staging)?;
-    if let Err(e) = extract_zip(zip_path, &staging) {
-        let _ = fs::remove_dir_all(&staging);
-        return Err(e);
-    }
+    let result = extract_zip(zip_path, &staging).and_then(|()| {
+        let content_root = single_child_dir(&staging)?.unwrap_or_else(|| staging.clone());
+        fs::rename(&content_root, &final_dir)?;
+        Ok(())
+    });
     // 正規化: 直下がディレクトリ1つだけならその中身をデータセットのルートとみなす
 
-    let content_root = single_child_dir(&staging)?.unwrap_or_else(|| staging.clone());
-    if content_root != staging {
-        let _ = fs::remove_dir_all(&staging); //空になった外側の.tmp-<id>を片付ける
-    }
-    Ok(final_dir) // どっちのケースでも/data/datasets/<id>がルートになる。
+    let _ = fs::remove_dir_all(&staging); //空になった外側の.tmp-<id>を片付ける
+    result.map(|()| final_dir) // どっちのケースでも/data/datasets/<id>がルートになる。
 }
 
 // dirの直下がディレクトリ1つだけならそのパスを返す。
@@ -84,7 +82,7 @@ fn single_child_dir(dir: &Path) -> Result<Option<PathBuf>, FileError> {
 }
 
 #[derive(Debug)]
-struct FileDatasetSaver {
+pub struct FileDatasetSaver {
     dataset_root: PathBuf,
 }
 

@@ -6,12 +6,7 @@ use crate::dataset::{
     ports::{DatasetRegister, DatasetSaver, RegisterDatasetInput},
 };
 
-pub struct UploadDataset<G, S, R>
-where
-    G: DatasetIdGenerator,
-    S: DatasetSaver,
-    R: DatasetRegister,
-{
+pub struct UploadDataset<G, S, R> {
     saver: S,
     register: R,
     id_generator: G,

@@ -8,6 +8,7 @@ pub mod utils;
 
 pub use capabilities::GrpcCapabilityProvider;
 pub use database::connect_database;
+pub use dataset::{FileDatasetSaver, SqliteDatasetRepository, UuidDatasetIdGenerator};
 pub use training::GrpcTrainingProgressProvider;
 pub use training::GrpcTrainingStarter;
 pub use training::GrpcTrainingStopper;

@@ -6,12 +6,15 @@ use adapters::connect_database;
 use adapters::http::AppState;
 use adapters::http::router;
 use adapters::training::{recording_channel, run_recording_worker};
+use adapters::{FileDatasetSaver, SqliteDatasetRepository, UuidDatasetIdGenerator};
 use adapters::{SqliteTrainingRepository, UuidModelGenerator};
 use entities::training::JobId;
 use std::eprintln;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tonic::transport::Channel;
 use usecases::capabilities::GetCapabilities;
+use usecases::dataset::upload_dataset::UploadDataset;
 use usecases::model::{GetModelSummary, GetModelTrainingConfig};
 use usecases::training::{
     GetTrainingProcess, RecordTrainingProgress, ResumeProgressRecordings, ResumeTraining,
@@ -29,6 +32,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Databaseへのconnect
     let database_url = std::env::var("DATABASE_URL")?;
     let pool = connect_database(&database_url).await?;
+    // アップロードされたデータセットの解凍先。DBに保存する dataset_path はこの下になり、C++側もそのパスで読むため、
+    // 既定値は ai-engine コンテナのマウント先(/datasets)に合わせる
+    let dataset_root =
+        PathBuf::from(std::env::var("DATASET_ROOT").unwrap_or_else(|_| "/datasets".to_string()));
 
     // 学習ProgressをDBに保存するためのユースケースにアダブターを渡したのも。
     let training_progress_recorder = Arc::new(RecordTrainingProgress::new(
@@ -90,6 +97,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             GrpcTrainingStarter::new(channel.clone()),
             SqliteTrainingRepository::new(pool.clone()),
             scheduler.clone(),
+        )),
+        // データセットのアップロード(zipを dataset_root に解凍し、メタデータを DB に登録する)
+        upload_dataset: Arc::new(UploadDataset::new(
+            UuidDatasetIdGenerator,
+            FileDatasetSaver::new(dataset_root),
+            SqliteDatasetRepository::new(pool.clone()),
         )),
     };
 

@@ -29,6 +29,7 @@ services:
       target: runtime
     volumes:
       - ./data/api-data:/data
+      - ./data/datasets:/datasets
     environment:
       - DATABASE_URL=sqlite:/data/training.db?mode=rwc #data/training.dbがない場合読み書き可で作成
       - AI_ENGINE_ADDR=http://ai-engine:50051

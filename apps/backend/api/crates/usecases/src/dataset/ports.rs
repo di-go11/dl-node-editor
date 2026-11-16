@@ -12,14 +12,14 @@ pub trait DatasetSaver {
         &self,
         tmp_path: &Path,
         dataset_id: &DatasetId,
-    ) -> impl Future<Output = Result<PathBuf, DatasetError>>;
+    ) -> impl Future<Output = Result<PathBuf, DatasetError>> + Send;
 }
 // データセットのメタデータを登録用ポート
 pub trait DatasetRegister {
     fn register(
         &self,
         dataset_config: &RegisterDatasetInput,
-    ) -> impl Future<Output = Result<(), DatasetError>>;
+    ) -> impl Future<Output = Result<(), DatasetError>> + Send;
 }
 
 pub struct RegisterDatasetInput {
@@ -34,9 +34,9 @@ pub trait DatasetCaller {
         &self,
         dataset_path: &str,
         training_config: &mut TrainingConfig,
-    ) -> impl Future<Output = Result<(), DatasetError>>;
+    ) -> impl Future<Output = Result<(), DatasetError>> + Send;
 }
 
 pub trait DatasetReader {
-    fn read(&self) -> impl Future<Output = Result<Vec<DatasetConfig>, DatasetError>>;
+    fn read(&self) -> impl Future<Output = Result<Vec<DatasetConfig>, DatasetError>> + Send;
 }
