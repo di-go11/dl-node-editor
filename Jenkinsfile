@@ -109,10 +109,9 @@ pipeline{
         stage('Deploy'){
             steps{
                 withCredentials([sshUserPrivateKey(credentialsId: 'dlnodeeditor-deploy-ssh', keyFileVariable: 'KEY', usernameVariable:'DEPLOY_USER')]) {
-                    sh '''head -n 1 "$KEY" || true
-                          file "$KEY" || true
-                          tail -c 1 "$KEY" | od -c || true
-                          ssh-keygen -y -f "$KEY" > /dev/null && echo "key OK" || echo "key NG"
+                    sh '''wc -l 1 "$KEY" || true
+                          tail -c 1 "$KEY" || true
+                          od -An -tx1 "$KEY" | grep -c " 0d" || true
                     '''
                     sh 'ssh -p "$DEPLOY_PORT" -i "$KEY" "$DEPLOY_USER@$DEPLOY_HOST" "cd /d E:/apps/dl-node-editor && git pull --ff-only && docker compose -f .deploy/compose.prod.yml up -d --build --remove-orphans"'
                 }
