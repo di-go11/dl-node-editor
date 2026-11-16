@@ -24,7 +24,7 @@
 #include <torch/torch.h>
 
 #include "training/TrainingJob.hpp"
-#include "training/application/impl/ServerConfig.hpp"
+#include "training/infrastructure/serve/TrainingRuntimeConfig.hpp"
 #include "training/application/impl/StartTrainingCommand.hpp"
 #include "training/application/interfaces/ITrainingJobManager.hpp"
 #include "training/entities/domain-objects/CheckpointMeta.hpp"
@@ -299,15 +299,15 @@ int main()
     // ---- 学習開始前の確認(checkTrainingJobPreconditions) ----
     // roundtrip_last.pt は epoch 20(0 始まり)= 21 エポック学習済みとして保存されている。
     {
-        ServerConfig server;
-        server.checkpointOutputDirPath = dir.string();
+        TrainingRuntimeConfig runtime;
+        runtime.checkpointOutputDirPath = dir.string();
 
         // 例外の種類を名前で返す。投げなければ "ok"。
-        auto outcome = [&server](const StartTrainingCommand &command) -> std::string
+        auto outcome = [&runtime](const StartTrainingCommand &command) -> std::string
         {
             try
             {
-                checkTrainingJobPreconditions(server, command);
+                checkTrainingJobPreconditions(runtime, command);
                 return "ok";
             }
             catch (const TrainingPreconditionError &)

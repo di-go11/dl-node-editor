@@ -340,7 +340,7 @@ ConfigReader::ConfigReader() {}
 TrainingConfigFile ConfigReader::readAll(const std::string &filePath)
 {
     TrainingConfigFile result;
-    ServerConfig &server = result.server;
+    TrainingRuntimeConfig &runtime = result.runtime;
     StartTrainingCommand &command = result.command;
     OptimizerFields optimizerFields;
     LossConfigFields lossFields;
@@ -459,7 +459,7 @@ TrainingConfigFile ConfigReader::readAll(const std::string &filePath)
                 {
                     throw std::runtime_error("output_dir value is empty");
                 }
-                server.checkpointOutputDirPath = value;
+                runtime.checkpointOutputDirPath = value;
             }
             // ---- Optimizer 種別ごとのハイパーパラメータ ----
             // 指定しなければ各 Config 構造体の既定値が使われる。
@@ -709,11 +709,11 @@ TrainingConfigFile ConfigReader::readAll(const std::string &filePath)
             }
             else if (key == "enable_time_measurement")
             {
-                server.enableProcessTimeMeasurement = parseBool(value, key);
+                runtime.enableProcessTimeMeasurement = parseBool(value, key);
             }
             else if (key == "thread_count")
             {
-                server.threadCount = parseSizeT(value, key);
+                runtime.imageLoadThreadCount = parseSizeT(value, key);
             }
             else
             {

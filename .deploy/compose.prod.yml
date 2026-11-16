@@ -7,12 +7,14 @@ services:
       target: runtime
     volumes:
       - ./data/weights:/app/models #.pt保存先
-      - ./data/datasets:/datasets:ro #読み取り専用
+      - ./data/datasets:/datasets:ro #読み取り専用(:ro)
+    environment:
+      - AI_ENGINE_LOAD_IMAGE_THREADS=${AI_ENGINE_IMAGE_LOAD_THREADS:-4} #AI_ENGINE_CPUSの半分(お好みで)
     deploy:
       resources:
         limits:
-          cpus: "8"
-          memory: 10g
+          cpus: "${AI_ENGINE_CPUS:-8}"
+          memory: "${AI_ENGINE_MEMORY_LIMIT:-10g}"
         reservations:
           devices:
             - driver: nvidia

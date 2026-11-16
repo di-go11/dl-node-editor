@@ -5,27 +5,29 @@
 #include "api/grpc/TrainingServiceImpl.hpp"
 #include "training/TrainingJob.hpp"
 #include "training/adapters/impl/TrainingJobManager.hpp"
-#include "training/infrastructure/readConfig/ConfigReader.hpp"
 #include "training/infrastructure/torchFunc/CudaCapabilityProvider.hpp"
 #include "training/infrastructure/torchFunc/SeedApplier.hpp"
+#include "training/infrastructure/serve/TrainingRuntimeConfig.hpp"
 
-#include <filesystem>
 #include <iostream>
 
 namespace
 {
-    // サーバー側の設定(checkpoint の保存先・スレッド数など)。
-    // 暫定で、.config があればそのサーバー設定を使い、なければ既定値を使う。
-    // (ジョブの依頼の部分は gRPC のリクエストから来るので、.config のものは使わない)
-    ServerConfig loadServerConfig()
+    // 学習の実行環境の設定(checkpoint の保存先・画像読み込みのスレッド数など)。環境変数から読む。
+    TrainingRuntimeConfig loadServerEnv()
     {
-        const std::string path = ".config";
-        if (!std::filesystem::exists(path))
+        TrainingRuntimeConfig config;
+        // 環境変数から得られるのはC言語の文字列(末尾が"\0"のchar*型)
+        if (const char *raw = std::getenv("AI_ENGINE_LOAD_IMAGE_THREADS"))
         {
-            std::cout << "server config: " << path << " が見つからないため既定値を使います" << std::endl;
-            return ServerConfig{};
+            if (!config.setImageLoadThreadCount(raw))
+            {
+                std::cerr << "AI_ENGINE_LOAD_IMAGE_THREADS is invalid: \"" << raw
+                          << "\". Using default (" << config.imageLoadThreadCount << ")" << std::endl;
+            }
         }
-        return ConfigReader{}.readAll(path).server;
+
+        return config;
     }
 }
 
@@ -34,19 +36,19 @@ void runGrpcServer()
     CudaCapabilityProvider provider;
     CapabilitiesServiceImpl capabilitiesService(provider);
 
-    const ServerConfig serverConfig = loadServerConfig();
+    const TrainingRuntimeConfig trainingRuntimeConfig = loadServerEnv();
     TrainingJobManager jobManager(
-        [serverConfig](const StartTrainingCommand &command,
-                       const std::shared_ptr<ITrainingProgressObserver> &progressObserver,
-                       const TrainingStopToken *stopToken)
+        [trainingRuntimeConfig](const StartTrainingCommand &command,
+                                const std::shared_ptr<ITrainingProgressObserver> &progressObserver,
+                                const TrainingStopToken *stopToken)
         {
             SeedApplier seedApplier;
-            return runTrainingJob(serverConfig, command, progressObserver, seedApplier, stopToken);
+            return runTrainingJob(trainingRuntimeConfig, command, progressObserver, seedApplier, stopToken);
         },
         // 再開できない依頼は、学習スレッドを起動する前に弾いて StartTraining の応答で返す。
-        [serverConfig](const StartTrainingCommand &command)
+        [trainingRuntimeConfig](const StartTrainingCommand &command)
         {
-            checkTrainingJobPreconditions(serverConfig, command);
+            checkTrainingJobPreconditions(trainingRuntimeConfig, command);
         });
     TrainingServiceImpl trainingService(jobManager);
 
