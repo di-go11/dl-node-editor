@@ -1,6 +1,6 @@
 use super::ValidateTrainingConfigError;
+use super::config::StartTrainingConfig;
 use super::read_training_record::TrainingRecordReader;
-use entities::training::config::TrainingConfig;
 
 pub struct ValidateTrainingConfig<R: TrainingRecordReader> {
     reader: R,
@@ -14,7 +14,7 @@ impl<R: TrainingRecordReader> ValidateTrainingConfig<R> {
     // (学習再開は別のユースケースで、再開APIの中でmodel_idを検証する)
     pub async fn execute(
         &self,
-        config: &TrainingConfig,
+        config: &StartTrainingConfig,
     ) -> Result<(), ValidateTrainingConfigError> {
         let found = self
             .reader
@@ -35,18 +35,20 @@ mod tests {
     use super::ValidateTrainingConfig;
     use super::ValidateTrainingConfigError;
     use crate::training::RecordError;
+    use crate::training::StartTrainingConfig;
     use crate::training::read_training_record::TrainingRecordReader;
+    use entities::dataset::DatasetId;
     use entities::model::ModelGraph;
     use entities::model::ModelId;
     use entities::training::JobId;
     use entities::training::config::{
         DataSpec, ImageAnnotationConfig, ImageSpec, ImageTaskSpec, Loss, Optimizer,
-        PascalVocConfig, SegmentationSpec, TrainingConfig,
+        PascalVocConfig, SegmentationSpec,
     };
 
     // チェックではmodel_nameしか使わないため、それ以外は最小限の値にする
-    fn gen_config(model_name: &str) -> TrainingConfig {
-        TrainingConfig {
+    fn gen_config(model_name: &str) -> StartTrainingConfig {
+        StartTrainingConfig {
             model_name: model_name.to_string(),
             model_graph: ModelGraph {
                 nodes: vec![],
@@ -55,7 +57,7 @@ mod tests {
             epoch: 1,
             batch: 1,
             device: "cpu".to_string(),
-            dataset_path: "/data".to_string(),
+            dataset_id: DatasetId::new("dataset-1").unwrap(),
             optimizer: Optimizer::Sgd {
                 learning_rate: 0.01,
                 weight_decay: 0.0,

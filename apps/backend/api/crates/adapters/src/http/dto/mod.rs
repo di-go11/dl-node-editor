@@ -8,7 +8,7 @@ mod training_process;
 mod training_stop;
 
 pub use capability::CapabilitiesDto;
-pub use datasets::{DatasetConfigDto, DatasetSummariesDto};
+pub use datasets::DatasetSummariesDto;
 pub use model::ModelSummariesDto;
 pub use training_config::{
     ModelTrainingConfigDto, ResumeTrainingConfigDto, StartTrainingResponseDto, TrainingConfigDto,

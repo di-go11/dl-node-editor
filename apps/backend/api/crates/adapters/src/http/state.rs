@@ -28,7 +28,8 @@ where
 {
     // Arcを使用して複数の変数で共有するためのスマートポインタにする
     pub get_capabilities: Arc<GetCapabilities<C>>,
-    pub start_training: Arc<StartTraining<S, R, G, K>>,
+    // データセットの ID からパスを引くのは DRD(DatasetReader と DatasetFinder の両方を実装した型)
+    pub start_training: Arc<StartTraining<S, R, G, K, DRD>>,
     pub get_process: Arc<GetTrainingProcess<P>>,
     pub stop_training: Arc<StopTraining<T>>,
     pub validate_training: Arc<ValidateTrainingConfig<V>>,
@@ -96,7 +97,7 @@ where
 
 impl<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>
     FromRef<AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>>
-    for Arc<StartTraining<S, R, G, K>>
+    for Arc<StartTraining<S, R, G, K, DRD>>
 where
     C: CapabilityProvider,
     V: TrainingRecordReader,

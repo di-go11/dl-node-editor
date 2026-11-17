@@ -15,7 +15,7 @@ use usecases::{
     capabilities::CapabilityProvider,
     dataset::{
         dataset_id_generator::DatasetIdGenerator,
-        ports::{DatasetReader, DatasetRegister, DatasetSaver},
+        ports::{DatasetFinder, DatasetReader, DatasetRegister, DatasetSaver},
     },
     model::ports::{ModelSummaryProvider, ModelTrainingConfigProvider},
     training::{
@@ -51,14 +51,14 @@ where
     DG: DatasetIdGenerator + Send + Sync + 'static,
     DS: DatasetSaver + Send + Sync + 'static,
     DR: DatasetRegister + Send + Sync + 'static,
-    // データセット一覧(ReadDatasetsSummary)用
-    DRD: DatasetReader + Send + Sync + 'static,
+    // データセット一覧(ReadDatasetsSummary)と、学習開始時のデータセットの検索(StartTraining)で共有する
+    DRD: DatasetReader + DatasetFinder + Send + Sync + 'static,
 {
     Router::new().nest(
         "/api/v1",
         Router::new()
             .route("/capabilities", get(get_capabilities::<C>))
-            .route("/trainings", post(start_training::<S, R, G, K>)) // 学習開始
+            .route("/trainings", post(start_training::<S, R, G, K, DRD>)) // 学習開始
             .route("/trainings/validate", post(validate_training::<V>))
             .route("/trainings/{job_id}", get(get_training_process::<P>))
             .route(
@@ -80,7 +80,6 @@ where
             )
             // データセット呼び出しAPI
             .route("/datasets", get(read_summary_datasets::<DRD>))
-            .route("/datasets/{dataset_id}")
             // データセット登録用API
             .route(
                 "/datasets/upload",
