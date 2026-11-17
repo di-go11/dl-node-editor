@@ -73,8 +73,10 @@ const RESUME_MESSAGES: HttpErrorMessages = {
 export function createHttpTrainedModelApi(client: ApiClient): TrainedModelApi {
   return {
     list: () =>
-      callApi(() => client.GET('/models'), modelSummariesJsonSchema, (json) =>
-        json.models.map(summaryFromJson),
+      callApi(
+        () => client.GET('/models'),
+        modelSummariesJsonSchema,
+        (json) => json.models.map(summaryFromJson),
       ),
 
     getConfig: async (modelId) => {
