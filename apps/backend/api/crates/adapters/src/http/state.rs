@@ -1,6 +1,6 @@
 use usecases::{
     capabilities::{CapabilityProvider, GetCapabilities},
-    dataset::upload_dataset::UploadDataset,
+    dataset::{read_datasets_summary::ReadDatasetsSummary, upload_dataset::UploadDataset},
     model::{GetModelSummary, GetModelTrainingConfig},
     training::{
         GetTrainingProcess, RecordTrainingProgress, ResumeTraining, StartTraining, StopTraining,
@@ -18,7 +18,8 @@ use std::sync::Arc;
 // impl 側にだけ境界があるため、ここには書かない。
 // TODO: 上記4つのユースケースも境界を impl 側へ移せば、このファイルの where 句はすべて削除できる。
 // TODO(設計改善): 型パラメータの数そのものは、入力ポート導入(docs/issues/backend-db-remaining.md 作業12)で減らす。
-pub struct AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR>
+// TODO: ジェネリクスの名称を変える(DatasetReaderとDatasetRegisterでイニシャルが両方ともDRになってしまうため、DatasetReaderをDRDにしている)
+pub struct AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>
 where
     C: CapabilityProvider,
     V: TrainingRecordReader,
@@ -44,13 +45,15 @@ where
     pub resume_training: Arc<ResumeTraining<MConfig, S, R, K>>,
     // データセットアップロード用
     pub upload_dataset: Arc<UploadDataset<DG, DS, DR>>,
+    // データセットのメタデータ一覧取得
+    pub read_dataset_summary: Arc<ReadDatasetsSummary<DRD>>,
 }
 
 // axum はリクエストごとに State を clone するため Clone が必要。
 // #[derive(Clone)] だと全型パラメータに Clone 境界が付いてしまうので手書きしている
 // (中身は Arc の参照カウントを +1 するだけで、ユースケース本体はコピーされない)。
-impl<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR> Clone
-    for AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR>
+impl<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD> Clone
+    for AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>
 where
     C: CapabilityProvider,
     V: TrainingRecordReader,
@@ -69,13 +72,14 @@ where
             get_model_config: Arc::clone(&self.get_model_config),
             resume_training: Arc::clone(&self.resume_training),
             upload_dataset: Arc::clone(&self.upload_dataset),
+            read_dataset_summary: Arc::clone(&self.read_dataset_summary),
         }
     }
 }
 
 // FromRef: ハンドラの State<Arc<ユースケース>> に、AppState から該当フィールドだけを取り出して渡すための実装。
-impl<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR>
-    FromRef<AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR>>
+impl<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>
+    FromRef<AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>>
     for Arc<GetCapabilities<C>>
 where
     C: CapabilityProvider,
@@ -84,14 +88,14 @@ where
     T: TrainingStopper,
 {
     fn from_ref(
-        app_state: &AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR>,
+        app_state: &AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>,
     ) -> Self {
         Arc::clone(&app_state.get_capabilities)
     }
 }
 
-impl<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR>
-    FromRef<AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR>>
+impl<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>
+    FromRef<AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>>
     for Arc<StartTraining<S, R, G, K>>
 where
     C: CapabilityProvider,
@@ -100,14 +104,14 @@ where
     T: TrainingStopper,
 {
     fn from_ref(
-        app_state: &AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR>,
+        app_state: &AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>,
     ) -> Self {
         Arc::clone(&app_state.start_training)
     }
 }
 
-impl<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR>
-    FromRef<AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR>>
+impl<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>
+    FromRef<AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>>
     for Arc<GetTrainingProcess<P>>
 where
     C: CapabilityProvider,
@@ -116,14 +120,14 @@ where
     T: TrainingStopper,
 {
     fn from_ref(
-        app_state: &AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR>,
+        app_state: &AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>,
     ) -> Self {
         Arc::clone(&app_state.get_process)
     }
 }
 
-impl<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR>
-    FromRef<AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR>>
+impl<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>
+    FromRef<AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>>
     for Arc<StopTraining<T>>
 where
     C: CapabilityProvider,
@@ -132,14 +136,14 @@ where
     T: TrainingStopper,
 {
     fn from_ref(
-        app_state: &AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR>,
+        app_state: &AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>,
     ) -> Self {
         Arc::clone(&app_state.stop_training)
     }
 }
 
-impl<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR>
-    FromRef<AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR>>
+impl<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>
+    FromRef<AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>>
     for Arc<ValidateTrainingConfig<V>>
 where
     C: CapabilityProvider,
@@ -148,14 +152,14 @@ where
     T: TrainingStopper,
 {
     fn from_ref(
-        app_state: &AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR>,
+        app_state: &AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>,
     ) -> Self {
         Arc::clone(&app_state.validate_training)
     }
 }
 
-impl<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR>
-    FromRef<AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR>>
+impl<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>
+    FromRef<AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>>
     for Arc<RecordTrainingProgress<P, D>>
 where
     C: CapabilityProvider,
@@ -164,14 +168,14 @@ where
     T: TrainingStopper,
 {
     fn from_ref(
-        app_state: &AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR>,
+        app_state: &AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>,
     ) -> Self {
         Arc::clone(&app_state.record_training)
     }
 }
 
-impl<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR>
-    FromRef<AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR>>
+impl<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>
+    FromRef<AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>>
     for Arc<GetModelSummary<MSummary>>
 where
     C: CapabilityProvider,
@@ -180,14 +184,14 @@ where
     T: TrainingStopper,
 {
     fn from_ref(
-        app_state: &AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR>,
+        app_state: &AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>,
     ) -> Self {
         Arc::clone(&app_state.get_model_summary)
     }
 }
 
-impl<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR>
-    FromRef<AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR>>
+impl<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>
+    FromRef<AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>>
     for Arc<GetModelTrainingConfig<MConfig>>
 where
     C: CapabilityProvider,
@@ -196,14 +200,14 @@ where
     T: TrainingStopper,
 {
     fn from_ref(
-        app_state: &AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR>,
+        app_state: &AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>,
     ) -> Self {
         Arc::clone(&app_state.get_model_config)
     }
 }
 
-impl<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR>
-    FromRef<AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR>>
+impl<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>
+    FromRef<AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>>
     for Arc<ResumeTraining<MConfig, S, R, K>>
 where
     C: CapabilityProvider,
@@ -212,14 +216,14 @@ where
     T: TrainingStopper,
 {
     fn from_ref(
-        app_state: &AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR>,
+        app_state: &AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>,
     ) -> Self {
         Arc::clone(&app_state.resume_training)
     }
 }
 
-impl<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR>
-    FromRef<AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR>>
+impl<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>
+    FromRef<AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>>
     for Arc<UploadDataset<DG, DS, DR>>
 where
     C: CapabilityProvider,
@@ -228,8 +232,24 @@ where
     T: TrainingStopper,
 {
     fn from_ref(
-        app_state: &AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR>,
+        app_state: &AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>,
     ) -> Self {
         Arc::clone(&app_state.upload_dataset)
+    }
+}
+
+impl<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>
+    FromRef<AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>>
+    for Arc<ReadDatasetsSummary<DRD>>
+where
+    C: CapabilityProvider,
+    V: TrainingRecordReader,
+    P: TrainingProgressProvider,
+    T: TrainingStopper,
+{
+    fn from_ref(
+        app_state: &AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>,
+    ) -> Self {
+        Arc::clone(&app_state.read_dataset_summary)
     }
 }

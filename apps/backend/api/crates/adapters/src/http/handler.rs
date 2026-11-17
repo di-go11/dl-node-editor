@@ -1,6 +1,7 @@
 use super::dto::{
-    CapabilitiesDto, ModelSummariesDto, ModelTrainingConfigDto, ResumeTrainingConfigDto,
-    StartTrainingResponseDto, TrainingConfigDto, TrainingJobStatusDto, TrainingProcessDto,
+    CapabilitiesDto, DatasetConfigDto, ModelSummariesDto, ModelTrainingConfigDto,
+    ResumeTrainingConfigDto, StartTrainingResponseDto, TrainingConfigDto, TrainingJobStatusDto,
+    TrainingProcessDto, D,
 };
 use axum::{
     extract::{Path, State},
@@ -12,12 +13,14 @@ use entities::{
     training::{config::TrainingConfig, JobId, TrainingProcess},
 };
 use futures_util::StreamExt;
+use tonic::Status;
 use usecases::{
     capabilities::{CapabilityProvider, GetCapabilities},
     dataset::{
         dataset_id_generator::DatasetIdGenerator,
         error::DatasetError,
-        ports::{DatasetRegister, DatasetSaver},
+        ports::{DatasetReader, DatasetRegister, DatasetSaver},
+        read_datasets_summary::ReadDatasetsSummary,
         upload_dataset::UploadDataset,
     },
     model::{
@@ -34,7 +37,7 @@ use usecases::{
     },
 };
 
-use crate::utils::uuid_generator::generate_uuid;
+use crate::{http::dto::DatasetSummariesDto, utils::uuid_generator::generate_uuid};
 use axum::extract::Multipart;
 use tokio::io::AsyncWriteExt;
 
@@ -322,10 +325,8 @@ where
     let mut dataset_type = None;
     let mut has_file = false;
 
-    while let Some(mut field) = multipart
-        .next_field()
-        .await
-        .map_err(|_| StatusCode::BAD_REQUEST)?
+    while let Some(mut field) = multipart.next_field().await.map_err(|e| e.status())?
+    // 上限を超えた際に413を返す。
     {
         // field.name() は field を借用するので、chunk() で &mut を使う前に String にしておく
         let field_name = field.name().map(str::to_owned);
@@ -372,6 +373,22 @@ where
             | DatasetError::CallFailed(_)
             | DatasetError::ReadFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
         })
+}
+
+// DBからデータセットのメタデータ一覧を呼び出すGETリクエストハンドラ
+pub async fn read_summary_datasets<R>(
+    State(usecase): State<Arc<ReadDatasetsSummary<R>>>,
+) -> Result<Json<DatasetSummariesDto>, StatusCode>
+where
+    R: DatasetReader + Send + Sync + 'static,
+{
+    let summary = usecase.execute().await.map_err(|e| match e {
+        DatasetError::SaveFailed(_)
+        | DatasetError::RegisterFailed(_)
+        | DatasetError::CallFailed(_)
+        | DatasetError::ReadFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
+    })?;
+    Ok(Json(DatasetSummariesDto::from(summary.as_slice())))
 }
 
 #[cfg(test)]

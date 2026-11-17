@@ -29,14 +29,15 @@ pub struct RegisterDatasetInput {
     pub dataset_path: String,
 }
 
-pub trait DatasetCaller {
-    fn call(
+pub trait DatasetProvider {
+    fn provide(
         &self,
         dataset_path: &str,
         training_config: &mut TrainingConfig,
     ) -> impl Future<Output = Result<(), DatasetError>> + Send;
 }
 
+// メタデータ呼び出し用ポート
 pub trait DatasetReader {
     fn read(&self) -> impl Future<Output = Result<Vec<DatasetConfig>, DatasetError>> + Send;
 }

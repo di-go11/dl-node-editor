@@ -8,17 +8,59 @@ use usecases::dataset::{error::DatasetError, ports::DatasetSaver};
 use zip::ZipArchive;
 
 use super::error::FileError;
+use tokio::task::spawn_blocking;
 
-const MAX_TOTAL_SIZE: u64 = 1024 * 1024 * 1024 * 1024; // 1TBまでしか解凍できないようにする。
+#[derive(Debug, Clone)]
+pub struct FileDatasetSaver {
+    dataset_root: PathBuf,
+    max_extracted_bytes: u64,
+}
+
+impl FileDatasetSaver {
+    pub fn new(dataset_root: PathBuf, max_extracted_bytes: u64) -> Self {
+        Self {
+            dataset_root,
+            max_extracted_bytes,
+        }
+    }
+    fn save_archive(&self, zip_path: &Path, id: &str) -> Result<PathBuf, FileError> {
+        let staging = self.dataset_root.join(format!(".tmp-{id}"));
+        let final_dir = self.dataset_root.join(id);
+
+        fs::create_dir_all(&staging)?;
+        let result = extract_zip(zip_path, &staging, &self.max_extracted_bytes).and_then(|()| {
+            let content_root = single_child_dir(&staging)?.unwrap_or_else(|| staging.clone());
+            fs::rename(&content_root, &final_dir)?;
+            Ok(())
+        });
+        // 正規化: 直下がディレクトリ1つだけならその中身をデータセットのルートとみなす
+
+        let _ = fs::remove_dir_all(&staging); //空になった外側の.tmp-<id>を片付ける
+        result.map(|()| final_dir) // どっちのケースでも/data/datasets/<id>がルートになる。
+    }
+}
+
+impl DatasetSaver for FileDatasetSaver {
+    async fn save(&self, zip_path: &Path, dataset_id: &DatasetId) -> Result<PathBuf, DatasetError> {
+        let saver = self.clone();
+        // spawn_blockingは別スレッドで動くため借用ではなく所有した値をmoveさせる必要がある。つまり、.to_string()やpathBudにしてコピーさせるということ.
+        let id = dataset_id.as_str().to_string();
+        let zip_path = zip_path.to_path_buf();
+        spawn_blocking(move || saver.save_archive(&zip_path, &id))
+            .await
+            .map_err(|e| DatasetError::SaveFailed(e.to_string()))?
+            .map_err(DatasetError::from) // 大きなファイルをupload中にAPIが止まらないように隔離されたスレッドで実行する。
+    }
+}
 
 // 内部関数は FileError を返し、DatasetError への変換はポート実装の出口で1回だけ行う
-fn extract_zip(zip_path: &Path, dest: &Path) -> Result<(), FileError> {
+fn extract_zip(zip_path: &Path, dest: &Path, max_extracted_bytes: &u64) -> Result<(), FileError> {
     // ?でFrom::fromを呼び出してくれるため、?をつけるだけでいい(io::Error → FileError::Io)
     let file = File::open(zip_path)?;
     // ZipError → FileError::UnzipFailed
     let mut archive = ZipArchive::new(file)?;
-    let mut written: u64 = 0;
 
+    let mut written: u64 = 0;
     for i in 0..archive.len() {
         let mut entry = archive.by_index(i)?;
 
@@ -46,29 +88,14 @@ fn extract_zip(zip_path: &Path, dest: &Path) -> Result<(), FileError> {
 
         // 中身をコピー。残り容量 + 1 バイトまでしか読まないようにする
         let mut out = File::create(&out_path)?;
-        let remaining = MAX_TOTAL_SIZE - written;
+        let max_extracted_bytes = max_extracted_bytes.clone();
+        let remaining = max_extracted_bytes - written;
         written += io::copy(&mut (&mut entry).take(remaining + 1), &mut out)?;
-        if written > MAX_TOTAL_SIZE {
+        if written > max_extracted_bytes {
             return Err(FileError::TooLarge);
         }
     }
     Ok(())
-}
-
-fn save_archive(zip_path: &Path, root: &Path, id: &str) -> Result<PathBuf, FileError> {
-    let staging = root.join(format!(".tmp-{id}"));
-    let final_dir = root.join(id);
-
-    fs::create_dir_all(&staging)?;
-    let result = extract_zip(zip_path, &staging).and_then(|()| {
-        let content_root = single_child_dir(&staging)?.unwrap_or_else(|| staging.clone());
-        fs::rename(&content_root, &final_dir)?;
-        Ok(())
-    });
-    // 正規化: 直下がディレクトリ1つだけならその中身をデータセットのルートとみなす
-
-    let _ = fs::remove_dir_all(&staging); //空になった外側の.tmp-<id>を片付ける
-    result.map(|()| final_dir) // どっちのケースでも/data/datasets/<id>がルートになる。
 }
 
 // dirの直下がディレクトリ1つだけならそのパスを返す。
@@ -78,23 +105,5 @@ fn single_child_dir(dir: &Path) -> Result<Option<PathBuf>, FileError> {
         Ok(Some(entries.remove(0).path()))
     } else {
         Ok(None)
-    }
-}
-
-#[derive(Debug)]
-pub struct FileDatasetSaver {
-    dataset_root: PathBuf,
-}
-
-impl FileDatasetSaver {
-    pub fn new(dataset_root: PathBuf) -> Self {
-        Self { dataset_root }
-    }
-}
-
-impl DatasetSaver for FileDatasetSaver {
-    async fn save(&self, zip_path: &Path, dataset_id: &DatasetId) -> Result<PathBuf, DatasetError> {
-        let id = dataset_id.as_str();
-        save_archive(zip_path, &self.dataset_root, id).map_err(|e| DatasetError::from(e))
     }
 }

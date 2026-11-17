@@ -1,9 +1,10 @@
 use super::handler::{
     get_capabilities, get_model_config, get_model_lists, get_training_process, get_training_status,
-    resume_training, start_training, stop_training, stream_training_process, upload_dataset,
-    validate_training,
+    read_summary_datasets, resume_training, start_training, stop_training, stream_training_process,
+    upload_dataset, validate_training,
 };
 
+use super::config::HttpConfig;
 use super::state::AppState;
 use axum::{
     extract::DefaultBodyLimit,
@@ -14,7 +15,7 @@ use usecases::{
     capabilities::CapabilityProvider,
     dataset::{
         dataset_id_generator::DatasetIdGenerator,
-        ports::{DatasetRegister, DatasetSaver},
+        ports::{DatasetReader, DatasetRegister, DatasetSaver},
     },
     model::ports::{ModelSummaryProvider, ModelTrainingConfigProvider},
     training::{
@@ -24,12 +25,9 @@ use usecases::{
     },
 };
 
-// データセットのアップロード(zip)で受け付けるリクエストボディの上限。axum の標準(2MB)ではデータセットが入らないため、このルートだけ広げる
-// TODO: 実際に扱うデータセットの大きさに合わせて調整する
-const MAX_DATASET_UPLOAD_BYTES: usize = 10 * 1024 * 1024 * 1024; // 10GiB
-
-pub fn router<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR>(
-    state: AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR>,
+pub fn router<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>(
+    state: AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>,
+    config: HttpConfig,
 ) -> Router
 where
     C: CapabilityProvider + Send + Sync + 'static,
@@ -53,6 +51,8 @@ where
     DG: DatasetIdGenerator + Send + Sync + 'static,
     DS: DatasetSaver + Send + Sync + 'static,
     DR: DatasetRegister + Send + Sync + 'static,
+    // データセット一覧(ReadDatasetsSummary)用
+    DRD: DatasetReader + Send + Sync + 'static,
 {
     Router::new().nest(
         "/api/v1",
@@ -68,6 +68,7 @@ where
             .route("/trainings/{job_id}/stop", post(stop_training::<T>))
             .route("/trainings/{job_id}/status", get(get_training_status::<P>))
             // 学習済みモデル(学習再開の画面用)
+            // TODO: API名を/modelsから/models/listに変更する。
             .route("/models", get(get_model_lists::<MSummary>))
             .route(
                 "/models/{model_id}/config",
@@ -77,11 +78,14 @@ where
                 "/models/{model_id}/resume",
                 post(resume_training::<MConfig, S, R, K>),
             )
-            // データセット
+            // データセット呼び出しAPI
+            .route("/datasets", get(read_summary_datasets::<DRD>))
+            .route("/datasets/{dataset_id}")
+            // データセット登録用API
             .route(
-                "/datasets",
+                "/datasets/upload",
                 post(upload_dataset::<DG, DS, DR>)
-                    .layer(DefaultBodyLimit::max(MAX_DATASET_UPLOAD_BYTES)),
+                    .layer(DefaultBodyLimit::max(config.max_dataset_upload_bytes())),
             )
             .with_state(state),
     )

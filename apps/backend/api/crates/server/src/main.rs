@@ -4,6 +4,7 @@ use adapters::GrpcTrainingStarter;
 use adapters::GrpcTrainingStopper;
 use adapters::connect_database;
 use adapters::http::AppState;
+use adapters::http::HttpConfig;
 use adapters::http::router;
 use adapters::training::{recording_channel, run_recording_worker};
 use adapters::{FileDatasetSaver, SqliteDatasetRepository, UuidDatasetIdGenerator};
@@ -14,6 +15,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tonic::transport::Channel;
 use usecases::capabilities::GetCapabilities;
+use usecases::dataset::read_datasets_summary::ReadDatasetsSummary;
 use usecases::dataset::upload_dataset::UploadDataset;
 use usecases::model::{GetModelSummary, GetModelTrainingConfig};
 use usecases::training::{
@@ -32,6 +34,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Databaseへのconnect
     let database_url = std::env::var("DATABASE_URL")?;
     let pool = connect_database(&database_url).await?;
+
+    // APIでのzipのデータサイズ上限
+    let max_dataset_upload_bytes = match std::env::var("DATASET_UPLOAD_MAX_MIB") {
+        Ok(v) => v
+            .parse::<usize>()
+            .map_err(|_| format!("DATASET_UPLOAD_MAX_MBはMiB単位の整数で指定してください: {v}"))?,
+        Err(_) => 10 * 1024,
+    }
+    .checked_mul(1024 * 1024) //パースしたMiBに1024^2を書けてbyteに変換する。
+    .ok_or("DATASET_UPLOAD_MAX_MBが大きすぎます")?;
+
+    // Zip解凍サイズの上限
+    let max_unzip_max_bytes = match std::env::var("DATASET_UNZIP_MAX_MIB") {
+        Ok(v) => v
+            .parse::<usize>()
+            .map_err(|_| format!("DATASET_UNZIP_MAX_MIBはMiB単位の整数で指定してください: {v}"))?,
+        Err(_) => 10 * 1024,
+    }
+    .checked_mul(1024 * 1024) //パースしたMiBに1024^2を書けてbyteに変換する。
+    .ok_or("DATASET_UPLOAD_MAX_MBが大きすぎます")?;
     // アップロードされたデータセットの解凍先。DBに保存する dataset_path はこの下になり、C++側もそのパスで読むため、
     // 既定値は ai-engine コンテナのマウント先(/datasets)に合わせる
     let dataset_root =
@@ -101,12 +123,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // データセットのアップロード(zipを dataset_root に解凍し、メタデータを DB に登録する)
         upload_dataset: Arc::new(UploadDataset::new(
             UuidDatasetIdGenerator,
-            FileDatasetSaver::new(dataset_root),
+            FileDatasetSaver::new(dataset_root, max_unzip_max_bytes),
             SqliteDatasetRepository::new(pool.clone()),
         )),
+        // データセットのメタデータ一覧取得
+        read_dataset_summary: Arc::new(ReadDatasetsSummary::new(SqliteDatasetRepository::new(
+            pool.clone(),
+        ))),
     };
 
+    // http通信の際の設定
+    let http_config = HttpConfig::new(max_dataset_upload_bytes).map_err(|e| e)?;
+
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await?;
-    axum::serve(listener, router(state)).await?;
+    axum::serve(listener, router(state, http_config)).await?;
     Ok(())
 }
