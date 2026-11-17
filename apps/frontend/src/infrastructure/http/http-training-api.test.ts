@@ -29,7 +29,7 @@ afterEach(() => server.resetHandlers())
 afterAll(() => server.close())
 
 const client = () => createApiClient(TEST_BASE_URL)
-const settings = { ...defaultTrainingSettings(), datasetPath: '/data/voc', device: 'cpu' }
+const settings = { ...defaultTrainingSettings(), datasetId: 'mock-dataset-voc2012', device: 'cpu' }
 
 describe('createHttpTrainingApi', () => {
   it('Rust の形で送り、job_id を受け取る(状態は running に固定する)', async () => {
@@ -39,7 +39,10 @@ describe('createHttpTrainingApi', () => {
 
   it.each([
     [409, 'すでに実行中の学習があります。'],
-    [422, '学習設定またはモデル構造が受け付けられませんでした。'],
+    [
+      422,
+      '学習設定またはモデル構造が受け付けられませんでした。選んだデータセットが削除されている場合は、選び直してください。',
+    ],
     [404, '指定されたジョブが見つかりません。'],
     [502, '学習サーバーに接続できません。'],
     [500, 'サーバーがエラーを返しました(HTTP 500)。'],

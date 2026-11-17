@@ -39,12 +39,18 @@ describe('parseEditorFileText', () => {
     expect(document.layout.positions.size).toBe(0)
   })
 
-  it('取り込んだ設定から学習開始の JSON を作り直すと、元のファイルと同じになる', () => {
+  it('取り込んだ設定から学習開始の JSON を作り直すと、データセット以外は元のファイルと同じになる', () => {
     const result = parseEditorFileText(exampleRaw)
     if (!result.ok || result.document.training === null) throw new Error('読めませんでした')
-    expect(toStartTrainingRequestJson(result.document.graph, result.document.training)).toEqual(
-      JSON.parse(exampleRaw),
-    )
+    // データセットはパス(dataset_path)ではなく ID で持つ。パスは読み捨て、未選択(空の dataset_id)になる
+    const { dataset_path: _datasetPath, ...example } = JSON.parse(exampleRaw) as Record<
+      string,
+      unknown
+    >
+    expect(toStartTrainingRequestJson(result.document.graph, result.document.training)).toEqual({
+      ...example,
+      dataset_id: '',
+    })
   })
 
   it('format があれば、壊れていても保存ファイルとして報告する(原因を取り違えない)', () => {

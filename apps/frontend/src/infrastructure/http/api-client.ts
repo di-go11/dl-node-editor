@@ -71,10 +71,12 @@ function httpError(response: Response, messages: HttpErrorMessages = {}): ApiErr
  * 同じ状態コードでも意味が API ごとに違う(validate の 409 は「名前が使用済み」で、
  * 学習開始の 409 は「実行中の学習がある」)。そこで、結果として受け取る状態コードと
  * その値の対応(byStatus)は呼び出し側が渡す。対応にないエラーの状態コードは kind: 'http' にする。
+ * messages を渡すと、そのエラーの説明をその API の意味で上書きできる(callApi と同じ)。
  */
 export async function callApiByStatus<T>(
   call: () => Promise<FetchResult>,
   byStatus: Readonly<Record<number, T>>,
+  messages?: HttpErrorMessages,
 ): Promise<ApiResult<T>> {
   let response: Response
   try {
@@ -86,7 +88,7 @@ export async function callApiByStatus<T>(
 
   const value = byStatus[response.status]
   if (value !== undefined) return apiOk(value)
-  if (!response.ok) return apiError(httpError(response))
+  if (!response.ok) return apiError(httpError(response, messages))
   return apiError({
     kind: 'invalid-response',
     message: `サーバーが契約にない状態コードを返しました(HTTP ${response.status})。`,

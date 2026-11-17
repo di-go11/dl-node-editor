@@ -10,7 +10,6 @@ import { validateResumeSettings } from './validate-resume'
 function resumeSettings(patch: Partial<TrainingSettings> = {}): TrainingSettings {
   return {
     ...defaultTrainingSettings(),
-    datasetPath: '/data/voc',
     device: 'cpu',
     epoch: 10,
     ...patch,
@@ -22,9 +21,7 @@ const codesOf = (settings: TrainingSettings, completedEpochs = 5) =>
 
 describe('validateResumeSettings', () => {
   it('完了済みより大きい epoch なら問題なし', () => {
-    expect(validateResumeSettings({ settings: resumeSettings(), completedEpochs: 5 }).ok).toBe(
-      true,
-    )
+    expect(validateResumeSettings({ settings: resumeSettings(), completedEpochs: 5 }).ok).toBe(true)
   })
 
   it.each([5, 3])('epoch が完了済みのエポック数以下(%i)なら止める', (epoch) => {
@@ -48,11 +45,13 @@ describe('validateResumeSettings', () => {
     expect(codesOf(resumeSettings({ modelName: 'has space' }))).toEqual([])
   })
 
-  it('変えられる項目(データセットのパス・デバイス)は確かめる', () => {
-    expect(codesOf(resumeSettings({ datasetPath: '', device: '' }))).toEqual([
-      'training/required',
-      'training/required',
-    ])
+  it('変えられない項目(データセット)は確かめない', () => {
+    // 再開の設定の取得 API はデータセットを返さないので、学習設定では未選択になっている
+    expect(codesOf(resumeSettings({ datasetId: '' }))).toEqual([])
+  })
+
+  it('変えられる項目(デバイス)は確かめる', () => {
+    expect(codesOf(resumeSettings({ device: '' }))).toEqual(['training/required'])
   })
 
   it('一覧にないデバイスは止める', () => {

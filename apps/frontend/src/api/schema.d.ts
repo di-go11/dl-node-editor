@@ -38,6 +38,7 @@ export interface paths {
          * @description 受理されると job_id が返り、進捗は /trainings/{job_id}/progress で購読する。
          *     新規学習専用。同じ model_name のモデルがすでにあるかは /trainings/validate で先に確かめる。
          *     学習の再開は /models/{model_id}/resume で行う。
+         *     データセットは /datasets の dataset_id で指定する。サーバー上のパスはサーバーが dataset_id から決める。
          */
         post: operations["startTraining"];
         delete?: never;
@@ -160,7 +161,7 @@ export interface paths {
         };
         /**
          * 学習済みモデルの一覧を取得する
-         * @description 学習再開画面(/resume)の一覧に使う。最近学習した(最新の run を始めた)モデルが先に並ぶ。
+         * @description パラメータ一覧&学習再開(/models)の一覧に使う。最近学習した(最新の run を始めた)モデルが先に並ぶ。
          *     学習の記録(run)が 1 件もないモデルは含めない。0 件でも 200 で空の配列を返す。
          */
         get: operations["listModels"];
@@ -205,13 +206,56 @@ export interface paths {
         /**
          * 学習を再開する
          * @description 再開時に変えてよい項目だけを送る。初期値は /models/{model_id}/config の応答から取る。
-         *     - 固定項目(model_name / model_graph / data_spec / seed)は送らない。サーバーが前回の学習設定の値を使う。
+         *     - 固定項目(model_name / model_graph / data_spec / seed / データセット)は送らない。サーバーが前回の学習設定の値を使う。
          *     - optimizer はハイパーパラメータを変えてよいが、type は前回と同じにする(違うと 422)。
          *     - epoch は合計エポック数である。前回までに完了したエポック数より大きい値にする。
          *     - 再開するモデルはパスの model_id で決める。再開元の checkpoint は C++ が model_id から決める。
          *     受理されると job_id が返り、進捗は /trainings/{job_id}/progress で購読する。
          */
         post: operations["resumeTraining"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/datasets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 登録済みデータセットの一覧を取得する
+         * @description 学習設定画面でデータセットを選ぶのに使う。選んだデータセットの dataset_id を /trainings に送る。
+         *     サーバー上のパスは返さない。0 件でも 200 で空の配列を返す。
+         */
+        get: operations["listDatasets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/datasets/upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * データセット(zip)をアップロードして登録する
+         * @description zip をサーバーのデータセット置き場に解凍し、メタデータを登録する。
+         *     直下がディレクトリ 1 つだけの zip は、その中身をデータセットのルートとみなす。
+         *     受け付けるサイズと解凍後の合計サイズには上限がある(サーバーの設定 DATASET_UPLOAD_MAX_MIB / DATASET_UNZIP_MAX_MIB)。
+         */
+        post: operations["uploadDataset"];
         delete?: never;
         options?: never;
         head?: never;
@@ -501,7 +545,11 @@ export interface components {
             image_task_spec: components["schemas"]["ImageTaskSpec"];
             image_annotation_config: components["schemas"]["ImageAnnotationConfig"];
         };
-        StartTrainingRequest: {
+        /**
+         * @description StartTrainingRequest と ModelTrainingConfig に共通する学習設定。データセットの指定は含まない
+         *     (新規学習のリクエストだけが dataset_id を持ち、保存済みの設定の応答はデータセットを返さない)。
+         */
+        TrainingConfigBase: {
             model_name: string;
             model_graph: components["schemas"]["ModelGraph"];
             optimizer: components["schemas"]["OptimizerConfig"];
@@ -510,8 +558,6 @@ export interface components {
             epoch: number;
             /** Format: int32 */
             batch: number;
-            /** @description 学習エンジンから見たサーバー上のパス */
-            dataset_path: string;
             /** @description /capabilities の devices[].id から選ぶ */
             device: string;
             data_spec: components["schemas"]["DataSpec"];
@@ -525,6 +571,14 @@ export interface components {
              * @description 乱数シード。0 も有効な値である。固定しない場合はキーごと省略する
              */
             seed?: number | null;
+        };
+        /** @description POST /trainings と POST /trainings/validate の本体 */
+        StartTrainingRequest: components["schemas"]["TrainingConfigBase"] & {
+            /**
+             * @description /datasets の dataset_id から選ぶ。サーバー上のパスはサーバーがこの ID から決める
+             *     (クライアントはパスを送らない・知らない)
+             */
+            dataset_id: string;
         };
         StartTrainingResponse: {
             job_id: string;
@@ -560,16 +614,17 @@ export interface components {
             models: components["schemas"]["ModelSummary"][];
         };
         /**
-         * @description GET /models/{model_id}/config の応答。StartTrainingRequest と同じ項目に model_id を足したもの(同じ階層に並ぶ)。
+         * @description GET /models/{model_id}/config の応答。TrainingConfigBase の項目に model_id を足したもの(同じ階層に並ぶ)。
+         *     学習に使ったデータセットは返さない(サーバー上のパスをクライアントに見せないため)。
          *     seed を固定していない場合も、キーを省略せずに null を返す。
          */
-        ModelTrainingConfig: components["schemas"]["StartTrainingRequest"] & {
+        ModelTrainingConfig: components["schemas"]["TrainingConfigBase"] & {
             model_id: string;
         };
         /**
          * @description POST /models/{model_id}/resume の本体。再開時に変えてよい項目だけを持つ。
-         *     固定項目(model_name / model_graph / data_spec / seed)はサーバーが前回の学習設定から使う。
-         *     送られてきても無視する。
+         *     固定項目(model_name / model_graph / data_spec / seed / データセット)はサーバーが前回の学習設定から使う。
+         *     送られてきても無視する(以前の形式の dataset_path も無視する)。
          */
         ResumeTrainingConfig: {
             /** @description type は前回と同じにする(違うと 422) */
@@ -582,8 +637,6 @@ export interface components {
             epoch: number;
             /** Format: int32 */
             batch: number;
-            /** @description 学習エンジンから見たサーバー上のパス */
-            dataset_path: string;
             /** @description /capabilities の devices[].id から選ぶ */
             device: string;
             /**
@@ -591,6 +644,19 @@ export interface components {
              * @description checkpoint を保存する間隔(エポック)。0 なら毎エポック
              */
             save_last_every: number;
+        };
+        DatasetSummary: {
+            /** @description /trainings の dataset_id に送る値 */
+            dataset_id: string;
+            /** @description アップロード時に付けた名前 */
+            dataset_name: string;
+            /** @description データセットの形式(pascal_voc など。アップロード時に指定した値) */
+            dataset_type: string;
+            /** @description 登録した日時(UTC, RFC 3339) */
+            created_at: string;
+        };
+        DatasetSummariesResponse: {
+            datasets: components["schemas"]["DatasetSummary"][];
         };
         /** @enum {string} */
         TrainingStatus: "idle" | "running" | "completed" | "failed" | "stopped";
@@ -754,8 +820,18 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description リクエストの形が合わない、または C++ が設定を拒否した */
+            /**
+             * @description リクエストの形が合わない(dataset_id が空を含む)、dataset_id のデータセットが登録されていない、
+             *     または C++ が設定を拒否した
+             */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description DB の読み書きに失敗した */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -791,7 +867,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description リクエストの形が合わない */
+            /** @description リクエストの形が合わない(dataset_id が空を含む)。データセットが登録されているかはここでは確かめない */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -1029,6 +1105,89 @@ export interface operations {
                 content?: never;
             };
             502: components["responses"]["UpstreamError"];
+        };
+    };
+    listDatasets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 取得できた */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetSummariesResponse"];
+                };
+            };
+            /** @description DB の読み取りに失敗した */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    uploadDataset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /**
+                     * Format: binary
+                     * @description データセットの zip
+                     */
+                    file: string;
+                    /** @description 一覧に表示する名前 */
+                    name: string;
+                    /** @description データセットの形式(pascal_voc など) */
+                    type: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 登録した(本文なし) */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description file / name / type のどれかが欠けている、空である、または multipart の形が正しくない */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description アップロードの受信上限を超えた */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /**
+             * @description 保存・登録に失敗した。壊れた zip、解凍後のサイズ上限の超過、安全でないパスを含む zip も今はここに含む
+             *     (クライアントの誤りとして区別するのは今後の課題)
+             */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
 }

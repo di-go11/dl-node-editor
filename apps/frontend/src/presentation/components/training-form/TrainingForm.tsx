@@ -16,7 +16,9 @@ import { TRAINING_NUMBER_DEFS } from '../../../entity/training/training-settings
 import type { Issue } from '../../../entity/validation/issue'
 import { ParamField } from '../param-form/ParamField'
 
+import { DatasetField } from './DatasetField'
 import styles from './TrainingForm.module.css'
+import type { UseDatasets } from '../dataset/use-datasets'
 import { VariantField } from './VariantField'
 
 /**
@@ -32,7 +34,7 @@ import { VariantField } from './VariantField'
  * ## 学習再開(resume を渡したとき)
  *
  * 学習再開画面でも同じフォームを使い、再開で変えられない欄だけを外す(issue doc 作業 7)。
- *   - 外す欄: model_name、データ(入力サイズ・アノテーション・タスク)、seed
+ *   - 外す欄: model_name、データセット、データ(入力サイズ・アノテーション・タスク)、seed
  *   - optimizer は種類の選択だけを無効にし、ハイパーパラメータは変えられる
  *   - epoch は合計エポック数なので、前回までに完了したエポック数を添える
  */
@@ -44,6 +46,8 @@ export type TrainingFormProps = {
   readonly issues: readonly Issue[]
   /** 選べるデバイス。capabilities を取得できていなければ null(自由に入力させる) */
   readonly deviceIds: readonly string[] | null
+  /** データセットの選択肢(useDatasets の結果)。新規学習でだけ使う(再開ではデータセットを変えられない) */
+  readonly datasets?: UseDatasets
   /** 学習再開のフォームにする(省略すれば新規学習) */
   readonly resume?: {
     /** 前回までに完了したエポック数 */
@@ -127,7 +131,14 @@ function TextField({
   )
 }
 
-export function TrainingForm({ settings, onChange, issues, deviceIds, resume }: TrainingFormProps) {
+export function TrainingForm({
+  settings,
+  onChange,
+  issues,
+  deviceIds,
+  datasets,
+  resume,
+}: TrainingFormProps) {
   const deviceId = useId()
   const seedId = useId()
   const task = settings.dataSpec.task.kind
@@ -154,14 +165,18 @@ export function TrainingForm({ settings, onChange, issues, deviceIds, resume }: 
             messages={messagesFor(issues, 'model_name')}
           />
         )}
-        <TextField
-          label="データセットのパス(サーバー上)"
-          name="dataset_path"
-          value={settings.datasetPath}
-          placeholder="/workspaces/apps/backend/ai-engine/TrainingDataset/"
-          onChange={(datasetPath) => onChange((s) => ({ ...s, datasetPath }))}
-          messages={messagesFor(issues, 'dataset_path')}
-        />
+        {/* 再開ではデータセットは変えられない(サーバーが前回のデータセットを使う) */}
+        {resuming ? (
+          <p className={styles.hint}>データセットは前回の学習と同じものを使います。</p>
+        ) : (
+          <DatasetField
+            value={settings.datasetId}
+            onChange={(datasetId) => onChange((s) => ({ ...s, datasetId }))}
+            datasets={datasets?.state ?? { status: 'loading' }}
+            onReload={() => datasets?.reload()}
+            messages={messagesFor(issues, 'dataset_id')}
+          />
+        )}
         <div className={styles.field}>
           <label htmlFor={deviceId} className={styles.label}>
             デバイス
@@ -238,7 +253,8 @@ export function TrainingForm({ settings, onChange, issues, deviceIds, resume }: 
           <>
             <p className={styles.hint}>
               合計のエポック数です。前回までに {resume.completedEpochs}{' '}
-              エポック完了しているので、続きの {resume.completedEpochs + 1} エポック目から学習します。
+              エポック完了しているので、続きの {resume.completedEpochs + 1}{' '}
+              エポック目から学習します。
             </p>
             {issues
               .filter((issue) => issue.code === 'training/epoch-not-increased')

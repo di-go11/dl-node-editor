@@ -4,7 +4,7 @@ import { apiError } from '../../application/ports/api-result'
 import type { StartedTraining, TrainingApi } from '../../application/ports/training-api'
 import { toStartTrainingRequestJson } from '../../entity/training/proto-json/convert'
 
-import type { ApiClient } from './api-client'
+import type { ApiClient, HttpErrorMessages } from './api-client'
 import { API_BASE_PATH, callApi, callApiByStatus } from './api-client'
 import type { ProgressEventSource } from './http-training-progress'
 import { listenTrainingProgress, trainingStatusResponseSchema } from './http-training-progress'
@@ -17,6 +17,11 @@ import { toRustStartTrainingRequest } from './rust-training-request'
 const startResponseSchema = z.object({
   job_id: z.string().min(1),
 })
+
+/** 学習開始の 422 は、学習設定・モデル構造の拒否のほかに、選んだデータセットがない場合もある */
+const START_MESSAGES: HttpErrorMessages = {
+  422: '学習設定またはモデル構造が受け付けられませんでした。選んだデータセットが削除されている場合は、選び直してください。',
+}
 
 function toStartedTraining(json: z.infer<typeof startResponseSchema>): StartedTraining {
   // 応答に状態は含まれない。受理された時点で学習は実行中である
@@ -54,6 +59,7 @@ export function createHttpTrainingApi(
         () => client.POST('/trainings', { body: request.value }),
         startResponseSchema,
         toStartedTraining,
+        START_MESSAGES,
       )
     },
 

@@ -15,7 +15,7 @@ import { validateTrainingSettings } from './validate-training'
 function validSettings(patch: Partial<TrainingSettings> = {}): TrainingSettings {
   return {
     ...defaultTrainingSettings(),
-    datasetPath: '/data/voc',
+    datasetId: 'dataset-voc',
     device: 'cpu',
     ...patch,
   }
@@ -35,15 +35,15 @@ const summaryOf = (issues: readonly Issue[]): readonly string[] =>
   issues.map((issue) => `${issue.code} @ ${issue.field ?? ''}`)
 
 describe('validateTrainingSettings - 全体', () => {
-  it('既定値 + データセットのパス + device なら問題なし', () => {
+  it('既定値 + データセット + device なら問題なし', () => {
     const result = validateTrainingSettings({ settings: validSettings() })
     expect(result.issues).toEqual([])
     expect(result.ok).toBe(true)
   })
 
-  it('既定値のままでは、データセットのパスと device が足りない', () => {
+  it('既定値のままでは、データセットと device が足りない', () => {
     expect(summaryOf(issuesOf(defaultTrainingSettings()))).toEqual([
-      'training/required @ dataset_path',
+      'training/required @ dataset_id',
       'training/required @ device',
     ])
   })
@@ -69,10 +69,10 @@ describe('model_name', () => {
   })
 })
 
-describe('dataset_path', () => {
-  it('空白だけなら未入力とみなす', () => {
-    expect(summaryOf(issuesOf(validSettings({ datasetPath: '   ' })))).toEqual([
-      'training/required @ dataset_path',
+describe('dataset_id', () => {
+  it('未選択(空)なら必須の問題', () => {
+    expect(summaryOf(issuesOf(validSettings({ datasetId: '' })))).toEqual([
+      'training/required @ dataset_id',
     ])
   })
 })

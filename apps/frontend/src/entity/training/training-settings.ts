@@ -29,8 +29,11 @@ export type TrainingSettings = {
   readonly loss: LossConfig
   readonly epoch: number
   readonly batch: number
-  /** 学習エンジンから見たサーバー上のパス */
-  readonly datasetPath: string
+  /**
+   * 学習に使うデータセット。登録済みデータセットの ID(GET /datasets の dataset_id)で、空文字は未選択。
+   * サーバー上のパスはフロントでは持たない(サーバーが ID から決める)
+   */
+  readonly datasetId: string
   /** 'cpu' / 'cuda' / 'cuda:0' のような文字列。capabilities API の結果から選ぶ */
   readonly device: string
   readonly dataSpec: DataSpec
@@ -117,7 +120,7 @@ export function defaultTrainingSettings(): TrainingSettings {
     loss: defaultVariant(LOSS_TYPES, DEFAULT_LOSS_KIND),
     epoch: TRAINING_NUMBER_DEFS.epoch.default,
     batch: TRAINING_NUMBER_DEFS.batch.default,
-    datasetPath: '',
+    datasetId: '',
     device: '',
     dataSpec: defaultImageDataSpec(),
     saveLastEvery: TRAINING_NUMBER_DEFS.save_last_every.default,

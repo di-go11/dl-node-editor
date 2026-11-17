@@ -92,7 +92,8 @@ export function trainingSettingsFromJson(json: TrainingSettingsJson): TrainingSe
     loss: variantFromJson(LOSS_TYPES, json.loss),
     epoch: json.epoch,
     batch: json.batch,
-    datasetPath: json.dataset_path,
+    // C++ の設定ファイルには dataset_id がない(パスは読み捨てている)ので、未選択から始める
+    datasetId: json.dataset_id ?? '',
     device: json.device,
     dataSpec: dataSpecFromJson(json.data_spec),
     saveLastEvery: json.save_last_every,
@@ -110,7 +111,7 @@ export function trainingSettingsToJson(settings: TrainingSettings): TrainingSett
     loss: variantToJson(settings.loss),
     epoch: settings.epoch,
     batch: settings.batch,
-    dataset_path: settings.datasetPath,
+    dataset_id: settings.datasetId,
     device: settings.device,
     data_spec: dataSpecToJson(settings.dataSpec),
     save_last_every: settings.saveLastEvery,

@@ -39,7 +39,6 @@ const summary: TrainedModelSummary = {
 const savedSettings: TrainingSettings = {
   ...defaultTrainingSettings(),
   modelName: 'segnet',
-  datasetPath: '/data/voc',
   device: 'cpu',
   epoch: 10,
 }

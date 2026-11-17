@@ -152,7 +152,8 @@ export const rustStartTrainingRequestSchema = z.object({
   loss: rustLossSchema,
   epoch: nonNegativeInteger,
   batch: nonNegativeInteger,
-  dataset_path: z.string(),
+  // 登録済みデータセットの ID。未選択(空文字)では送らない(サーバーも 422 を返す)
+  dataset_id: z.string().min(1),
   device: z.string(),
   data_spec: rustDataSpecSchema,
   save_last_every: nonNegativeInteger,
@@ -220,7 +221,7 @@ export function toRustStartTrainingRequest(json: StartTrainingRequestJson): Rust
     loss: tagged(json.loss),
     epoch: json.epoch,
     batch: json.batch,
-    dataset_path: json.dataset_path,
+    dataset_id: json.dataset_id,
     device: json.device,
     data_spec: {
       type: 'image',
@@ -245,14 +246,13 @@ export function toRustStartTrainingRequest(json: StartTrainingRequestJson): Rust
 
 /**
  * 学習再開のリクエスト(POST /models/{model_id}/resume)。再開時に変えてよい項目だけを持つ。
- * 固定項目(model_name / model_graph / data_spec / seed)はサーバーが前回の設定を使うので送らない。
+ * 固定項目(model_name / model_graph / data_spec / seed / データセット)はサーバーが前回の設定を使うので送らない。
  */
 export const rustResumeTrainingRequestSchema = rustStartTrainingRequestSchema.pick({
   optimizer: true,
   loss: true,
   epoch: true,
   batch: true,
-  dataset_path: true,
   device: true,
   save_last_every: true,
 })
@@ -273,7 +273,6 @@ export function toRustResumeTrainingRequest(
     loss: tagged(json.loss),
     epoch: json.epoch,
     batch: json.batch,
-    dataset_path: json.dataset_path,
     device: json.device,
     save_last_every: json.save_last_every,
   })
@@ -286,8 +285,12 @@ export function toRustResumeTrainingRequest(
 /**
  * 学習設定の取得(GET /models/{model_id}/config)の応答。学習開始のリクエストと同じ形に model_id が付く。
  * モデル構造は再開画面で使わない(サーバーが保存済みの構造で再開する)ので、検証もしない。
+ * データセットは応答に含まれない(サーバーはパスを返さない。再開ではデータセットを変えられない)。
  */
-export const rustModelConfigSchema = rustStartTrainingRequestSchema.omit({ model_graph: true })
+export const rustModelConfigSchema = rustStartTrainingRequestSchema.omit({
+  model_graph: true,
+  dataset_id: true,
+})
 
 export type RustModelConfig = z.infer<typeof rustModelConfigSchema>
 
@@ -312,7 +315,7 @@ export function fromRustModelConfig(json: RustModelConfig): RustConfigConversion
     loss: untagged(json.loss),
     epoch: json.epoch,
     batch: json.batch,
-    dataset_path: json.dataset_path,
+    // データセットは応答にないので、学習設定では未選択(再開画面では使わない)
     device: json.device,
     data_spec: {
       image: {
