@@ -1,6 +1,8 @@
 import { useId } from 'react'
 import type { ReactNode } from 'react'
 
+import type { ParamValues } from '../../../entity/model-graph/node-spec'
+import type { ParamDef, ParamDefs } from '../../../entity/param/param-def'
 import type { VariantCatalog, Variant } from '../../../entity/training/variant'
 import {
   changeVariantKind,
@@ -24,6 +26,22 @@ import styles from './TrainingForm.module.css'
  * 1d で oneof を「バリアントのカタログ」にまとめたので、4 つの oneof を
  * この 1 つの部品で扱える。
  */
+
+/**
+ * 入力欄を出すパラメータ。enabledBy の bool パラメータがオフのものは隠す
+ * (値は袋に残るので、オンに戻すと前の値が出る)
+ */
+function visibleParamsOf(
+  defs: ParamDefs,
+  params: ParamValues,
+): readonly (readonly [string, ParamDef])[] {
+  return Object.entries(defs).filter(
+    ([, paramDef]) =>
+      paramDef.kind !== 'int' ||
+      paramDef.enabledBy === undefined ||
+      params[paramDef.enabledBy] === true,
+  )
+}
 
 export type VariantFieldProps<K extends string> = {
   readonly legend: string
@@ -93,7 +111,7 @@ export function VariantField<K extends string>({
       ))}
       {def.description !== undefined && <p className={styles.description}>{def.description}</p>}
       {hint}
-      {Object.entries(def.params).map(([paramName, paramDef]) => (
+      {visibleParamsOf(def.params, variant.params).map(([paramName, paramDef]) => (
         <ParamField
           // 種類を切り替えたら入力途中の状態を捨てるよう、種類もキーに含める
           key={`${variant.kind}:${paramName}`}

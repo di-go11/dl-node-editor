@@ -137,11 +137,19 @@ export const rustDataSpecSchema = z.object({
   input_width: nonNegativeInteger,
   input_height: nonNegativeInteger,
   image_task_spec: z.discriminatedUnion('type', [
-    z.object({ type: z.literal('segmentation'), ignore_index: nonNegativeInteger }),
+    z.object({
+      type: z.literal('segmentation'),
+      ignore_index: nonNegativeInteger,
+      ignore_color_enabled: z.boolean(),
+      ignore_color_r: nonNegativeInteger,
+      ignore_color_g: nonNegativeInteger,
+      ignore_color_b: nonNegativeInteger,
+    }),
     z.object({ type: z.literal('classification') }),
   ]),
   image_annotation_config: z.discriminatedUnion('type', [
     z.object({ type: z.literal('pascal_voc'), include_difficult: z.boolean() }),
+    z.object({ type: z.literal('original') }),
   ]),
 })
 

@@ -34,6 +34,11 @@ export type IntParamDef = {
   readonly min?: number
   readonly max?: number
   readonly help?: string
+  /**
+   * 同じパラメータ袋にある bool パラメータの名前。それがオンのときだけ入力欄を出す
+   * (無視する色の R/G/B など)。値そのものは常に持ち、検証もする(オフでも既定値が入っている)
+   */
+  readonly enabledBy?: string
 }
 
 export type FloatParamDef = {

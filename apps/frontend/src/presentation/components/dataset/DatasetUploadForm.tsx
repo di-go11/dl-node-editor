@@ -32,6 +32,16 @@ type UploadState =
 
 const ANNOTATION_KINDS = Object.keys(ANNOTATION_TYPES) as AnnotationKind[]
 
+/**
+ * 形式ごとに zip に必要なもの(契約の POST /datasets/upload の type の説明と同じ)。
+ * サーバーは解凍後にこれを確かめ、足りなければ 422 で足りないものを返す
+ */
+const VOC_LAYOUT = 'JPEGImages/、SegmentationClass/、ImageSets/Segmentation/train.txt・val.txt'
+const REQUIRED_LAYOUT_HINT: Record<AnnotationKind, string> = {
+  pascal_voc: `必要なもの: ${VOC_LAYOUT}`,
+  original: `必要なもの: ${VOC_LAYOUT}、labelmap.txt`,
+}
+
 function formatSize(bytes: number): string {
   if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GiB`
   if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(1)} MiB`
@@ -130,6 +140,8 @@ export function DatasetUploadForm({ onUploaded, onCancel }: DatasetUploadFormPro
               </option>
             ))}
           </select>
+          <p className={styles.hint}>{ANNOTATION_TYPES[type].description}</p>
+          <p className={styles.hint}>{REQUIRED_LAYOUT_HINT[type]}</p>
         </div>
 
         <p className={styles.hint}>

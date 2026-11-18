@@ -107,6 +107,20 @@ describe('データセットの追加', () => {
     expect(upload.mock.calls[0]?.[0]).toMatchObject({ name: 'my-voc' })
   })
 
+  it('形式を Original にすると、labelmap.txt が必要と案内し、original で送る', async () => {
+    const { upload } = renderPage()
+    await userEvent.click(addButton())
+    const form = screen.getByRole('form', { name: 'データセットの追加' })
+    expect(within(form).queryByText(/labelmap\.txt$/)).not.toBeInTheDocument()
+
+    await userEvent.selectOptions(within(form).getByLabelText('形式'), 'original')
+    expect(within(form).getByText(/必要なもの: .*、labelmap\.txt$/)).toBeInTheDocument()
+
+    await userEvent.upload(within(form).getByLabelText('zip ファイル'), zipFile())
+    await userEvent.click(uploadButton())
+    expect(upload.mock.calls[0]?.[0]).toMatchObject({ type: 'original' })
+  })
+
   it('zip を選ぶまで、名前が空なら、アップロードできない', async () => {
     renderPage()
     await userEvent.click(addButton())

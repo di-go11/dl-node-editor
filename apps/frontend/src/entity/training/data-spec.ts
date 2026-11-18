@@ -8,7 +8,7 @@ import { defaultVariant } from './variant'
  *
  *   DataSpec(oneof: 今は image だけ)
  *     └ ImageSpec
- *         ├ annotation   … アノテーションの形式(oneof: 今は pascal_voc だけ)
+ *         ├ annotation   … アノテーションの形式(oneof: pascal_voc / original)
  *         ├ input_width / input_height
  *         └ task_specs   … タスク(oneof: segmentation / object_detection / classification)
  *
@@ -23,7 +23,8 @@ import { defaultVariant } from './variant'
 export const ANNOTATION_TYPES = {
   pascal_voc: {
     label: 'Pascal VOC',
-    description: 'Pascal VOC 形式のデータセット。',
+    description:
+      '本家 Pascal VOC 形式のデータセット。マスクの色は VOC のカラーマップ(21 クラス)で読み、labelmap.txt は使いません。',
     params: {
       include_difficult: {
         kind: 'bool',
@@ -32,6 +33,12 @@ export const ANNOTATION_TYPES = {
         help: '「判定が難しい」と印の付いた例も学習に使う。',
       },
     },
+  },
+  original: {
+    label: 'Original(labelmap.txt)',
+    description:
+      'VOC と同じフォルダ構成で、色とクラスの対応を labelmap.txt で決める独自形式(CVAT の Segmentation mask 書き出しなど)。',
+    params: {},
   },
 } satisfies Record<string, VariantDef>
 
@@ -52,6 +59,16 @@ export type ImageTaskDef = VariantDef & {
 
 const ENGINE_NOT_READY = '学習エンジン(C++)がまだ対応していません'
 
+/** 無視する色の 1 成分。ignore_color_enabled がオンのときだけ入力欄を出す */
+const ignoreColorDef = (channel: 'R' | 'G' | 'B', defaultValue: number): IntParamDef => ({
+  kind: 'int',
+  label: `無視する色の ${channel}`,
+  default: defaultValue,
+  min: 0,
+  max: 255,
+  enabledBy: 'ignore_color_enabled',
+})
+
 export const IMAGE_TASK_TYPES = {
   segmentation: {
     label: 'セグメンテーション',
@@ -63,8 +80,17 @@ export const IMAGE_TASK_TYPES = {
         default: 255,
         min: 0,
         max: 255,
-        help: '損失の計算から除外するラベル値。Pascal VOC では物体の境界に 255 が付いている。',
+        help: '損失の計算と評価から除外するラベル値。下の「無視する色」の画素と、リサイズの余白がこの値になる。実在するクラス ID と重ならない値にする。',
       },
+      ignore_color_enabled: {
+        kind: 'bool',
+        label: '無視する色を指定する',
+        default: true,
+        help: 'マスク画像でこの色の画素を「無視するラベル値」に変換する。Pascal VOC の境界・difficult 領域(void)は 224, 224, 192。オフにすると、labelmap にない色があった時点で学習を止める。',
+      },
+      ignore_color_r: ignoreColorDef('R', 224),
+      ignore_color_g: ignoreColorDef('G', 224),
+      ignore_color_b: ignoreColorDef('B', 192),
     },
     available: true,
   },

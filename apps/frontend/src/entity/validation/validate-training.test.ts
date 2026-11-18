@@ -218,6 +218,14 @@ describe('data_spec', () => {
     ])
   })
 
+  it('無視する色の各成分は 0〜255', () => {
+    const base = validSettings().dataSpec
+    const dataSpec = { ...base, task: withVariantParams(base.task, { ignore_color_g: 256 }) }
+    expect(summaryOf(issuesOf(validSettings({ dataSpec })))).toEqual([
+      'training/param-invalid @ data_spec.image.task_specs.segmentation.ignore_color_g',
+    ])
+  })
+
   it('アノテーションのパラメータも確かめる', () => {
     const base = validSettings().dataSpec
     const dataSpec = { ...base, annotation: { kind: 'pascal_voc' as const, params: {} } }

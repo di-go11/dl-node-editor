@@ -74,7 +74,16 @@ describe('学習開始リクエストの往復', () => {
       device: 'cuda:0',
       dataSpec: {
         kind: 'image',
-        task: { kind: 'segmentation', params: { ignore_index: 255 } },
+        task: {
+          kind: 'segmentation',
+          params: {
+            ignore_index: 255,
+            ignore_color_enabled: true,
+            ignore_color_r: 224,
+            ignore_color_g: 224,
+            ignore_color_b: 192,
+          },
+        },
       },
       // { "value": 0 } は「0 に固定する」であり、未指定(null)とは違う
       seed: 0,

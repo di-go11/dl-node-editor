@@ -22,7 +22,16 @@ describe('defaultTrainingSettings', () => {
       inputWidth: 256,
       inputHeight: 256,
       annotation: { kind: 'pascal_voc', params: { include_difficult: false } },
-      task: { kind: 'segmentation', params: { ignore_index: 255 } },
+      task: {
+        kind: 'segmentation',
+        params: {
+          ignore_index: 255,
+          ignore_color_enabled: true,
+          ignore_color_r: 224,
+          ignore_color_g: 224,
+          ignore_color_b: 192,
+        },
+      },
     })
   })
 

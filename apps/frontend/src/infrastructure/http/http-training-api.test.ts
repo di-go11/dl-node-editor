@@ -145,7 +145,14 @@ describe('toRustStartTrainingRequest', () => {
     expect(result.value.loss).toEqual({ type: 'cross_entropy' })
     expect(result.value.data_spec).toMatchObject({
       type: 'image',
-      image_task_spec: { type: 'segmentation', ignore_index: 255 },
+      image_task_spec: {
+        type: 'segmentation',
+        ignore_index: 255,
+        ignore_color_enabled: true,
+        ignore_color_r: 224,
+        ignore_color_g: 224,
+        ignore_color_b: 192,
+      },
       image_annotation_config: { type: 'pascal_voc', include_difficult: false },
     })
   })
