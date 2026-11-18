@@ -1,7 +1,0 @@
-{
-  "cmake.sourceDirectory": "${workspaceFolder}/apps/backend/ai-engine",
-  "cmake.buildDirectory": "${workspaceFolder}/apps/backend/ai-engine/build",
-  "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
-  "C_Cpp.default.compileCommands": "${workspaceFolder}/apps/backend/ai-engine/build/compile_commands.json",
-  "cmake.ignoreCMakeListsMissing": true
-}
