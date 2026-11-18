@@ -89,6 +89,6 @@ ImageData VocSegmentationData::getImage(size_t index) const
 ImageData VocSegmentationData::getMask(size_t index) const
 {
     const std::string &id = _imageIds.at(index);
-    const auto maskPath = (fs::path(_datasetRoot) / "SegmentationClassP" / (id + ".png")).string();
+    const auto maskPath = (fs::path(_datasetRoot) / "SegmentationClass" / (id + ".png")).string();
     return _labelConverter.convert(_decoder->decode(maskPath)); // カラー → クラスID
 }
