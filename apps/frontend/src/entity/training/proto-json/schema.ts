@@ -80,6 +80,11 @@ export const seedJsonSchema = z.object({
 /**
  * 学習設定(StartTrainingRequest から model_graph を除いたもの)。
  * seed は省略できる(省略 = 乱数を固定しない)。
+ *
+ * データセットだけは C++ の設定ファイルの形と違い、パス(dataset_path)ではなく
+ * 登録済みデータセットの ID(dataset_id)を持つ。パスはサーバーが ID から決め、フロントは知らない。
+ * dataset_id を省略できるのは、C++ の設定ファイル(test_segnet_dag.json など)も読み込めるようにするため。
+ * それらにある dataset_path は、知らないキーとして読み捨てる(z.object の既定の動作)。
  */
 export const trainingSettingsJsonSchema = z.object({
   model_name: z.string(),
@@ -87,7 +92,7 @@ export const trainingSettingsJsonSchema = z.object({
   loss: lossJsonSchema,
   epoch: z.number(),
   batch: z.number(),
-  dataset_path: z.string(),
+  dataset_id: z.string().optional(),
   device: z.string(),
   data_spec: dataSpecJsonSchema,
   save_last_every: z.number(),

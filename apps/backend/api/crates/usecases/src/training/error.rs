@@ -21,6 +21,12 @@ pub enum StartTrainingError {
     // エポック数が達していたり、checkpointが存在しないなどで学習を実行できない
     #[error("Failed to resume training: {0}")]
     ResumePreconditionFailed(String),
+    // 指定された dataset_id のデータセットが登録されていない(削除済み・ID の誤りなど)
+    #[error("dataset not found: {0}")]
+    DatasetNotFound(String),
+    // データセットの情報を DB から読めなかった
+    #[error("Failed to read dataset: {0}")]
+    DatasetReadFailed(String),
 }
 
 // 学習再開(ResumeTraining)のエラー

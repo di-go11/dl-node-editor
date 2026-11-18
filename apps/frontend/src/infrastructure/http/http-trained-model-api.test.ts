@@ -33,7 +33,7 @@ function settingsNamed(modelName: string): TrainingSettings {
   return {
     ...defaultTrainingSettings(),
     modelName,
-    datasetPath: '/data/voc',
+    datasetId: 'mock-dataset-voc2012',
     device: 'cpu',
     epoch: 5,
   }
@@ -66,13 +66,14 @@ describe('createHttpTrainedModelApi', () => {
     })
   })
 
-  it('前回の設定は、学習を始めたときの設定に戻る', async () => {
+  it('前回の設定は、データセット以外は学習を始めたときの設定に戻る', async () => {
     const settings = settingsNamed('config_model')
     const modelId = await trainModel(settings)
 
     const result = await createHttpTrainedModelApi(client()).getConfig(modelId)
 
-    expect(result).toEqual({ ok: true, value: settings })
+    // 設定の取得 API はデータセットを返さない(再開ではデータセットを変えられない)ので、未選択になる
+    expect(result).toEqual({ ok: true, value: { ...settings, datasetId: '' } })
   })
 
   it('設定の取得の 404 は、モデルが見つからないという説明にする', async () => {
@@ -154,12 +155,11 @@ describe('createHttpTrainedModelApi', () => {
 })
 
 describe('toRustResumeTrainingRequest', () => {
-  it('固定項目(model_name・data_spec・seed)を含めない', () => {
+  it('固定項目(model_name・data_spec・seed・データセット)を含めない', () => {
     const result = toRustResumeTrainingRequest({ ...settingsNamed('x'), seed: 42 })
     if (!result.ok) throw new Error(result.message)
     expect(Object.keys(result.value).sort()).toEqual([
       'batch',
-      'dataset_path',
       'device',
       'epoch',
       'loss',

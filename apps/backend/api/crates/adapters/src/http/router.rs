@@ -1,15 +1,22 @@
 use super::handler::{
     get_capabilities, get_model_config, get_model_lists, get_training_process, get_training_status,
-    resume_training, start_training, stop_training, stream_training_process, validate_training,
+    read_summary_datasets, resume_training, start_training, stop_training, stream_training_process,
+    upload_dataset, validate_training,
 };
 
+use super::config::HttpConfig;
 use super::state::AppState;
 use axum::{
+    extract::DefaultBodyLimit,
     routing::{get, post},
     Router,
 };
 use usecases::{
     capabilities::CapabilityProvider,
+    dataset::{
+        dataset_id_generator::DatasetIdGenerator,
+        ports::{DatasetFinder, DatasetReader, DatasetRegister, DatasetSaver},
+    },
     model::ports::{ModelSummaryProvider, ModelTrainingConfigProvider},
     training::{
         ModelIdGenerator, ProgressRecordingScheduler, TrainingProgressProvider,
@@ -18,8 +25,9 @@ use usecases::{
     },
 };
 
-pub fn router<C, S, R, G, K, V, P, T, D, MSummary, MConfig>(
-    state: AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig>,
+pub fn router<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>(
+    state: AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>,
+    config: HttpConfig,
 ) -> Router
 where
     C: CapabilityProvider + Send + Sync + 'static,
@@ -39,12 +47,18 @@ where
         + 'static,
     MSummary: ModelSummaryProvider + Send + Sync + 'static,
     MConfig: ModelTrainingConfigProvider + Send + Sync + 'static,
+    // データセットのアップロード(UploadDataset)用
+    DG: DatasetIdGenerator + Send + Sync + 'static,
+    DS: DatasetSaver + Send + Sync + 'static,
+    DR: DatasetRegister + Send + Sync + 'static,
+    // データセット一覧(ReadDatasetsSummary)と、学習開始時のデータセットの検索(StartTraining)で共有する
+    DRD: DatasetReader + DatasetFinder + Send + Sync + 'static,
 {
     Router::new().nest(
         "/api/v1",
         Router::new()
             .route("/capabilities", get(get_capabilities::<C>))
-            .route("/trainings", post(start_training::<S, R, G, K>)) // 学習開始
+            .route("/trainings", post(start_training::<S, R, G, K, DRD>)) // 学習開始
             .route("/trainings/validate", post(validate_training::<V>))
             .route("/trainings/{job_id}", get(get_training_process::<P>))
             .route(
@@ -54,6 +68,7 @@ where
             .route("/trainings/{job_id}/stop", post(stop_training::<T>))
             .route("/trainings/{job_id}/status", get(get_training_status::<P>))
             // 学習済みモデル(学習再開の画面用)
+            // TODO: API名を/modelsから/models/listに変更する。
             .route("/models", get(get_model_lists::<MSummary>))
             .route(
                 "/models/{model_id}/config",
@@ -62,6 +77,14 @@ where
             .route(
                 "/models/{model_id}/resume",
                 post(resume_training::<MConfig, S, R, K>),
+            )
+            // データセット呼び出しAPI
+            .route("/datasets", get(read_summary_datasets::<DRD>))
+            // データセット登録用API
+            .route(
+                "/datasets/upload",
+                post(upload_dataset::<DG, DS, DR>)
+                    .layer(DefaultBodyLimit::max(config.max_dataset_upload_bytes())),
             )
             .with_state(state),
     )

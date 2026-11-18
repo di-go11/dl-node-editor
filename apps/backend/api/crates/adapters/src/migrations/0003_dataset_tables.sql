@@ -5,5 +5,5 @@ CREATE TABLE IF NOT EXISTS datasets (
     dataset_type TEXT NOT NULL, -- pascal_voc / coco / imagenet
     dataset_path TEXT NOT NULL,
     created_at DATETIME NOT NULL,
-    updated_at DATETIME,
+    updated_at DATETIME
 );

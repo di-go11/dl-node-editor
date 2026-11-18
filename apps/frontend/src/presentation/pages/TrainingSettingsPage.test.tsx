@@ -13,7 +13,7 @@ import type { Dependencies } from '../app/dependencies'
 import { DependenciesContext } from '../app/dependencies'
 import { createEditorStore } from '../stores/editor-store'
 import { EditorStoreContext } from '../stores/editor-store-context'
-import { fakeDependencies } from '../test-utils/fake-dependencies'
+import { FAKE_DATASETS, fakeDependencies } from '../test-utils/fake-dependencies'
 
 import { TrainingSettingsPage } from './TrainingSettingsPage'
 
@@ -64,7 +64,10 @@ const log = () => screen.getByRole('region', { name: 'ログ' })
 
 /** 既定値に足りない 2 項目(データセットのパスとデバイス)を埋める */
 async function fillRequiredFields() {
-  await userEvent.type(screen.getByLabelText(/データセットのパス/), '/data/voc')
+  // データセットの偽物は FAKE_DATASETS の 1 件。選択肢が出るまで待つ
+  const dataset = await screen.findByRole('combobox', { name: /データセット/ })
+  await waitFor(() => expect(dataset).toBeEnabled())
+  await userEvent.selectOptions(dataset, FAKE_DATASETS[0]?.datasetId ?? '')
   // capabilities の偽物は CPU だけを返す。選択肢が出るまで待つ
   const device = await screen.findByRole('combobox', { name: /デバイス/ })
   await waitFor(() => expect(within(device).getByRole('option', { name: 'cpu' })).toBeVisible())
@@ -93,7 +96,7 @@ describe('整合性チェックと実行ボタン(フェーズ 5 の完了条件
     await checkAndWait()
 
     expect(status()).toHaveTextContent('NG')
-    expect(log()).toHaveTextContent('データセットのパス を入力してください。')
+    expect(log()).toHaveTextContent('データセットを選んでください。')
     expect(log()).toHaveTextContent('デバイス を入力してください。')
     expect(runButton()).toBeDisabled()
   })
@@ -180,7 +183,7 @@ describe('学習実行', () => {
 
     expect(await screen.findByRole('heading', { name: '進捗 job-42' })).toBeInTheDocument()
     expect(start).toHaveBeenCalledOnce()
-    expect(start.mock.calls[0]?.[1].datasetPath).toBe('/data/voc')
+    expect(start.mock.calls[0]?.[1].datasetId).toBe(FAKE_DATASETS[0]?.datasetId)
     expect(store.getState().runState).toEqual({ kind: 'running', jobId: 'job-42' })
   })
 

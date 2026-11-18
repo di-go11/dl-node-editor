@@ -1,4 +1,5 @@
 import { apiOk } from '../../application/ports/api-result'
+import type { DatasetSummary } from '../../entity/dataset/dataset'
 import { defaultNodeCatalog } from '../../entity/node-catalog/entries'
 import { defaultTrainingSettings } from '../../entity/training/training-settings'
 import type { Dependencies } from '../app/dependencies'
@@ -13,7 +14,18 @@ import type { Dependencies } from '../app/dependencies'
  * 既定の振る舞いは「何事もなく成功する」:カタログは MVP のもの、GPU なし、
  * 保存は成功・読込はキャンセル、整合性チェックのサーバー側は OK、学習開始は job-1、
  * 進捗は何も届かない、停止の要求は成功。学習済みモデルは 0 件、再開は job-1。
+ * データセットは FAKE_DATASETS の 1 件で、アップロードは成功する。
  */
+/** 偽物のデータセット一覧(既定で 1 件) */
+export const FAKE_DATASETS: readonly DatasetSummary[] = [
+  {
+    datasetId: 'dataset-voc',
+    name: 'VOC2012',
+    type: 'pascal_voc',
+    createdAt: '2026-11-01T00:00:00Z',
+  },
+]
+
 export function fakeDependencies(overrides: Partial<Dependencies> = {}): Dependencies {
   return {
     nodeCatalogSource: { load: () => Promise.resolve(apiOk(defaultNodeCatalog)) },
@@ -37,6 +49,10 @@ export function fakeDependencies(overrides: Partial<Dependencies> = {}): Depende
       list: () => Promise.resolve(apiOk([])),
       getConfig: () => Promise.resolve(apiOk(defaultTrainingSettings())),
       resume: () => Promise.resolve(apiOk({ jobId: 'job-1', status: 'running' })),
+    },
+    datasetApi: {
+      list: () => Promise.resolve(apiOk(FAKE_DATASETS)),
+      upload: () => Promise.resolve(apiOk(null)),
     },
     ...overrides,
   }

@@ -25,6 +25,19 @@ function parseExample(): unknown {
   return JSON.parse(exampleRaw)
 }
 
+/**
+ * 書き戻したときに期待する形。データセットだけは C++ の設定ファイルと違い、
+ * パス(dataset_path)を読み捨てて未選択の ID(dataset_id: '')になる。キーの位置は同じ
+ */
+function expectedRoundTrip(): unknown {
+  const example = parseExample() as Record<string, unknown>
+  return Object.fromEntries(
+    Object.entries(example).map(([key, value]) =>
+      key === 'dataset_path' ? ['dataset_id', ''] : [key, value],
+    ),
+  )
+}
+
 describe('startTrainingRequestJsonSchema', () => {
   it('test_segnet_dag.json 全体を受け付ける', () => {
     const result = startTrainingRequestJsonSchema.safeParse(parseExample())
@@ -34,10 +47,10 @@ describe('startTrainingRequestJsonSchema', () => {
 })
 
 describe('学習開始リクエストの往復', () => {
-  it('test_segnet_dag.json を読み込んで書き戻すと同じ内容になる', () => {
+  it('test_segnet_dag.json を読み込んで書き戻すと、データセット以外は同じ内容になる', () => {
     const json = startTrainingRequestJsonSchema.parse(parseExample())
     const { graph, settings } = fromStartTrainingRequestJson(json)
-    expect(toStartTrainingRequestJson(graph, settings)).toEqual(parseExample())
+    expect(toStartTrainingRequestJson(graph, settings)).toEqual(expectedRoundTrip())
   })
 
   it('キーの並びまで元のファイルと一致する(目で比べやすい出力になっている)', () => {
@@ -45,7 +58,7 @@ describe('学習開始リクエストの往復', () => {
     const { graph, settings } = fromStartTrainingRequestJson(json)
     // toEqual はキーの順序を見ないので、文字列にして比べる
     expect(JSON.stringify(toStartTrainingRequestJson(graph, settings))).toBe(
-      JSON.stringify(parseExample()),
+      JSON.stringify(expectedRoundTrip()),
     )
   })
 
@@ -56,7 +69,8 @@ describe('学習開始リクエストの往復', () => {
       modelName: 'test_segnet',
       optimizer: { kind: 'adam', params: { learning_rate: 0.001, eps: 1e-8 } },
       loss: { kind: 'cross_entropy', params: {} },
-      datasetPath: '/workspaces/apps/backend/ai-engine/TrainingDataset/',
+      // C++ の設定ファイルのパスは読み捨て、データセットは未選択になる
+      datasetId: '',
       device: 'cuda:0',
       dataSpec: {
         kind: 'image',

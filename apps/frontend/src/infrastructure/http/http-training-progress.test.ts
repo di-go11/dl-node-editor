@@ -179,7 +179,11 @@ describe('進捗の受信', () => {
 
 describe('停止', () => {
   const api = () => createHttpTrainingApi(createApiClient(TEST_BASE_URL))
-  const settings = { ...defaultTrainingSettings(), datasetPath: '/data/voc', device: 'cpu' }
+  const settings = {
+    ...defaultTrainingSettings(),
+    datasetId: 'mock-dataset-voc2012',
+    device: 'cpu',
+  }
 
   it('応答の状態を返す(エポックの区切りまでは running)', async () => {
     const started = await api().start(validSegnetGraph(), settings)
@@ -225,7 +229,7 @@ describe('モックの進捗', () => {
     const settings = {
       ...defaultTrainingSettings(),
       modelName,
-      datasetPath: '/data/voc',
+      datasetId: 'mock-dataset-voc2012',
       device: 'cpu',
     }
     const started = await api().start(validSegnetGraph(), settings)

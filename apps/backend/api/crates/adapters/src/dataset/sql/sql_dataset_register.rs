@@ -37,6 +37,8 @@ mod tests {
             .connect("sqlite::memory:")
             .await
             .unwrap();
+        // datasets テーブルを作るためにマイグレーションを流す(学習側のテストと同じ)
+        sqlx::migrate!("./src/migrations").run(&pool).await.unwrap();
         SqliteDatasetRepository::new(pool)
     }
 

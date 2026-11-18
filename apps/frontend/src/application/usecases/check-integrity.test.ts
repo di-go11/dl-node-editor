@@ -21,7 +21,7 @@ function validInput(patch: Partial<IntegrityCheckInput> = {}): IntegrityCheckInp
     graph: validSegnetGraph(),
     context: DEFAULT_EDITOR_CONTEXT,
     catalog: defaultNodeCatalog,
-    settings: { ...defaultTrainingSettings(), datasetPath: '/data/voc', device: 'cpu' },
+    settings: { ...defaultTrainingSettings(), datasetId: 'dataset-voc', device: 'cpu' },
     ...patch,
   }
 }

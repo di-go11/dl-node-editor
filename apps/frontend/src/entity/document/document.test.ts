@@ -11,6 +11,7 @@ import { buildDocumentJson, serializeDocument } from './build'
 import type { EditorDocument } from './document'
 import { DOCUMENT_FORMAT, emptyEditorDocument } from './document'
 import type { RawDocument } from './migrate'
+import { DOCUMENT_MIGRATIONS } from './migrate'
 import { parseDocument, parseDocumentText } from './parse'
 
 const SAVED_AT = new Date('2026-10-22T10:00:00.000Z')
@@ -122,7 +123,7 @@ describe('buildDocumentJson', () => {
     const json = buildDocumentJson(fullDocument(), SAVED_AT)
     expect(json).toMatchObject({
       format: DOCUMENT_FORMAT,
-      version: 1,
+      version: 2,
       meta: { name: 'segnet', saved_at: '2026-10-22T10:00:00.000Z' },
       context: { data_dim: '2d', method: 'cnn' },
     })
@@ -132,7 +133,7 @@ describe('buildDocumentJson', () => {
 describe('parseDocument - 寛容に読むもの', () => {
   const minimal = (): Record<string, unknown> => ({
     format: DOCUMENT_FORMAT,
-    version: 1,
+    version: 2,
     meta: { name: 'minimal' },
     context: { data_dim: '2d', method: 'cnn' },
     model: { model_graph: { nodes: [], outputs: [] } },
@@ -194,10 +195,10 @@ describe('parseDocument - 拒否するもの', () => {
   })
 
   it('新しい版のファイルは読まない(知らない項目を黙って捨てないため)', () => {
-    const json = { ...buildDocumentJson(fullDocument(), SAVED_AT), version: 2 }
+    const json = { ...buildDocumentJson(fullDocument(), SAVED_AT), version: 3 }
     const result = parseDocument(json)
     expect(codesOf(result)).toEqual(['document/unsupported-version'])
-    if (!result.ok) expect(result.issues[0]?.message).toContain('version 2')
+    if (!result.ok) expect(result.issues[0]?.message).toContain('version 3')
   })
 
   it('version が数でなければ unsupported-version', () => {
@@ -295,7 +296,9 @@ describe('版の移行の仕組み(架空の版 0 で確かめる)', () => {
   }
 
   it('古い版を最新版に変換してから読む', () => {
-    const result = parseDocument(v0Document(), { migrations: { 0: migrateV0toV1 } })
+    const result = parseDocument(v0Document(), {
+      migrations: { ...DOCUMENT_MIGRATIONS, 0: migrateV0toV1 },
+    })
     expect(result.ok).toBe(true)
     if (result.ok) expect(result.document.meta.name).toBe('old-segnet')
   })
@@ -308,7 +311,40 @@ describe('版の移行の仕組み(架空の版 0 で確かめる)', () => {
 
   it('変換が version を書き換え忘れても、連鎖は正しく進む', () => {
     // migrateV0toV1 は version に触れていない(rest の version: 0 がそのまま残る)
-    const result = parseDocument(v0Document(), { migrations: { 0: migrateV0toV1 } })
+    const result = parseDocument(v0Document(), {
+      migrations: { ...DOCUMENT_MIGRATIONS, 0: migrateV0toV1 },
+    })
     expect(result.ok).toBe(true)
+  })
+})
+
+describe('版 1 → 2(データセットをパスから ID に変えた)', () => {
+  /** 版 1 の保存ファイル:training にサーバー上のパス(dataset_path)があり、dataset_id はない */
+  const v1Document = (): Record<string, unknown> => {
+    const json = buildDocumentJson(fullDocument(), SAVED_AT)
+    const { dataset_id: _datasetId, ...training } = json.training ?? {}
+    return { ...json, version: 1, training: { ...training, dataset_path: '/data/voc' } }
+  }
+
+  it('版 1 のファイルも開け、データセットは未選択になる(パスから ID は引けないため)', () => {
+    const result = parseDocument(v1Document())
+    if (!result.ok) throw new Error(JSON.stringify(result.issues, null, 2))
+    expect(result.document.training?.datasetId).toBe('')
+  })
+
+  it('開き直して保存すると版 2 になり、dataset_path は書かれない', () => {
+    const result = parseDocument(v1Document())
+    if (!result.ok) throw new Error(JSON.stringify(result.issues, null, 2))
+    const json = buildDocumentJson(result.document, SAVED_AT)
+    expect(json.version).toBe(2)
+    expect(json.training).not.toHaveProperty('dataset_path')
+  })
+
+  it('選んだデータセットの ID は、保存して開き直しても残る', () => {
+    const document = fullDocument()
+    const training = document.training
+    if (training === null) throw new Error('学習設定がありません')
+    const reopened = roundTrip({ ...document, training: { ...training, datasetId: 'dataset-voc' } })
+    expect(reopened.training?.datasetId).toBe('dataset-voc')
   })
 })

@@ -33,6 +33,7 @@ function renderHeader(capabilities: ApiResult<Capabilities>) {
             <Route path="/" element={<Header />} />
             <Route path="/training" element={<h1>学習設定</h1>} />
             <Route path="/models" element={<h1>モデル一覧</h1>} />
+            <Route path="/datasets" element={<h1>データセット</h1>} />
           </Routes>
         </MemoryRouter>
       </EditorStoreContext>
@@ -103,5 +104,11 @@ describe('Header - ボタン', () => {
     renderHeader(apiOk(gpuCapabilities))
     await userEvent.click(screen.getByRole('button', { name: 'モデル一覧' }))
     expect(await screen.findByRole('heading', { name: 'モデル一覧' })).toBeInTheDocument()
+  })
+
+  it('[データセット] でデータセット一覧へ移る', async () => {
+    renderHeader(apiOk(gpuCapabilities))
+    await userEvent.click(screen.getByRole('button', { name: 'データセット' }))
+    expect(await screen.findByRole('heading', { name: 'データセット' })).toBeInTheDocument()
   })
 })

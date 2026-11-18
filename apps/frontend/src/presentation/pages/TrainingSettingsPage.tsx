@@ -8,6 +8,7 @@ import { validateTrainingSettings } from '../../entity/validation/validate-train
 import { useCapabilities } from '../components/header/use-capabilities'
 import { LogPanel } from '../components/log/LogPanel'
 import { TrainingForm } from '../components/training-form/TrainingForm'
+import { useDatasets } from '../components/dataset/use-datasets'
 import { useEditorStore } from '../stores/editor-store-context'
 
 import styles from './TrainingSettingsPage.module.css'
@@ -76,6 +77,7 @@ function TrainingSettingsContent({ settings }: { readonly settings: TrainingSett
   )
 
   const run = useTrainingRun(deviceIds ?? undefined)
+  const datasets = useDatasets()
 
   return (
     <div className={styles.page}>
@@ -122,6 +124,7 @@ function TrainingSettingsContent({ settings }: { readonly settings: TrainingSett
           onChange={updateTraining}
           issues={formIssues}
           deviceIds={deviceIds}
+          datasets={datasets}
         />
       </main>
 

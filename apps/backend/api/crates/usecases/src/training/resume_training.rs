@@ -120,7 +120,7 @@ mod tests {
             epoch: 10,
             batch: 2,
             device: "cpu".to_string(),
-            dataset_path: "/data/VOCdevkit/VOC2012".to_string(),
+            dataset_path: "/datasets/dataset-1".to_string(),
             optimizer: Optimizer::Adam {
                 learning_rate: 1e-3,
                 weight_decay: 0.0,
@@ -263,7 +263,6 @@ mod tests {
             epoch: 20,
             batch: 4,
             device: "cuda:0".to_string(),
-            dataset_path: "/data/other".to_string(),
             optimizer: Optimizer::Adam {
                 learning_rate: 1e-4,
                 weight_decay: 1e-5,
@@ -290,11 +289,12 @@ mod tests {
             model_graph: saved.model_graph,
             data_spec: saved.data_spec,
             seed: saved.seed,
+            // データセットも前回のまま(再開ではクライアントにパスを指定させない)
+            dataset_path: saved.dataset_path,
             // 変えてよい項目は入力の値
             epoch: input.epoch,
             batch: input.batch,
             device: input.device,
-            dataset_path: input.dataset_path,
             optimizer: input.optimizer,
             loss: input.loss,
             save_last_every: input.save_last_every,

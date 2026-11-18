@@ -1,5 +1,6 @@
 export * from './api-result'
 export * from './capabilities-api'
+export * from './dataset-api'
 export * from './document-storage'
 export * from './node-catalog-source'
 export * from './trained-model-api'

@@ -29,9 +29,12 @@ services:
       target: runtime
     volumes:
       - ./data/api-data:/data
+      - ./data/datasets:/datasets
     environment:
       - DATABASE_URL=sqlite:/data/training.db?mode=rwc #data/training.dbがない場合読み書き可で作成
       - AI_ENGINE_ADDR=http://ai-engine:50051
+      - DATASET_UPLOAD_MAX_MIB=${DATASET_UPLOAD_MAX_MIB:?.deploy/.envに設定してください}
+      - DATASET_UNZIP_MAX_MIB=${DATASET_UNZIP_MAX_MIB:?.deploy/.envに設定してください}
     depends_on:
       - ai-engine
     restart: unless-stopped

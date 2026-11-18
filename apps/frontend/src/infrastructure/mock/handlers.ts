@@ -24,6 +24,7 @@ import {
  * 受け取った JSON は、Rust の DTO と同じ形の Zod スキーマで確かめ、形が違えば
  * 本物と同じく 422 を返す。モックが何でも受け付けると、送る JSON の誤りに
  * 本物につないだ瞬間まで気づけないためである。
+ * 学習開始の dataset_id が登録済みのデータセット(datasets)になければ、本物と同じく 422 を返す。
  *
  * ## 進捗(SSE)
  *
@@ -40,6 +41,22 @@ export const MOCK_CAPABILITIES: Schemas['CapabilitiesResponse'] = {
     { id: 'cuda:0', name: 'cuda:0' },
   ],
 }
+
+/** モックに最初から登録されているデータセット(本物の GET /datasets と同じく、パスは持たない) */
+export const MOCK_DATASETS: readonly Schemas['DatasetSummary'][] = [
+  {
+    dataset_id: 'mock-dataset-voc2012',
+    dataset_name: 'VOC2012',
+    dataset_type: 'pascal_voc',
+    created_at: '2026-09-01T00:00:00Z',
+  },
+  {
+    dataset_id: 'mock-dataset-voc-small',
+    dataset_name: 'VOC2012 (小さい版)',
+    dataset_type: 'pascal_voc',
+    created_at: '2026-11-01T00:00:00Z',
+  },
+]
 
 export type MockOptions = {
   /**
@@ -64,6 +81,8 @@ export type MockOptions = {
    * ブラウザのモックでは MOCK_TRAINED_MODELS を渡し、一覧の表示をすぐ確かめられるようにする
    */
   readonly initialModels?: readonly MockTrainedModel[]
+  /** 登録済みのデータセット。既定は MOCK_DATASETS。学習開始の dataset_id はこの中から選ぶ */
+  readonly datasets?: readonly Schemas['DatasetSummary'][]
 }
 
 /** このモデル名で学習を始めると、途中で失敗する */
@@ -106,7 +125,7 @@ function seedConfig(
     loss: { type: 'cross_entropy' },
     epoch: 50,
     batch: 8,
-    dataset_path: '/datasets/voc2012',
+    dataset_id: 'mock-dataset-voc2012',
     device: 'cuda:0',
     data_spec: {
       type: 'image',
@@ -280,6 +299,9 @@ function progressStream(job: MockJob, epochs: number, intervalMs: number) {
 export function createHandlers(options: MockOptions = {}) {
   const base = options.baseUrl ?? API_BASE_PATH
   const capabilities = options.capabilities ?? MOCK_CAPABILITIES
+  // アップロードで増えるので、モックの中で書き換える一覧にする
+  const datasets: Schemas['DatasetSummary'][] = [...(options.datasets ?? MOCK_DATASETS)]
+  let datasetCount = 0
   const epochs = options.epochs ?? 5
   const intervalMs = options.progressIntervalMs ?? 1000
   const jobs = new Map<string, MockJob>()
@@ -303,6 +325,37 @@ export function createHandlers(options: MockOptions = {}) {
   return [
     http.get(`${base}/capabilities`, () => HttpResponse.json(capabilities)),
 
+    http.get(`${base}/datasets`, () => {
+      const response: Schemas['DatasetSummariesResponse'] = { datasets: [...datasets] }
+      return HttpResponse.json(response)
+    }),
+
+    http.post(`${base}/datasets/upload`, async ({ request }) => {
+      // 本物と同じく、file・name・type のどれかが欠けている・空なら 400(本文なし)
+      const form = await request.formData().catch(() => null)
+      const file = form?.get('file')
+      const name = form?.get('name')
+      const type = form?.get('type')
+      if (
+        !(file instanceof Blob) ||
+        typeof name !== 'string' ||
+        typeof type !== 'string' ||
+        name.trim() === '' ||
+        type.trim() === ''
+      ) {
+        return new HttpResponse(null, { status: 400 })
+      }
+      // 解凍はしない。登録だけを真似て、一覧に載せる
+      datasetCount += 1
+      datasets.push({
+        dataset_id: `mock-dataset-uploaded-${datasetCount}`,
+        dataset_name: name,
+        dataset_type: type,
+        created_at: new Date().toISOString(),
+      })
+      return new HttpResponse(null, { status: 201 })
+    }),
+
     http.post(`${base}/trainings/validate`, async ({ request }) => {
       const parsed = rustStartTrainingRequestSchema.safeParse(await request.json())
       if (!parsed.success) return new HttpResponse(null, { status: 422 })
@@ -314,6 +367,10 @@ export function createHandlers(options: MockOptions = {}) {
       if (options.alreadyRunning === true) return new HttpResponse(null, { status: 409 })
       const parsed = rustStartTrainingRequestSchema.safeParse(await request.json())
       if (!parsed.success) return new HttpResponse(null, { status: 422 })
+      // 本物と同じく、登録されていないデータセットは受け付けない
+      if (!datasets.some((dataset) => dataset.dataset_id === parsed.data.dataset_id)) {
+        return new HttpResponse(null, { status: 422 })
+      }
       usedModelNames.add(parsed.data.model_name)
       const response: Schemas['StartTrainingResponse'] = {
         job_id: createJob(parsed.data.model_name === FAILING_MODEL_NAME),
@@ -351,12 +408,14 @@ export function createHandlers(options: MockOptions = {}) {
       if (model === undefined) return new HttpResponse(null, { status: 404 })
       // モデル構造のない古いモデルは、本物と同じく設定を返せない
       if (!model.resumable) return new HttpResponse(null, { status: 409 })
-      // 本物と同じく、seed を固定していなくても null で返す
-      return HttpResponse.json({
+      // 本物と同じく、データセットは返さず、seed を固定していなくても null で返す
+      const { dataset_id: _datasetId, ...config } = model.config
+      const response: Schemas['ModelTrainingConfig'] = {
         model_id: params.modelId,
-        ...model.config,
-        seed: model.config.seed ?? null,
-      })
+        ...config,
+        seed: config.seed ?? null,
+      }
+      return HttpResponse.json(response)
     }),
 
     http.post<{ modelId: string }>(

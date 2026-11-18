@@ -1,6 +1,7 @@
 use super::dto::{
-    CapabilitiesDto, ModelSummariesDto, ModelTrainingConfigDto, ResumeTrainingConfigDto,
-    StartTrainingResponseDto, TrainingConfigDto, TrainingJobStatusDto, TrainingProcessDto,
+    CapabilitiesDto, DatasetSummariesDto, ModelSummariesDto, ModelTrainingConfigDto,
+    ResumeTrainingConfigDto, StartTrainingResponseDto, TrainingConfigDto, TrainingJobStatusDto,
+    TrainingProcessDto,
 };
 use axum::{
     extract::{Path, State},
@@ -9,11 +10,18 @@ use axum::{
 };
 use entities::{
     model::ModelId,
-    training::{config::TrainingConfig, JobId, TrainingProcess},
+    training::{JobId, TrainingProcess},
 };
 use futures_util::StreamExt;
 use usecases::{
     capabilities::{CapabilityProvider, GetCapabilities},
+    dataset::{
+        dataset_id_generator::DatasetIdGenerator,
+        error::DatasetError,
+        ports::{DatasetFinder, DatasetReader, DatasetRegister, DatasetSaver},
+        read_datasets_summary::ReadDatasetsSummary,
+        upload_dataset::UploadDataset,
+    },
     model::{
         error::{FetchModelError, ModelRepositoryError},
         ports::{ModelSummaryProvider, ModelTrainingConfigProvider},
@@ -21,15 +29,16 @@ use usecases::{
     },
     training::{
         GetTrainingProcess, ModelIdGenerator, ProgressRecordingScheduler, ResumeTraining,
-        ResumeTrainingConfig, ResumeTrainingError, StartTraining, StartTrainingError, StopTraining,
-        TrainingProgressProvider, TrainingProgressProviderError, TrainingRecordReader,
-        TrainingResumer, TrainingRunRegistar, TrainingStarter, TrainingStopper,
-        ValidateTrainingConfig, ValidateTrainingConfigError,
+        ResumeTrainingConfig, ResumeTrainingError, StartTraining, StartTrainingConfig,
+        StartTrainingError, StopTraining, TrainingProgressProvider, TrainingProgressProviderError,
+        TrainingRecordReader, TrainingResumer, TrainingRunRegistar, TrainingStarter,
+        TrainingStopper, ValidateTrainingConfig, ValidateTrainingConfigError,
     },
-    dataset::{
-        upload_dataset::UploadDataset
-    }
 };
+
+use crate::utils::uuid_generator::generate_uuid;
+use axum::extract::Multipart;
+use tokio::io::AsyncWriteExt;
 
 use axum::response::sse::{Event, KeepAlive, Sse};
 use futures_core::Stream;
@@ -38,10 +47,11 @@ use std::sync::Arc;
 
 // 新規学習の開始POSTリクエストハンドラ(学習再開は別のエンドポイントにする)
 // 進捗記録の開始は StartTraining が ProgressRecordingScheduler ポート経由で行うため、ハンドラは関与しない。
-// TODO(設計改善): 型パラメータ S, R, G, K は StartTraining の内部依存が漏れたもの。
+// データセットは dataset_id で受け取り、パスは StartTraining が DB から引く(クライアントにパスを指定させない)。
+// TODO(設計改善): 型パラメータ S, R, G, K, F は StartTraining の内部依存が漏れたもの。
 // 入力ポート(StartTrainingUseCase)を導入して U 1つにする(docs/issues/backend-db-remaining.md 作業12)。
-pub async fn start_training<S, R, G, K>(
-    State(start): State<Arc<StartTraining<S, R, G, K>>>,
+pub async fn start_training<S, R, G, K, F>(
+    State(start): State<Arc<StartTraining<S, R, G, K, F>>>,
     Json(dto): Json<TrainingConfigDto>,
 ) -> Result<Json<StartTrainingResponseDto>, StatusCode>
 where
@@ -49,8 +59,11 @@ where
     R: TrainingRunRegistar + Send + Sync + 'static,
     G: ModelIdGenerator + Send + Sync + 'static,
     K: ProgressRecordingScheduler + Send + Sync + 'static,
+    F: DatasetFinder + Send + Sync + 'static,
 {
-    let config = TrainingConfig::from(dto);
+    // 空の dataset_id はクライアントの誤り
+    let config =
+        StartTrainingConfig::try_from(dto).map_err(|_| StatusCode::UNPROCESSABLE_ENTITY)?;
     let job_id = start
         .execute(&config)
         .await
@@ -67,6 +80,9 @@ fn status_code_from_start_error(error: StartTrainingError) -> StatusCode {
         | StartTrainingError::ResumePreconditionFailed(_) => StatusCode::CONFLICT,
         StartTrainingError::AlreadyRunning(_) => StatusCode::CONFLICT,
         StartTrainingError::RecordFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        // 本体で指定されたデータセットがない(URL のリソースがないわけではないので 404 ではなく 422)
+        StartTrainingError::DatasetNotFound(_) => StatusCode::UNPROCESSABLE_ENTITY,
+        StartTrainingError::DatasetReadFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
     }
 }
 
@@ -78,7 +94,9 @@ pub async fn validate_training<V>(
 where
     V: TrainingRecordReader + Send + Sync + 'static,
 {
-    let config = TrainingConfig::from(dto);
+    let Ok(config) = StartTrainingConfig::try_from(dto) else {
+        return StatusCode::UNPROCESSABLE_ENTITY; // 空の dataset_id
+    };
     match usecase.execute(&config).await {
         Ok(()) => StatusCode::NO_CONTENT,
         Err(ValidateTrainingConfigError::ModelNameAlreadyUsed(_)) => StatusCode::CONFLICT,
@@ -277,11 +295,109 @@ where
     Ok(Json(job_id.into()))
 }
 
-// データセット保存用PUTリクエストハンドラ。データセットのアップロードは multipart/form-data でzipファイルを受け取る。アップロード後にデータセットのメタデータを登録する。
+// データセットのアップロードPOSTリクエストハンドラ。
+// multipart/form-data で file(zip)・name・type を受け取り、zip を一時ファイルに書き出してから UploadDataset に渡す。
+// 解凍・配置とメタデータ登録は UploadDataset(DatasetSaver / DatasetRegister)の仕事で、ハンドラは関与しない。
 pub async fn upload_dataset<G, S, R>(
-    State(usecase): State<Arc<UploadDataset<G,S,R>>>,
-    
-)
+    State(usecase): State<Arc<UploadDataset<G, S, R>>>,
+    multipart: Multipart,
+) -> StatusCode
+where
+    G: DatasetIdGenerator + Send + Sync + 'static,
+    S: DatasetSaver + Send + Sync + 'static,
+    R: DatasetRegister + Send + Sync + 'static,
+{
+    // TODO: /tmp はコンテナでは tmpfs(メモリ上)のことがある。dataset_root と同じディスク上の置き場を設定で渡す
+    let zip_path = std::env::temp_dir().join(format!("dataset-upload-{}.zip", generate_uuid()));
+    let result = receive_and_upload(&usecase, multipart, &zip_path).await;
+    // 成功・失敗に関わらず一時zipは消す(解凍済みのデータは dataset_root 側に残っている)
+    let _ = tokio::fs::remove_file(&zip_path).await;
+    match result {
+        Ok(()) => StatusCode::CREATED,
+        Err(code) => code,
+    }
+}
+
+// multipart を読み、zip を zip_path に書き出してから UploadDataset を実行する
+async fn receive_and_upload<G, S, R>(
+    usecase: &UploadDataset<G, S, R>,
+    mut multipart: Multipart,
+    zip_path: &std::path::Path,
+) -> Result<(), StatusCode>
+where
+    G: DatasetIdGenerator + Send + Sync + 'static,
+    S: DatasetSaver + Send + Sync + 'static,
+    R: DatasetRegister + Send + Sync + 'static,
+{
+    let mut name = None;
+    let mut dataset_type = None;
+    let mut has_file = false;
+
+    while let Some(mut field) = multipart.next_field().await.map_err(|e| e.status())?
+    // 上限を超えた際に413を返す。
+    {
+        // field.name() は field を借用するので、chunk() で &mut を使う前に String にしておく
+        let field_name = field.name().map(str::to_owned);
+        match field_name.as_deref() {
+            Some("file") => {
+                let mut file = tokio::fs::File::create(zip_path)
+                    .await
+                    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+                // bytes() は全体をメモリに載せるので、チャンクごとにディスクへ書く
+                while let Some(chunk) = field.chunk().await.map_err(|_| StatusCode::BAD_REQUEST)? {
+                    file.write_all(&chunk)
+                        .await
+                        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+                }
+                file.flush()
+                    .await
+                    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+                has_file = true;
+            }
+            Some("name") => name = Some(field.text().await.map_err(|_| StatusCode::BAD_REQUEST)?),
+            Some("type") => {
+                dataset_type = Some(field.text().await.map_err(|_| StatusCode::BAD_REQUEST)?)
+            }
+            _ => {} // 知らない項目は読み飛ばす
+        }
+    }
+
+    // 3項目のどれかが欠けている、または名前・種類が空ならクライアントの誤り
+    let (Some(name), Some(dataset_type), true) = (name, dataset_type, has_file) else {
+        return Err(StatusCode::BAD_REQUEST);
+    };
+    if name.trim().is_empty() || dataset_type.trim().is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    // TODO: 壊れたzip(クライアントの誤り → 400/422)とディスク障害(500)を区別するには、
+    // DatasetError に InvalidArchive のような種類を足す必要がある。今はすべて 500 にしている。
+    usecase
+        .execute(zip_path, name, dataset_type)
+        .await
+        .map_err(|e| match e {
+            DatasetError::SaveFailed(_)
+            | DatasetError::RegisterFailed(_)
+            | DatasetError::CallFailed(_)
+            | DatasetError::ReadFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        })
+}
+
+// DBからデータセットのメタデータ一覧を呼び出すGETリクエストハンドラ
+pub async fn read_summary_datasets<R>(
+    State(usecase): State<Arc<ReadDatasetsSummary<R>>>,
+) -> Result<Json<DatasetSummariesDto>, StatusCode>
+where
+    R: DatasetReader + Send + Sync + 'static,
+{
+    let summary = usecase.execute().await.map_err(|e| match e {
+        DatasetError::SaveFailed(_)
+        | DatasetError::RegisterFailed(_)
+        | DatasetError::CallFailed(_)
+        | DatasetError::ReadFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
+    })?;
+    Ok(Json(DatasetSummariesDto::from(summary.as_slice())))
+}
 
 #[cfg(test)]
 mod tests {

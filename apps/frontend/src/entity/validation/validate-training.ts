@@ -148,9 +148,18 @@ export const validateModelName: TrainingValidationRule = ({ settings }) => {
   ]
 }
 
-/** dataset_path: 必須。存在するかはサーバーにしか分からないので、ここでは確かめない */
-export const validateDatasetPath: TrainingValidationRule = ({ settings }) =>
-  compact([requireNonEmpty(settings.datasetPath, 'データセットのパス', 'dataset_path')])
+/**
+ * dataset_id: 必須(一覧から選ぶ)。選んだ後に削除されたかどうかはサーバーにしか分からないので、
+ * ここでは確かめない(学習開始が 422 を返す)
+ */
+export const validateDataset: TrainingValidationRule = ({ settings }) =>
+  settings.datasetId.trim() === ''
+    ? [
+        issueError('training/required', 'データセットを選んでください。', {
+          field: 'dataset_id',
+        }),
+      ]
+    : []
 
 /**
  * device: 必須。一覧があればその中から選ばれているか、なければ書式を確かめる。
@@ -286,7 +295,7 @@ export const TRAINING_RULES: readonly TrainingValidationRule[] = [
   validateOptimizer,
   validateLoss,
   validateTrainingNumbers,
-  validateDatasetPath,
+  validateDataset,
   validateDevice,
   validateDataSpec,
   validateTaskAvailability,
