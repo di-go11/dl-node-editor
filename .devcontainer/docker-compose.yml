@@ -9,6 +9,7 @@ services:
       - ../:/workspaces:cached # リポジトリルートをマウント(.gitを含めるため。backend単体マウントだとコンテナ内でgit操作ができなくなる)
       - ~/.claude:/root/.claude:cached # ホスト側のClaude設定(CLAUDE.md等)を共有
       - ccache-data:/ccache # ccache のキャッシュをコンテナ再作成後も永続化
+      - datasets:/datasets:ro # api-dev が解凍したデータセットを学習で読むため(本番と同じく読み取り専用)
     # VS Code が DevContainer として認識し続けるための設定
     command: /bin/bash -c "while sleep 1000; do :; done"
 
@@ -39,6 +40,7 @@ services:
       - ~/.claude:/root/.claude:cached # ホスト側のClaude設定(CLAUDE.md等)を共有
       - cargo-registry:/usr/local/cargo/registry # cargo のキャッシュをコンテナ再作成後も永続化
       - api-data:/data # DBの永続化用ボリューム
+      - datasets:/datasets # アップロードされたデータセットの解凍先(DATASET_ROOT の既定値)。ai-engine-dev と共有する
     # VS Code が DevContainer として認識し続けるための設定(base imageのデフォルトCMDはbashで、TTYがないと即終了するため)
     command: /bin/bash -c "while sleep 1000; do :; done"
     working_dir: /workspaces/apps/backend/api
@@ -67,3 +69,4 @@ volumes:
   cargo-registry:
   web-node-modules: # web-dev の node_modules を永続化し、ホストと分離するための名前付きボリューム
   api-data: # api-dev の DB データを永続化するための名前付きボリューム
+  datasets: # api-dev(書き込み)と ai-engine-dev(読み取り)で共有するデータセット置き場
