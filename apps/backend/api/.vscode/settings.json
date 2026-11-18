@@ -21,5 +21,7 @@
   },
   "files.watcherExclude": {
     "**/target/**": true
-  }
+  },
+  // 保存時にファイルの最後に改行を付ける(cargo fmt --check 対策)
+  "files.insertFinalNewline": true
 }
