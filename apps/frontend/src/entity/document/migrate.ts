@@ -17,17 +17,19 @@ import { DOCUMENT_FORMAT } from './document'
  * 変換は「1 つ前の版から 1 つ次の版へ」だけを書く。v1→v3 のような飛び越しを書かないので、
  * 版が増えても書く変換は 1 つずつで済み、各変換は単体でテストできる。
  *
- * ## 今の状態
+ * ## 版の履歴
  *
- * まだ版 1 しかないので、変換は 1 つもない。版 2 を作るときは、
- * CURRENT_DOCUMENT_VERSION を 2 にし、DOCUMENT_MIGRATIONS に 1 → 2 の変換を足し、
- * schema.ts に版 2 のスキーマを作る。
+ * - 版 1 → 2: 学習設定のデータセットを、サーバー上のパス(dataset_path)から
+ *   登録済みデータセットの ID(dataset_id)に変えた(migrateV1toV2)。
+ *
+ * 版を上げるときは、CURRENT_DOCUMENT_VERSION を上げ、DOCUMENT_MIGRATIONS に変換を足し、
+ * schema.ts のスキーマを新しい版の形にする。
  *
  * 変換は検証前の生の JSON に対して行うので、型は Record<string, unknown> にしている。
  * 古い版のスキーマを全部残しておくより、変換の中で必要な項目だけを扱うほうが軽い。
  */
 
-export const CURRENT_DOCUMENT_VERSION = 1
+export const CURRENT_DOCUMENT_VERSION = 2
 
 export type RawDocument = Readonly<Record<string, unknown>>
 
@@ -37,7 +39,24 @@ export type DocumentMigration = (document: RawDocument) => RawDocument
 /** キーは変換元の版。DOCUMENT_MIGRATIONS[n] は版 n を版 n + 1 にする */
 export type DocumentMigrations = Readonly<Record<number, DocumentMigration>>
 
-export const DOCUMENT_MIGRATIONS: DocumentMigrations = {}
+function isRecord(value: unknown): value is RawDocument {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * 版 1 → 2: training の dataset_path(サーバー上のパス)を捨てる。
+ *
+ * 版 2 ではデータセットを登録済みデータセットの ID(dataset_id)で持つ。パスから ID は引けないので、
+ * 版 1 のファイルを開くとデータセットは未選択になり、学習設定画面で一覧から選び直す。
+ */
+export const migrateV1toV2: DocumentMigration = (document) => {
+  const training = document.training
+  if (!isRecord(training)) return document
+  const { dataset_path: _datasetPath, ...rest } = training
+  return { ...document, training: rest }
+}
+
+export const DOCUMENT_MIGRATIONS: DocumentMigrations = { 1: migrateV1toV2 }
 
 export type MigrationResult =
   | { readonly ok: true; readonly document: RawDocument }
@@ -46,10 +65,6 @@ export type MigrationResult =
 export type MigrationOptions = {
   readonly migrations?: DocumentMigrations
   readonly currentVersion?: number
-}
-
-function isRecord(value: unknown): value is RawDocument {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 const fail = (issue: Issue): MigrationResult => ({ ok: false, issues: [issue] })

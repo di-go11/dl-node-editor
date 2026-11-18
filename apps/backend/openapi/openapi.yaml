@@ -2,7 +2,7 @@ openapi: 3.1.0
 
 info:
   title: Model Editor Backend API
-  version: 0.3.0
+  version: 0.4.0
   description: |
     ノードエディタ(React)と Rust の HTTP API の間の契約。**このファイルが契約の正本である。**
 
@@ -40,6 +40,8 @@ tags:
     description: 学習の開始・進捗・停止
   - name: models
     description: 学習済みモデルの一覧・学習設定の取得と、学習の再開
+  - name: datasets
+    description: データセットのアップロードと一覧の取得
 
 paths:
   /capabilities:
@@ -67,6 +69,7 @@ paths:
         受理されると job_id が返り、進捗は /trainings/{job_id}/progress で購読する。
         新規学習専用。同じ model_name のモデルがすでにあるかは /trainings/validate で先に確かめる。
         学習の再開は /models/{model_id}/resume で行う。
+        データセットは /datasets の dataset_id で指定する。サーバー上のパスはサーバーが dataset_id から決める。
       requestBody:
         required: true
         content:
@@ -83,7 +86,11 @@ paths:
         "409":
           description: すでに学習が実行中
         "422":
-          description: リクエストの形が合わない、または C++ が設定を拒否した
+          description: |
+            リクエストの形が合わない(dataset_id が空を含む)、dataset_id のデータセットが登録されていない、
+            または C++ が設定を拒否した
+        "500":
+          description: DB の読み書きに失敗した
         "502":
           $ref: "#/components/responses/UpstreamError"
 
@@ -107,7 +114,7 @@ paths:
         "409":
           description: model_name がすでに使用されている
         "422":
-          description: リクエストの形が合わない
+          description: リクエストの形が合わない(dataset_id が空を含む)。データセットが登録されているかはここでは確かめない
         "500":
           description: DB の読み取りに失敗した
 
@@ -258,7 +265,7 @@ paths:
       summary: 学習を再開する
       description: |
         再開時に変えてよい項目だけを送る。初期値は /models/{model_id}/config の応答から取る。
-        - 固定項目(model_name / model_graph / data_spec / seed)は送らない。サーバーが前回の学習設定の値を使う。
+        - 固定項目(model_name / model_graph / data_spec / seed / データセット)は送らない。サーバーが前回の学習設定の値を使う。
         - optimizer はハイパーパラメータを変えてよいが、type は前回と同じにする(違うと 422)。
         - epoch は合計エポック数である。前回までに完了したエポック数より大きい値にする。
         - 再開するモデルはパスの model_id で決める。再開元の checkpoint は C++ が model_id から決める。
@@ -292,6 +299,65 @@ paths:
           description: DB の読み書きに失敗した
         "502":
           $ref: "#/components/responses/UpstreamError"
+
+  /datasets:
+    get:
+      tags: [datasets]
+      operationId: listDatasets
+      summary: 登録済みデータセットの一覧を取得する
+      description: |
+        学習設定画面でデータセットを選ぶのに使う。選んだデータセットの dataset_id を /trainings に送る。
+        サーバー上のパスは返さない。0 件でも 200 で空の配列を返す。
+      responses:
+        "200":
+          description: 取得できた
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DatasetSummariesResponse"
+        "500":
+          description: DB の読み取りに失敗した
+
+  /datasets/upload:
+    post:
+      tags: [datasets]
+      operationId: uploadDataset
+      summary: データセット(zip)をアップロードして登録する
+      description: |
+        zip をサーバーのデータセット置き場に解凍し、メタデータを登録する。
+        直下がディレクトリ 1 つだけの zip は、その中身をデータセットのルートとみなす。
+        受け付けるサイズと解凍後の合計サイズには上限がある(サーバーの設定 DATASET_UPLOAD_MAX_MIB / DATASET_UNZIP_MAX_MIB)。
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, name, type]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: データセットの zip
+                name:
+                  type: string
+                  minLength: 1
+                  description: 一覧に表示する名前
+                type:
+                  type: string
+                  minLength: 1
+                  description: データセットの形式(pascal_voc など)
+      responses:
+        "201":
+          description: 登録した(本文なし)
+        "400":
+          description: file / name / type のどれかが欠けている、空である、または multipart の形が正しくない
+        "413":
+          description: アップロードの受信上限を超えた
+        "500":
+          description: |
+            保存・登録に失敗した。壊れた zip、解凍後のサイズ上限の超過、安全でないパスを含む zip も今はここに含む
+            (クライアントの誤りとして区別するのは今後の課題)
 
 components:
   parameters:
@@ -892,7 +958,10 @@ components:
     # 学習の開始
     # ------------------------------------------------------------
 
-    StartTrainingRequest:
+    TrainingConfigBase:
+      description: |
+        StartTrainingRequest と ModelTrainingConfig に共通する学習設定。データセットの指定は含まない
+        (新規学習のリクエストだけが dataset_id を持ち、保存済みの設定の応答はデータセットを返さない)。
       type: object
       required:
         - model_name
@@ -901,7 +970,6 @@ components:
         - loss
         - epoch
         - batch
-        - dataset_path
         - device
         - data_spec
         - save_last_every
@@ -923,10 +991,6 @@ components:
           type: integer
           format: int32
           minimum: 1
-        dataset_path:
-          type: string
-          minLength: 1
-          description: 学習エンジンから見たサーバー上のパス
         device:
           type: string
           minLength: 1
@@ -943,6 +1007,20 @@ components:
           format: int64
           minimum: 0
           description: 乱数シード。0 も有効な値である。固定しない場合はキーごと省略する
+
+    StartTrainingRequest:
+      description: POST /trainings と POST /trainings/validate の本体
+      allOf:
+        - $ref: "#/components/schemas/TrainingConfigBase"
+        - type: object
+          required: [dataset_id]
+          properties:
+            dataset_id:
+              type: string
+              minLength: 1
+              description: |
+                /datasets の dataset_id から選ぶ。サーバー上のパスはサーバーがこの ID から決める
+                (クライアントはパスを送らない・知らない)
 
     StartTrainingResponse:
       type: object
@@ -1019,10 +1097,11 @@ components:
 
     ModelTrainingConfig:
       description: |
-        GET /models/{model_id}/config の応答。StartTrainingRequest と同じ項目に model_id を足したもの(同じ階層に並ぶ)。
+        GET /models/{model_id}/config の応答。TrainingConfigBase の項目に model_id を足したもの(同じ階層に並ぶ)。
+        学習に使ったデータセットは返さない(サーバー上のパスをクライアントに見せないため)。
         seed を固定していない場合も、キーを省略せずに null を返す。
       allOf:
-        - $ref: "#/components/schemas/StartTrainingRequest"
+        - $ref: "#/components/schemas/TrainingConfigBase"
         - type: object
           required: [model_id]
           properties:
@@ -1033,15 +1112,14 @@ components:
     ResumeTrainingConfig:
       description: |
         POST /models/{model_id}/resume の本体。再開時に変えてよい項目だけを持つ。
-        固定項目(model_name / model_graph / data_spec / seed)はサーバーが前回の学習設定から使う。
-        送られてきても無視する。
+        固定項目(model_name / model_graph / data_spec / seed / データセット)はサーバーが前回の学習設定から使う。
+        送られてきても無視する(以前の形式の dataset_path も無視する)。
       type: object
       required:
         - optimizer
         - loss
         - epoch
         - batch
-        - dataset_path
         - device
         - save_last_every
       properties:
@@ -1059,10 +1137,6 @@ components:
           type: integer
           format: int32
           minimum: 1
-        dataset_path:
-          type: string
-          minLength: 1
-          description: 学習エンジンから見たサーバー上のパス
         device:
           type: string
           minLength: 1
@@ -1072,6 +1146,37 @@ components:
           format: int32
           minimum: 0
           description: checkpoint を保存する間隔(エポック)。0 なら毎エポック
+
+    # ------------------------------------------------------------
+    # データセット
+    # ------------------------------------------------------------
+
+    DatasetSummary:
+      type: object
+      required: [dataset_id, dataset_name, dataset_type, created_at]
+      properties:
+        dataset_id:
+          type: string
+          minLength: 1
+          description: /trainings の dataset_id に送る値
+        dataset_name:
+          type: string
+          description: アップロード時に付けた名前
+        dataset_type:
+          type: string
+          description: データセットの形式(pascal_voc など。アップロード時に指定した値)
+        created_at:
+          type: string
+          description: 登録した日時(UTC, RFC 3339)
+
+    DatasetSummariesResponse:
+      type: object
+      required: [datasets]
+      properties:
+        datasets:
+          type: array
+          items:
+            $ref: "#/components/schemas/DatasetSummary"
 
     # ------------------------------------------------------------
     # 学習の状態と進捗

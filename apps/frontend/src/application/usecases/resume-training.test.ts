@@ -20,7 +20,6 @@ function fakeTrainedModelApi(result: ReturnType<TrainedModelApi['resume']>) {
 
 const settings: TrainingSettings = {
   ...defaultTrainingSettings(),
-  datasetPath: '/data/voc',
   device: 'cpu',
   epoch: 10,
 }

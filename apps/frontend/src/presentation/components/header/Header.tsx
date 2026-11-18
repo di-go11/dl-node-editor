@@ -129,6 +129,15 @@ export function Header() {
       <DeviceStatus />
       <button
         type="button"
+        title="データセットの一覧を見る・zip をアップロードして追加する"
+        onClick={() => {
+          void navigate('/datasets')
+        }}
+      >
+        データセット
+      </button>
+      <button
+        type="button"
         title="学習済みのモデルを選んで、学習を続ける"
         onClick={() => {
           void navigate('/models')

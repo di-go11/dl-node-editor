@@ -102,7 +102,7 @@ const expected: StartTrainingRequest = {
   loss: { type: 'cross_entropy' },
   epoch: 1,
   batch: 6,
-  dataset_path: '/workspaces/apps/backend/ai-engine/TrainingDataset/',
+  dataset_id: 'dataset-voc',
   device: 'cuda:0',
   data_spec: {
     type: 'image',
@@ -118,8 +118,10 @@ const expected: StartTrainingRequest = {
 describe('openapi.yaml の StartTrainingRequest', () => {
   it('test_segnet_dag.json を変換すると、契約の形になる', () => {
     const example = startTrainingRequestJsonSchema.parse(JSON.parse(exampleRaw))
+    // C++ の設定ファイルはパスを持ち、データセットの ID を持たない。画面で選んだ ID を足して送る
+    const selected = { ...example, dataset_id: 'dataset-voc' }
 
-    expect(toRustStartTrainingRequest(example)).toEqual({ ok: true, value: expected })
+    expect(toRustStartTrainingRequest(selected)).toEqual({ ok: true, value: expected })
   })
 
   it('ノードの並び順を保っている(重みの初期化と checkpoint の対応がこの順で決まる)', () => {

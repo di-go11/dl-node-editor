@@ -8,8 +8,8 @@ import { issueError } from '../validation/issue'
 import type { EditorDocument, Position } from './document'
 import { migrateDocument } from './migrate'
 import type { MigrationOptions } from './migrate'
-import type { DocumentV1Json } from './schema'
-import { documentV1JsonSchema } from './schema'
+import type { DocumentJson } from './schema'
+import { documentJsonSchema } from './schema'
 
 /**
  * 保存ファイルの読み込み:文字列 → EditorDocument。
@@ -80,7 +80,7 @@ export function parseJsonText(
   }
 }
 
-function toDocument(json: DocumentV1Json): EditorDocument {
+function toDocument(json: DocumentJson): EditorDocument {
   const positions = new Map<string, Position>()
   for (const [id, position] of Object.entries(json.editor?.positions ?? {})) {
     positions.set(id, { x: position.x, y: position.y })
@@ -106,7 +106,7 @@ export function parseDocument(raw: unknown, options: MigrationOptions = {}): Par
   const migrated = migrateDocument(raw, options)
   if (!migrated.ok) return migrated
 
-  const result = documentV1JsonSchema.safeParse(migrated.document, { error: japaneseErrors })
+  const result = documentJsonSchema.safeParse(migrated.document, { error: japaneseErrors })
   if (!result.success) return { ok: false, issues: structureIssuesOf(result.error.issues) }
 
   return { ok: true, document: toDocument(result.data) }

@@ -8,6 +8,7 @@ import { createStaticNodeCatalogSource } from './infrastructure/catalog/static-n
 import { createBrowserDocumentStorage } from './infrastructure/file/browser-document-storage'
 import { createApiClient } from './infrastructure/http/api-client'
 import { createHttpCapabilitiesApi } from './infrastructure/http/http-capabilities-api'
+import { createHttpDatasetApi } from './infrastructure/http/http-dataset-api'
 import { createHttpTrainedModelApi } from './infrastructure/http/http-trained-model-api'
 import { createHttpTrainingApi } from './infrastructure/http/http-training-api'
 import { AppRoutes } from './presentation/app/AppRoutes'
@@ -40,6 +41,7 @@ async function bootstrap(): Promise<void> {
     documentStorage: createBrowserDocumentStorage(),
     trainingApi: createHttpTrainingApi(apiClient),
     trainedModelApi: createHttpTrainedModelApi(apiClient),
+    datasetApi: createHttpDatasetApi(apiClient),
   }
 
   const root = document.getElementById('root')

@@ -39,21 +39,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let max_dataset_upload_bytes = match std::env::var("DATASET_UPLOAD_MAX_MIB") {
         Ok(v) => v
             .parse::<usize>()
-            .map_err(|_| format!("DATASET_UPLOAD_MAX_MBはMiB単位の整数で指定してください: {v}"))?,
+            .map_err(|_| format!("DATASET_UPLOAD_MAX_MIBはMiB単位の整数で指定してください: {v}"))?,
         Err(_) => 10 * 1024,
     }
     .checked_mul(1024 * 1024) //パースしたMiBに1024^2を書けてbyteに変換する。
-    .ok_or("DATASET_UPLOAD_MAX_MBが大きすぎます")?;
+    .ok_or("DATASET_UPLOAD_MAX_MIBが大きすぎます")?;
 
-    // Zip解凍サイズの上限
+    // Zip解凍サイズの上限(FileDatasetSaver が u64 で受け取るので u64 で読む)。未設定なら 1TiB(.deploy/.env と同じ値)
     let max_unzip_max_bytes = match std::env::var("DATASET_UNZIP_MAX_MIB") {
         Ok(v) => v
-            .parse::<usize>()
+            .parse::<u64>()
             .map_err(|_| format!("DATASET_UNZIP_MAX_MIBはMiB単位の整数で指定してください: {v}"))?,
-        Err(_) => 10 * 1024,
+        Err(_) => 1024 * 1024,
     }
     .checked_mul(1024 * 1024) //パースしたMiBに1024^2を書けてbyteに変換する。
-    .ok_or("DATASET_UPLOAD_MAX_MBが大きすぎます")?;
+    .ok_or("DATASET_UNZIP_MAX_MIBが大きすぎます")?;
     // アップロードされたデータセットの解凍先。DBに保存する dataset_path はこの下になり、C++側もそのパスで読むため、
     // 既定値は ai-engine コンテナのマウント先(/datasets)に合わせる
     let dataset_root =
@@ -98,6 +98,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             SqliteTrainingRepository::new(pool.clone()),
             UuidModelGenerator,
             scheduler.clone(),
+            // クライアントが選んだ dataset_id から、C++ に送るパスを引く
+            SqliteDatasetRepository::new(pool.clone()),
         )),
         get_process: Arc::new(GetTrainingProcess::new(GrpcTrainingProgressProvider::new(
             channel.clone(),

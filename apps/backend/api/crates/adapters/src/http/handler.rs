@@ -1,7 +1,7 @@
 use super::dto::{
-    CapabilitiesDto, DatasetConfigDto, ModelSummariesDto, ModelTrainingConfigDto,
+    CapabilitiesDto, DatasetSummariesDto, ModelSummariesDto, ModelTrainingConfigDto,
     ResumeTrainingConfigDto, StartTrainingResponseDto, TrainingConfigDto, TrainingJobStatusDto,
-    TrainingProcessDto, D,
+    TrainingProcessDto,
 };
 use axum::{
     extract::{Path, State},
@@ -10,16 +10,15 @@ use axum::{
 };
 use entities::{
     model::ModelId,
-    training::{config::TrainingConfig, JobId, TrainingProcess},
+    training::{JobId, TrainingProcess},
 };
 use futures_util::StreamExt;
-use tonic::Status;
 use usecases::{
     capabilities::{CapabilityProvider, GetCapabilities},
     dataset::{
         dataset_id_generator::DatasetIdGenerator,
         error::DatasetError,
-        ports::{DatasetReader, DatasetRegister, DatasetSaver},
+        ports::{DatasetFinder, DatasetReader, DatasetRegister, DatasetSaver},
         read_datasets_summary::ReadDatasetsSummary,
         upload_dataset::UploadDataset,
     },
@@ -30,14 +29,14 @@ use usecases::{
     },
     training::{
         GetTrainingProcess, ModelIdGenerator, ProgressRecordingScheduler, ResumeTraining,
-        ResumeTrainingConfig, ResumeTrainingError, StartTraining, StartTrainingError, StopTraining,
-        TrainingProgressProvider, TrainingProgressProviderError, TrainingRecordReader,
-        TrainingResumer, TrainingRunRegistar, TrainingStarter, TrainingStopper,
-        ValidateTrainingConfig, ValidateTrainingConfigError,
+        ResumeTrainingConfig, ResumeTrainingError, StartTraining, StartTrainingConfig,
+        StartTrainingError, StopTraining, TrainingProgressProvider, TrainingProgressProviderError,
+        TrainingRecordReader, TrainingResumer, TrainingRunRegistar, TrainingStarter,
+        TrainingStopper, ValidateTrainingConfig, ValidateTrainingConfigError,
     },
 };
 
-use crate::{http::dto::DatasetSummariesDto, utils::uuid_generator::generate_uuid};
+use crate::utils::uuid_generator::generate_uuid;
 use axum::extract::Multipart;
 use tokio::io::AsyncWriteExt;
 
@@ -48,10 +47,11 @@ use std::sync::Arc;
 
 // 新規学習の開始POSTリクエストハンドラ(学習再開は別のエンドポイントにする)
 // 進捗記録の開始は StartTraining が ProgressRecordingScheduler ポート経由で行うため、ハンドラは関与しない。
-// TODO(設計改善): 型パラメータ S, R, G, K は StartTraining の内部依存が漏れたもの。
+// データセットは dataset_id で受け取り、パスは StartTraining が DB から引く(クライアントにパスを指定させない)。
+// TODO(設計改善): 型パラメータ S, R, G, K, F は StartTraining の内部依存が漏れたもの。
 // 入力ポート(StartTrainingUseCase)を導入して U 1つにする(docs/issues/backend-db-remaining.md 作業12)。
-pub async fn start_training<S, R, G, K>(
-    State(start): State<Arc<StartTraining<S, R, G, K>>>,
+pub async fn start_training<S, R, G, K, F>(
+    State(start): State<Arc<StartTraining<S, R, G, K, F>>>,
     Json(dto): Json<TrainingConfigDto>,
 ) -> Result<Json<StartTrainingResponseDto>, StatusCode>
 where
@@ -59,8 +59,11 @@ where
     R: TrainingRunRegistar + Send + Sync + 'static,
     G: ModelIdGenerator + Send + Sync + 'static,
     K: ProgressRecordingScheduler + Send + Sync + 'static,
+    F: DatasetFinder + Send + Sync + 'static,
 {
-    let config = TrainingConfig::from(dto);
+    // 空の dataset_id はクライアントの誤り
+    let config =
+        StartTrainingConfig::try_from(dto).map_err(|_| StatusCode::UNPROCESSABLE_ENTITY)?;
     let job_id = start
         .execute(&config)
         .await
@@ -77,6 +80,9 @@ fn status_code_from_start_error(error: StartTrainingError) -> StatusCode {
         | StartTrainingError::ResumePreconditionFailed(_) => StatusCode::CONFLICT,
         StartTrainingError::AlreadyRunning(_) => StatusCode::CONFLICT,
         StartTrainingError::RecordFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        // 本体で指定されたデータセットがない(URL のリソースがないわけではないので 404 ではなく 422)
+        StartTrainingError::DatasetNotFound(_) => StatusCode::UNPROCESSABLE_ENTITY,
+        StartTrainingError::DatasetReadFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
     }
 }
 
@@ -88,7 +94,9 @@ pub async fn validate_training<V>(
 where
     V: TrainingRecordReader + Send + Sync + 'static,
 {
-    let config = TrainingConfig::from(dto);
+    let Ok(config) = StartTrainingConfig::try_from(dto) else {
+        return StatusCode::UNPROCESSABLE_ENTITY; // 空の dataset_id
+    };
     match usecase.execute(&config).await {
         Ok(()) => StatusCode::NO_CONTENT,
         Err(ValidateTrainingConfigError::ModelNameAlreadyUsed(_)) => StatusCode::CONFLICT,

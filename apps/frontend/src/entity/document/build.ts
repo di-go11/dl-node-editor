@@ -4,23 +4,23 @@ import { trainingSettingsToJson } from '../training/proto-json/convert'
 import type { EditorDocument } from './document'
 import { DOCUMENT_FORMAT } from './document'
 import { CURRENT_DOCUMENT_VERSION } from './migrate'
-import type { DocumentV1Json, PositionJson } from './schema'
+import type { DocumentJson, PositionJson } from './schema'
 
 /**
- * 保存ファイルの書き出し:EditorDocument → JSON 表記(版 1)。
+ * 保存ファイルの書き出し:EditorDocument → JSON 表記(最新の版)。
  *
  * 保存日時は引数で受け取る。関数の中で new Date() を呼ぶと、同じ入力でも
  * 呼ぶたびに結果が変わり(純粋関数でなくなり)、テストで結果を比べられなくなるためである。
  * 「今の時刻」を知るのは外側の層(ユースケース)の役目にする。
  */
-export function buildDocumentJson(document: EditorDocument, savedAt: Date): DocumentV1Json {
+export function buildDocumentJson(document: EditorDocument, savedAt: Date): DocumentJson {
   // Map → 普通のオブジェクト。Object.fromEntries は Map の挿入順を保つ
   const positions: Record<string, PositionJson> = Object.fromEntries(
     [...document.layout.positions].map(([id, { x, y }]) => [id, { x, y }]),
   )
 
   const viewport = document.layout.viewport
-  const json: DocumentV1Json = {
+  const json: DocumentJson = {
     format: DOCUMENT_FORMAT,
     version: CURRENT_DOCUMENT_VERSION,
     meta: { name: document.meta.name, saved_at: savedAt.toISOString() },

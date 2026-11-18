@@ -6,14 +6,16 @@ import { modelGraphJsonSchema } from '../model-graph/proto-json/schema'
 import { trainingSettingsJsonSchema } from '../training/proto-json/schema'
 
 import { DOCUMENT_FORMAT } from './document'
+import { CURRENT_DOCUMENT_VERSION } from './migrate'
 
 /**
- * 保存ファイル(版 1)の JSON 表記を検証する Zod スキーマ(指示書 7.2)。
+ * 保存ファイル(版 2)の JSON 表記を検証する Zod スキーマ(指示書 7.2)。
+ * 古い版のファイルは、migrate.ts で版 2 の形に変換してからこのスキーマで検証する。
  *
  * ```jsonc
  * {
  *   "format": "model-editor-document",
- *   "version": 1,
+ *   "version": 2,
  *   "meta":    { "name": "segnet", "saved_at": "2026-10-22T10:00:00Z" },
  *   "context": { "data_dim": "2d", "method": "cnn" },
  *   "model":   { "model_graph": { ... } },          // model_graph.proto の JSON 表記そのもの
@@ -27,6 +29,8 @@ import { DOCUMENT_FORMAT } from './document'
  * model.model_graph と training は、test_segnet_dag.json と同じ形のスキーマを
  * そのまま使っている。こうすると、保存ファイルの一部をそのまま API に送れ、
  * C++ の設定ファイルとも見比べられる。形式を 2 つ持つと、変換の誤りが入り込む。
+ * ただしデータセットだけは、C++ の dataset_path(パス)ではなく dataset_id(登録済みデータセットの ID)を持つ
+ * (版 2 から。フロントはサーバー上のパスを知らないため)。
  *
  * ## 緩くしている点
  *
@@ -50,9 +54,9 @@ const viewportJsonSchema = z.object({
   zoom: z.number().positive(),
 })
 
-export const documentV1JsonSchema = z.object({
+export const documentJsonSchema = z.object({
   format: z.literal(DOCUMENT_FORMAT),
-  version: z.literal(1),
+  version: z.literal(CURRENT_DOCUMENT_VERSION),
   meta: z.object({
     name: z.string(),
     saved_at: z.string().optional(),
@@ -79,4 +83,4 @@ export const documentV1JsonSchema = z.object({
 
 export type PositionJson = z.infer<typeof positionJsonSchema>
 export type ViewportJson = z.infer<typeof viewportJsonSchema>
-export type DocumentV1Json = z.infer<typeof documentV1JsonSchema>
+export type DocumentJson = z.infer<typeof documentJsonSchema>

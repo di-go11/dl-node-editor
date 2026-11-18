@@ -5,7 +5,6 @@ import type { ValidationResult } from './issue'
 import { issueError, sortIssuesBySeverity, toValidationResult } from './issue'
 import type { TrainingValidationInput, TrainingValidationRule } from './validate-training'
 import {
-  validateDatasetPath,
   validateDevice,
   validateLoss,
   validateLossTask,
@@ -19,7 +18,7 @@ import {
  * 新規学習のチェック(validate-training.ts)のルールのうち、再開で変えられる項目のものだけを使い、
  * epoch が前回までに完了したエポック数より大きいかを足す。
  *
- * model_name / data_spec / seed / optimizer の種類は前回の値に決まっていて、
+ * model_name / data_spec / seed / データセット / optimizer の種類は前回の値に決まっていて、
  * 画面で直せない(サーバーも前回の値を使う)ので確かめない。
  * loss とタスクの組み合わせは、loss を変えられるので確かめる。
  *
@@ -52,7 +51,6 @@ const RESUME_RULES: readonly TrainingValidationRule[] = [
   validateOptimizer,
   validateLoss,
   validateTrainingNumbers,
-  validateDatasetPath,
   validateDevice,
   validateLossTask,
 ]
