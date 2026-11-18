@@ -1,3 +1,5 @@
 {
-  "cmake.sourceDirectory": "D:/dagofile/graduate_research/robust-object-detection/apps/backend/ai-engine"
+  "cmake.configureOnOpen": false,
+  "cmake.automaticReconfigure": false,
+  "cmake.ignoreCMakeListsMissing": true
 }
