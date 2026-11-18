@@ -109,6 +109,48 @@ describe('アップロード', () => {
       error: { status: 413, message: 'ファイルが大きすぎます(サーバーの受信上限を超えています)。' },
     })
   })
+
+  it('422 は、本文の足りないファイル・フォルダを並べて説明する', async () => {
+    server.use(
+      http.post(`${TEST_BASE_URL}/datasets/upload`, () =>
+        HttpResponse.json(
+          { format: 'original', missing: ['JPEGImages/', 'labelmap.txt'] },
+          { status: 422 },
+        ),
+      ),
+    )
+    const result = await createHttpDatasetApi(client()).upload({
+      file: zip(),
+      fileName: 'voc.zip',
+      name: 'voc',
+      type: 'original',
+    })
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        kind: 'http',
+        status: 422,
+        message:
+          'zip の中身が「Original(labelmap.txt)」形式のフォルダ構成になっていません。足りないもの: JPEGImages/、labelmap.txt',
+      },
+    })
+  })
+
+  it('422 の本文が契約の形でなければ、状態コードの説明にする', async () => {
+    server.use(
+      http.post(`${TEST_BASE_URL}/datasets/upload`, () => new HttpResponse(null, { status: 422 })),
+    )
+    const result = await createHttpDatasetApi(client()).upload({
+      file: zip(),
+      fileName: 'voc.zip',
+      name: 'voc',
+      type: 'pascal_voc',
+    })
+    expect(result).toMatchObject({
+      ok: false,
+      error: { status: 422, message: 'zip の中身が、選んだ形式のフォルダ構成になっていません。' },
+    })
+  })
 })
 
 describe('学習開始のデータセットの指定', () => {

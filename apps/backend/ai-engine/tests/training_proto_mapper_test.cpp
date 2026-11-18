@@ -179,6 +179,41 @@ int main()
               "変換: data_spec.image.annotation(PascalVoc)");
         const SegmentationSpec *seg = image ? std::get_if<SegmentationSpec>(&image->taskSpecs) : nullptr;
         check(seg != nullptr && seg->ignoreIndex == 255, "変換: task_specs.segmentation.ignore_index");
+        check(seg != nullptr && !seg->ignoreColor.has_value(),
+              "変換: ignore_color_enabled = false なら ignoreColor は nullopt(r/g/b は読まない)");
+    }
+    {
+        // 独自形式(labelmap.txt 付き)は OriginalConfig になる。
+        training::v1::StartTrainingRequest r = makeValidRequest();
+        r.mutable_data_spec()->mutable_image()->mutable_annotation()->mutable_original();
+        const StartTrainingCommand c = toStartTrainingCommand(r);
+        const ImageSpec *image = std::get_if<ImageSpec>(&c.dataSpec);
+        check(image != nullptr && std::holds_alternative<OriginalConfig>(image->annotation),
+              "変換: data_spec.image.annotation(Original)");
+    }
+    {
+        // 無視する色を有効にすると、r/g/b が ignoreColor に入る。
+        training::v1::StartTrainingRequest r = makeValidRequest();
+        auto *seg = r.mutable_data_spec()->mutable_image()->mutable_task_specs()->mutable_segmentation();
+        seg->set_ignore_color_enabled(true);
+        seg->set_ignore_color_r(224);
+        seg->set_ignore_color_g(224);
+        seg->set_ignore_color_b(192);
+        const StartTrainingCommand c = toStartTrainingCommand(r);
+        const ImageSpec *image = std::get_if<ImageSpec>(&c.dataSpec);
+        const SegmentationSpec *spec = image ? std::get_if<SegmentationSpec>(&image->taskSpecs) : nullptr;
+        check(spec != nullptr && spec->ignoreColor.has_value() && spec->ignoreColor->getR() == 224 &&
+                  spec->ignoreColor->getG() == 224 && spec->ignoreColor->getB() == 192,
+              "変換: task_specs.segmentation.ignore_color(224,224,192)");
+    }
+    {
+        // 無効なら、範囲外の r/g/b が入っていても読まない(拒否しない)。
+        training::v1::StartTrainingRequest r = makeValidRequest();
+        r.mutable_data_spec()->mutable_image()->mutable_task_specs()->mutable_segmentation()->set_ignore_color_r(999);
+        const StartTrainingCommand c = toStartTrainingCommand(r);
+        const ImageSpec *image = std::get_if<ImageSpec>(&c.dataSpec);
+        const SegmentationSpec *spec = image ? std::get_if<SegmentationSpec>(&image->taskSpecs) : nullptr;
+        check(spec != nullptr && !spec->ignoreColor.has_value(), "変換: ignore_color_enabled = false なら r/g/b を検証しない");
     }
     {
         // 分岐のある DAG: conv1 → pool →(y と indices の 2 本)→ unpool → モデルの出力。
@@ -509,6 +544,13 @@ int main()
     checkRejected([](auto &r)
                   { r.mutable_data_spec()->mutable_image()->mutable_task_specs()->mutable_segmentation()->set_ignore_index(256); },
                   "ignore_index = 256(範囲外)");
+    checkRejected([](auto &r)
+                  {
+                      auto *seg = r.mutable_data_spec()->mutable_image()->mutable_task_specs()->mutable_segmentation();
+                      seg->set_ignore_color_enabled(true);
+                      seg->set_ignore_color_g(256);
+                  },
+                  "ignore_color_g = 256(範囲外)");
 
     // ---------- TrainingStatus の変換 ----------
     check(toProtoTrainingStatus(TrainingStatus::Idle) == training::v1::TRAINING_STATUS_IDLE &&

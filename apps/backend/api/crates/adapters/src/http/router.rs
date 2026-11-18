@@ -15,7 +15,9 @@ use usecases::{
     capabilities::CapabilityProvider,
     dataset::{
         dataset_id_generator::DatasetIdGenerator,
-        ports::{DatasetFinder, DatasetReader, DatasetRegister, DatasetSaver},
+        ports::{
+            DatasetFinder, DatasetLayoutChecker, DatasetReader, DatasetRegister, DatasetSaver,
+        },
     },
     model::ports::{ModelSummaryProvider, ModelTrainingConfigProvider},
     training::{
@@ -49,7 +51,7 @@ where
     MConfig: ModelTrainingConfigProvider + Send + Sync + 'static,
     // データセットのアップロード(UploadDataset)用
     DG: DatasetIdGenerator + Send + Sync + 'static,
-    DS: DatasetSaver + Send + Sync + 'static,
+    DS: DatasetSaver + DatasetLayoutChecker + Send + Sync + 'static,
     DR: DatasetRegister + Send + Sync + 'static,
     // データセット一覧(ReadDatasetsSummary)と、学習開始時のデータセットの検索(StartTraining)で共有する
     DRD: DatasetReader + DatasetFinder + Send + Sync + 'static,

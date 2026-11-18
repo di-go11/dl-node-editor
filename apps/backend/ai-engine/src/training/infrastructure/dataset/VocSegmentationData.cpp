@@ -1,10 +1,10 @@
 #include "training/infrastructure/dataset/VocSegmentationData.hpp"
 
-#include "training/infrastructure/dataset/LabelMapFileReader.hpp"
-
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
+#include <string>
+#include <utility>
 
 namespace fs = std::filesystem;
 
@@ -28,10 +28,12 @@ namespace
 
 VocSegmentationData::VocSegmentationData(const std::string &datasetRoot,
                                          const std::shared_ptr<IImageDecoder> &decoder,
-                                         const std::shared_ptr<LabelMapFileReader> &labelMapReader,
-                                         DatasetSplit split) : _datasetRoot(datasetRoot),
-                                                               _decoder(decoder),
-                                                               _labelConverter(labelMapReader->read((fs::path(datasetRoot) / "labelmap.txt").string()))
+                                         const ColorLabelMap &labelMap,
+                                         DatasetSplit split,
+                                         uint8_t ignoreIndex,
+                                         std::optional<RgbColor> ignoreColor) : _datasetRoot(datasetRoot),
+                                                                                _decoder(decoder),
+                                                                                _labelConverter(labelMap, ignoreIndex, std::move(ignoreColor))
 {
     const char *listName = nullptr;
     switch (split)
@@ -90,5 +92,14 @@ ImageData VocSegmentationData::getMask(size_t index) const
 {
     const std::string &id = _imageIds.at(index);
     const auto maskPath = (fs::path(_datasetRoot) / "SegmentationClass" / (id + ".png")).string();
-    return _labelConverter.convert(_decoder->decode(maskPath)); // カラー → クラスID
+    const ImageData colorMask = _decoder->decode(maskPath);
+    try
+    {
+        return _labelConverter.convert(colorMask); // カラー → クラスID
+    }
+    catch (const UnknownMaskColorError &e)
+    {
+        // 変換器はファイルを知らないので、どのマスクかをここで足す。
+        throw UnknownMaskColorError(std::string(e.what()) + ": " + maskPath);
+    }
 }

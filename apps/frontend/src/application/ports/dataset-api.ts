@@ -1,4 +1,5 @@
 import type { DatasetSummary } from '../../entity/dataset/dataset'
+import type { AnnotationKind } from '../../entity/training/data-spec'
 
 import type { ApiResult } from './api-result'
 
@@ -10,8 +11,8 @@ export type DatasetUpload = {
   readonly fileName: string
   /** 一覧に表示する名前 */
   readonly name: string
-  /** データセットの形式(pascal_voc など) */
-  readonly type: string
+  /** データセットの形式(学習設定のアノテーションの形式と同じ。サーバーは形式に合うフォルダ構成かを確かめる) */
+  readonly type: AnnotationKind
 }
 
 /**

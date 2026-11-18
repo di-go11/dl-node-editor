@@ -187,7 +187,19 @@ target_include_directories(image_pipeline_test PRIVATE
 )
 target_link_libraries(image_pipeline_test PRIVATE ai_engine_lib "${TORCH_LIBRARIES}" ${OpenCV_LIBS})
 target_link_options(image_pipeline_test PRIVATE "-Wl,--allow-shlib-undefined")
+
+# データセットの形式(pascal_voc / original)ごとの色表と、マスクの読み込み
+add_executable(dataset_label_map_test tests/dataset_label_map_test.cpp)
+target_include_directories(dataset_label_map_test PRIVATE
+	${CMAKE_CURRENT_SOURCE_DIR}/src
+	${CMAKE_CURRENT_SOURCE_DIR}
+	${TORCH_INCLUDE_DIRS}
+	${OpenCV_INCLUDE_DIRS}
+)
+target_link_libraries(dataset_label_map_test PRIVATE ai_engine_lib "${TORCH_LIBRARIES}" ${OpenCV_LIBS})
+target_link_options(dataset_label_map_test PRIVATE "-Wl,--allow-shlib-undefined")
 set_property(TARGET image_pipeline_test PROPERTY CXX_STANDARD 17)
+set_property(TARGET dataset_label_map_test PROPERTY CXX_STANDARD 17)
 
 # 7. リサイズ(Warp / Letterbox / CenterCrop)の疎通確認テスト
 add_executable(image_resize_test tests/image_resize_test.cpp)
@@ -283,6 +295,19 @@ target_compile_definitions(training_smoke_test PRIVATE
 	SMOKE_SRC_DATASET="${CMAKE_CURRENT_SOURCE_DIR}/TrainingDataset/train"
 	SMOKE_TMP_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/training_smoke_tmp"
 	SMOKE_DEVICE="${SMOKE_DEVICE}")
+
+# 13-2. ThreadExecutor(並列の for と、別スレッドの例外の伝搬)の単体テスト。
+#       libtorch 非依存。ai_engine_lib には依存せず、ThreadExecutor.cpp だけをビルドする。
+add_executable(thread_executor_test
+	tests/thread_executor_test.cpp
+	src/training/adapters/impl/parallelProcessFn/ThreadExecutor.cpp)
+target_include_directories(thread_executor_test PRIVATE
+	${CMAKE_CURRENT_SOURCE_DIR}/src
+	${CMAKE_CURRENT_SOURCE_DIR}
+)
+find_package(Threads REQUIRED)
+target_link_libraries(thread_executor_test PRIVATE Threads::Threads)
+set_property(TARGET thread_executor_test PROPERTY CXX_STANDARD 17)
 
 # 14. ComputeDevice entity(parseComputeDevice / computeDeviceToString)の単体テスト。
 #     libtorch 非依存(entity のみ)。
@@ -457,6 +482,8 @@ add_test(NAME loss_function_test COMMAND loss_function_test)
 add_test(NAME torch_add_test COMMAND torch_add_test)
 add_test(NAME torch_concat_test COMMAND torch_concat_test)
 add_test(NAME optimizer_resume_options_test COMMAND optimizer_resume_options_test)
+add_test(NAME thread_executor_test COMMAND thread_executor_test)
+add_test(NAME dataset_label_map_test COMMAND dataset_label_map_test)
 
 set_tests_properties(torch_loss_factory_test PROPERTIES LABELS "cpu")
 set_tests_properties(image_pipeline_test PROPERTIES LABELS "cpu")
@@ -480,6 +507,8 @@ set_tests_properties(loss_function_test PROPERTIES LABELS "cpu")
 set_tests_properties(torch_add_test PROPERTIES LABELS "cpu")
 set_tests_properties(torch_concat_test PROPERTIES LABELS "cpu")
 set_tests_properties(optimizer_resume_options_test PROPERTIES LABELS "cpu")
+set_tests_properties(thread_executor_test PROPERTIES LABELS "cpu")
+set_tests_properties(dataset_label_map_test PROPERTIES LABELS "cpu")
 
 # training_smoke_test は、実データ(TrainingDataset/train。リポジトリには含めていない)が無いと
 # 何も確認せずに終了コード 0 で終わる。Passed と区別できるよう、ctest の表示を Skipped にする。

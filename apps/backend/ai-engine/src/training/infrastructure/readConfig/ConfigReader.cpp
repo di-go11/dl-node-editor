@@ -6,6 +6,7 @@
 #include "training/entities/domain-objects/LossConfig.hpp"
 #include "training/entities/domain-objects/OptimizerConfig.hpp"
 #include "training/entities/domain-objects/DataSpecs/DataSpec.hpp"
+#include "training/entities/image/RgbColor.hpp"
 
 #include <cstdint>
 #include <fstream>
@@ -13,6 +14,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <iostream>
+#include <vector>
 
 namespace
 {
@@ -110,6 +112,31 @@ namespace
             return LossType::BoundaryLoss;
         }
         throw std::runtime_error("Unknown loss type: " + value);
+    }
+
+    // "224,224,192" を RgbColor へ。要素数(3)と値域(0〜255)を確かめる。
+    RgbColor parseRgbColor(const std::string &value, const std::string &key)
+    {
+        std::vector<uint8_t> components;
+        std::stringstream stream(value);
+        std::string part;
+        while (std::getline(stream, part, ','))
+        {
+            const auto start = part.find_first_not_of(" \t");
+            const auto end = part.find_last_not_of(" \t");
+            const std::string trimmed = start == std::string::npos ? "" : part.substr(start, end - start + 1);
+            const int64_t parsed = parseInt64(trimmed, key);
+            if (parsed < 0 || parsed > 255)
+            {
+                throw std::runtime_error(key + " component is out of range [0, 255]: " + value);
+            }
+            components.push_back(static_cast<uint8_t>(parsed));
+        }
+        if (components.size() != 3)
+        {
+            throw std::runtime_error(key + " value must be \"R,G,B\": " + value);
+        }
+        return RgbColor(components[0], components[1], components[2]);
     }
 
     bool parseBool(const std::string &value, const std::string &key)
@@ -246,7 +273,8 @@ namespace
     {
         std::optional<size_t> inputWidth;
         std::optional<size_t> inputHeight;
-        std::optional<uint8_t> ignoreIndex; // Segmentation のときだけ使う
+        std::optional<uint8_t> ignoreIndex;  // Segmentation のときだけ使う
+        std::optional<RgbColor> ignoreColor; // Segmentation のときだけ使う
     };
 
     ImageTaskSpecs buildImageTaskSpecs(const std::string &task, const ImageFields &fields)
@@ -266,6 +294,7 @@ namespace
             {
                 spec.ignoreIndex = *fields.ignoreIndex;
             }
+            spec.ignoreColor = fields.ignoreColor;
             return spec;
         }
         else
@@ -280,7 +309,11 @@ namespace
         {
             return ImageAnnotationType::PASCAL_VOC;
         }
-        throw std::runtime_error("Unknown image dataset type: " + typeName);
+        if (typeName == "Original")
+        {
+            return ImageAnnotationType::ORIGINAL;
+        }
+        throw std::runtime_error("Unknown image dataset type: " + typeName + " (PascalVoc / Original)");
     }
 
     // 画像用。モダリティを足すときは、同名で別の種別 enum を受けるオーバーロードを追加する。
@@ -297,6 +330,8 @@ namespace
             }
             return config;
         }
+        case ImageAnnotationType::ORIGINAL:
+            return OriginalConfig{};
         default:
             throw std::runtime_error("buildAnnotationConfig: 未知の ImageAnnotationType");
         }
@@ -530,6 +565,14 @@ TrainingConfigFile ConfigReader::readAll(const std::string &filePath)
                     throw std::runtime_error("ignore_index value is out of range [0, 255]: " + value);
                 }
                 imageFields.ignoreIndex = static_cast<uint8_t>(parsedValue);
+            }
+            else if (key == "ignore_color")
+            {
+                // 空なら指定なし(labelmap にない色はすべてエラー)。
+                if (!value.empty())
+                {
+                    imageFields.ignoreColor = parseRgbColor(value, key);
+                }
             }
             else if (key == "model_id")
             {

@@ -1,5 +1,6 @@
 #include <opencv2/opencv.hpp>
 #include <iostream>
+#include <stdexcept>
 #include <string>
 
 #include "training/infrastructure/image/OpenCvImageDecoder.hpp"
@@ -130,17 +131,67 @@ int main()
         labelMap.addEntry(RgbColor(0, 255, 0), 2); // クラスB(緑)
         labelMap.addEntry(RgbColor(0, 0, 255), 3); // クラスC(青)
 
-        ColorMaskLabelConverter converter(labelMap);
-        ImageData classMap = converter.convert(rawMask);
-
-        auto classAt = [&](size_t y, size_t x) -> int
+        // 無視する色を指定しないと、labelmap にない色(ピンク)はエラーになる。
         {
-            return static_cast<int>(classMap.at(0, y, x));
-        };
+            ColorMaskLabelConverter converter(labelMap);
+            bool thrown = false;
+            std::string message;
+            try
+            {
+                converter.convert(rawMask);
+            }
+            catch (const UnknownMaskColorError &e)
+            {
+                thrown = true;
+                message = e.what();
+            }
+            check(thrown, "unknown color without ignore color throws UnknownMaskColorError");
+            check(message.find("(255,125,125)") != std::string::npos, "error message names the unknown color (255,125,125)");
+        }
 
-        check(classAt(10, 200) == 2, "class at (y=10,x=200) in green region == 2");
-        check(classAt(10, 125) == 3, "class at (y=10,x=125) in blue region == 3");
-        check(classAt(10, 50) == 255, "class at (y=10,x=50) in unknown color region == 255.");
+        // ピンクを無視する色に指定すると、その画素だけが ignoreIndex になる。
+        {
+            ColorMaskLabelConverter converter(labelMap, /*ignoreIndex=*/200, RgbColor(255, 125, 125));
+            ImageData classMap = converter.convert(rawMask);
+
+            auto classAt = [&](size_t y, size_t x) -> int
+            {
+                return static_cast<int>(classMap.at(0, y, x));
+            };
+
+            check(classAt(10, 200) == 2, "class at (y=10,x=200) in green region == 2");
+            check(classAt(10, 125) == 3, "class at (y=10,x=125) in blue region == 3");
+            check(classAt(10, 50) == 200, "class at (y=10,x=50) in ignore color region == ignoreIndex(200)");
+        }
+
+        // 無視する色を指定しても、それ以外の未知の色はエラーになる。
+        {
+            ColorMaskLabelConverter converter(labelMap, 255, RgbColor(224, 224, 192));
+            bool thrown = false;
+            try
+            {
+                converter.convert(rawMask);
+            }
+            catch (const UnknownMaskColorError &)
+            {
+                thrown = true;
+            }
+            check(thrown, "unknown color other than the ignore color still throws");
+        }
+
+        // 無視する色が labelmap のクラスの色と同じなら、作成時に拒否する。
+        {
+            bool thrown = false;
+            try
+            {
+                ColorMaskLabelConverter converter(labelMap, 255, RgbColor(0, 255, 0));
+            }
+            catch (const std::invalid_argument &)
+            {
+                thrown = true;
+            }
+            check(thrown, "ignore color equal to a labelmap class color is rejected");
+        }
     }
 
     if (failureCount == 0)

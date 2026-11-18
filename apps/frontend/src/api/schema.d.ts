@@ -504,14 +504,25 @@ export interface components {
         };
         /** @description num_classes と ignore_index はデータセット由来なのでここには持たない */
         LossConfig: components["schemas"]["CrossEntropyConfig"] | components["schemas"]["MseLossConfig"] | components["schemas"]["DiceLossConfig"] | components["schemas"]["FocalLossConfig"] | components["schemas"]["ComboLossConfig"] | components["schemas"]["BoundaryLossConfig"];
+        /** @description 本家 PASCAL VOC。マスクの色は VOC のカラーマップ(21 クラス固定)で解釈し、labelmap.txt は読まない */
         PascalVocConfig: {
             /** @enum {string} */
             type: "pascal_voc";
             /** @description Pascal VOC の difficult 指定の例を学習に含めるか */
             include_difficult: boolean;
         };
-        /** @description 現在は pascal_voc のみ */
-        ImageAnnotationConfig: components["schemas"]["PascalVocConfig"];
+        /** @description 独自形式(CVAT の Segmentation mask 書き出しなど)。色とクラスの対応はデータセットの labelmap.txt で決める */
+        OriginalConfig: {
+            /** @enum {string} */
+            type: "original";
+        };
+        /** @description データセットの形式。どちらも VOC と同じディレクトリ構成(JPEGImages / ImageSets/Segmentation / SegmentationClass)を読む */
+        ImageAnnotationConfig: components["schemas"]["PascalVocConfig"] | components["schemas"]["OriginalConfig"];
+        /**
+         * @description マスク画像の色のうち、色表(pascal_voc は VOC のカラーマップ、original は labelmap.txt)にない色の扱い:
+         *     ignore_color_enabled が true なら ignore_color_r/g/b の色だけを ignore_index に変換し、それ以外の未知の色はエラーにする。
+         *     false なら未知の色はすべてエラーにする(ignore_color_r/g/b は読まない)。
+         */
         SegmentationSpec: {
             /** @enum {string} */
             type: "segmentation";
@@ -521,6 +532,29 @@ export interface components {
              * @default 255
              */
             ignore_index: number;
+            /**
+             * @description マスク画像の特定の色を ignore_index に変換するか
+             * @default true
+             */
+            ignore_color_enabled: boolean;
+            /**
+             * Format: int32
+             * @description 無視する色の R(Pascal VOC の境界・difficult 領域は 224,224,192)
+             * @default 224
+             */
+            ignore_color_r: number;
+            /**
+             * Format: int32
+             * @description 無視する色の G
+             * @default 224
+             */
+            ignore_color_g: number;
+            /**
+             * Format: int32
+             * @description 無視する色の B
+             * @default 192
+             */
+            ignore_color_b: number;
         };
         ClassificationSpec: {
             /** @enum {string} */
@@ -650,10 +684,16 @@ export interface components {
             dataset_id: string;
             /** @description アップロード時に付けた名前 */
             dataset_name: string;
-            /** @description データセットの形式(pascal_voc など。アップロード時に指定した値) */
+            /** @description データセットの形式(pascal_voc / original。アップロード時に指定した値。以前に登録したものは他の値のこともある) */
             dataset_type: string;
             /** @description 登録した日時(UTC, RFC 3339) */
             created_at: string;
+        };
+        DatasetLayoutMismatch: {
+            /** @description アップロード時に指定した形式 */
+            format: string;
+            /** @description 足りないファイル・ディレクトリ(データセットのルートからの相対パス。ディレクトリは末尾に /) */
+            missing: string[];
         };
         DatasetSummariesResponse: {
             datasets: components["schemas"]["DatasetSummary"][];
@@ -1151,8 +1191,13 @@ export interface operations {
                     file: string;
                     /** @description 一覧に表示する名前 */
                     name: string;
-                    /** @description データセットの形式(pascal_voc など) */
-                    type: string;
+                    /**
+                     * @description データセットの形式。解凍後、形式に必要なファイル構成になっているかを確かめる。
+                     *     pascal_voc: JPEGImages/、SegmentationClass/、ImageSets/Segmentation/train.txt・val.txt
+                     *     original: pascal_voc の構成に加えて labelmap.txt
+                     * @enum {string}
+                     */
+                    type: "pascal_voc" | "original";
                 };
             };
         };
@@ -1164,7 +1209,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description file / name / type のどれかが欠けている、空である、または multipart の形が正しくない */
+            /** @description file / name / type のどれかが欠けている、空である、type が知らない形式である、または multipart の形が正しくない */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1177,6 +1222,15 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description 解凍した中身が、type の形式に必要なファイル構成になっていない(登録せず、解凍したものも消す) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetLayoutMismatch"];
+                };
             };
             /**
              * @description 保存・登録に失敗した。壊れた zip、解凍後のサイズ上限の超過、安全でないパスを含む zip も今はここに含む

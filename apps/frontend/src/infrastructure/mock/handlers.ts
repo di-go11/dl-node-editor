@@ -1,6 +1,7 @@
 import { HttpResponse, http } from 'msw'
 
 import type { components } from '../../api/schema'
+import { ANNOTATION_TYPES } from '../../entity/training/data-spec'
 import { API_BASE_PATH } from '../http/api-client'
 import type { RustStartTrainingRequest } from '../http/rust-training-request'
 import {
@@ -131,7 +132,14 @@ function seedConfig(
       type: 'image',
       input_width: 256,
       input_height: 256,
-      image_task_spec: { type: 'segmentation', ignore_index: 255 },
+      image_task_spec: {
+        type: 'segmentation',
+        ignore_index: 255,
+        ignore_color_enabled: true,
+        ignore_color_r: 224,
+        ignore_color_g: 224,
+        ignore_color_b: 192,
+      },
       image_annotation_config: { type: 'pascal_voc', include_difficult: false },
     },
     save_last_every: 1,
@@ -345,7 +353,9 @@ export function createHandlers(options: MockOptions = {}) {
       ) {
         return new HttpResponse(null, { status: 400 })
       }
-      // 解凍はしない。登録だけを真似て、一覧に載せる
+      // 本物と同じく、知らない形式も 400
+      if (!(type in ANNOTATION_TYPES)) return new HttpResponse(null, { status: 400 })
+      // 解凍はしないので、フォルダ構成の確認(422)は真似しない。登録だけを真似て、一覧に載せる
       datasetCount += 1
       datasets.push({
         dataset_id: `mock-dataset-uploaded-${datasetCount}`,

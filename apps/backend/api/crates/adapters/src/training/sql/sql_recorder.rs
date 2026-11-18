@@ -117,17 +117,20 @@ impl TrainingRunRegistar for SqliteTrainingRepository {
             Loss::Boundary => ("boundary", None, None),
         };
         let DataSpec::Image(image_spec) = &config.data_spec;
-        let (task_type, ignore_index) = match &image_spec.image_task_spec {
-            ImageTaskSpec::Classification => ("classification", None),
-            ImageTaskSpec::Segmentation(spec) => ("segmentation", Some(spec.ignore_index)),
+        let (task_type, ignore_index, ignore_color) = match &image_spec.image_task_spec {
+            ImageTaskSpec::Classification => ("classification", None, None),
+            ImageTaskSpec::Segmentation(spec) => {
+                ("segmentation", Some(spec.ignore_index), spec.ignore_color)
+            }
         };
         let (annotation_type, include_difficult) = match &image_spec.image_annotation_config {
             ImageAnnotationConfig::PascalVoc(spec) => ("pascal_voc", Some(spec.include_difficult)),
+            ImageAnnotationConfig::Original => ("original", None),
         };
 
         // training_configはtraining_runsを外部キーで参照するため、後にinsertする
         sqlx::query(
-            "INSERT INTO training_config (job_id,epochs,batch,device,dataset_path,save_last_every,resume_from,seed,optimizer_type,learning_rate,weight_decay,beta1,beta2,eps,momentum,nesterov,loss_type,loss_gamma,loss_alpha,data_type,input_width,input_height,task_type,ignore_index,annotation_type,include_difficult)VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO training_config (job_id,epochs,batch,device,dataset_path,save_last_every,resume_from,seed,optimizer_type,learning_rate,weight_decay,beta1,beta2,eps,momentum,nesterov,loss_type,loss_gamma,loss_alpha,data_type,input_width,input_height,task_type,ignore_index,annotation_type,include_difficult,ignore_color_r,ignore_color_g,ignore_color_b)VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         )
         .bind(job_id.as_str())
         .bind(config.epoch)
@@ -156,6 +159,10 @@ impl TrainingRunRegistar for SqliteTrainingRepository {
         .bind(ignore_index)
         .bind(annotation_type)
         .bind(include_difficult)
+        // 無視する色の指定がなければ 3 列とも NULL
+        .bind(ignore_color.map(|c| c.r))
+        .bind(ignore_color.map(|c| c.g))
+        .bind(ignore_color.map(|c| c.b))
         .execute(&mut *connect)
         .await
         .map_err(|e| RepositoryError::QueryFailed(e.to_string()))?;

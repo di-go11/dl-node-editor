@@ -1,10 +1,13 @@
-use entities::dataset::DatasetId;
+use entities::dataset::{DatasetId, RequiredEntry};
 use std::{
     fs::{self, File},
     io::{self, Read},
     path::{Path, PathBuf},
 };
-use usecases::dataset::{error::DatasetError, ports::DatasetSaver};
+use usecases::dataset::{
+    error::DatasetError,
+    ports::{DatasetLayoutChecker, DatasetSaver},
+};
 use zip::ZipArchive;
 
 use super::error::FileError;
@@ -50,6 +53,44 @@ impl DatasetSaver for FileDatasetSaver {
             .await
             .map_err(|e| DatasetError::SaveFailed(e.to_string()))?
             .map_err(DatasetError::from) // 大きなファイルをupload中にAPIが止まらないように隔離されたスレッドで実行する。
+    }
+
+    async fn discard(&self, dataset_path: &Path) -> Result<(), DatasetError> {
+        // 置き場の外を消さないよう、dataset_root の直下だけを消す
+        if dataset_path.parent() != Some(self.dataset_root.as_path()) {
+            return Err(DatasetError::SaveFailed(format!(
+                "refusing to remove a path outside the dataset root: {}",
+                dataset_path.display()
+            )));
+        }
+        tokio::fs::remove_dir_all(dataset_path)
+            .await
+            .map_err(|e| DatasetError::from(FileError::Io(e)))
+    }
+}
+
+impl DatasetLayoutChecker for FileDatasetSaver {
+    async fn find_missing(
+        &self,
+        dataset_path: &Path,
+        required: &[RequiredEntry],
+    ) -> Result<Vec<RequiredEntry>, DatasetError> {
+        let mut missing = Vec::new();
+        for entry in required {
+            // 無いもの・種類が違うもの(ディレクトリのはずがファイル等)は「足りない」とする
+            let present = match tokio::fs::metadata(dataset_path.join(entry.path())).await {
+                Ok(meta) => match entry {
+                    RequiredEntry::Dir(_) => meta.is_dir(),
+                    RequiredEntry::File(_) => meta.is_file(),
+                },
+                Err(e) if e.kind() == io::ErrorKind::NotFound => false,
+                Err(e) => return Err(DatasetError::from(FileError::Io(e))),
+            };
+            if !present {
+                missing.push(*entry);
+            }
+        }
+        Ok(missing)
     }
 }
 
@@ -105,5 +146,68 @@ fn single_child_dir(dir: &Path) -> Result<Option<PathBuf>, FileError> {
         Ok(Some(entries.remove(0).path()))
     } else {
         Ok(None)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::utils::uuid_generator::generate_uuid;
+
+    // テストごとに別のデータセット置き場を作る
+    fn fresh_root() -> PathBuf {
+        let root = std::env::temp_dir().join(format!("dataset-saver-test-{}", generate_uuid()));
+        fs::create_dir_all(&root).unwrap();
+        root
+    }
+
+    #[tokio::test]
+    async fn find_missing_reports_absent_and_wrong_kind_entries() {
+        let root = fresh_root();
+        let dataset = root.join("ds");
+        fs::create_dir_all(dataset.join("JPEGImages")).unwrap();
+        fs::create_dir_all(dataset.join("ImageSets/Segmentation")).unwrap();
+        fs::write(dataset.join("ImageSets/Segmentation/train.txt"), "a\n").unwrap();
+        // ディレクトリであるべき SegmentationClass がファイルになっている
+        fs::write(dataset.join("SegmentationClass"), "").unwrap();
+        let saver = FileDatasetSaver::new(root.clone(), 1024);
+
+        let missing = saver
+            .find_missing(
+                &dataset,
+                &[
+                    RequiredEntry::Dir("JPEGImages"),
+                    RequiredEntry::Dir("SegmentationClass"),
+                    RequiredEntry::File("ImageSets/Segmentation/train.txt"),
+                    RequiredEntry::File("labelmap.txt"),
+                ],
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            missing,
+            vec![
+                RequiredEntry::Dir("SegmentationClass"),
+                RequiredEntry::File("labelmap.txt"),
+            ]
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn discard_removes_dataset_under_root_only() {
+        let root = fresh_root();
+        let dataset = root.join("ds");
+        fs::create_dir_all(dataset.join("JPEGImages")).unwrap();
+        let saver = FileDatasetSaver::new(root.clone(), 1024);
+
+        // 置き場の直下でないパスは消さない
+        assert!(saver.discard(&dataset.join("JPEGImages")).await.is_err());
+        assert!(dataset.join("JPEGImages").is_dir());
+
+        saver.discard(&dataset).await.unwrap();
+        assert!(!dataset.exists());
+        fs::remove_dir_all(root).unwrap();
     }
 }

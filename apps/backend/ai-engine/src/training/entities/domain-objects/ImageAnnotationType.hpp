@@ -3,4 +3,5 @@
 enum class ImageAnnotationType
 {
     PASCAL_VOC,
+    ORIGINAL,
 };

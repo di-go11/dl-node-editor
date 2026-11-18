@@ -135,6 +135,7 @@ mod tests {
                 input_height: 256,
                 image_task_spec: ImageTaskSpec::Segmentation(SegmentationSpec {
                     ignore_index: 255,
+                    ignore_color: None,
                 }),
                 image_annotation_config: ImageAnnotationConfig::PascalVoc(PascalVocConfig {
                     include_difficult: false,

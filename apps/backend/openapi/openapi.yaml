@@ -345,15 +345,24 @@ paths:
                   description: 一覧に表示する名前
                 type:
                   type: string
-                  minLength: 1
-                  description: データセットの形式(pascal_voc など)
+                  enum: [pascal_voc, original]
+                  description: |
+                    データセットの形式。解凍後、形式に必要なファイル構成になっているかを確かめる。
+                    pascal_voc: JPEGImages/、SegmentationClass/、ImageSets/Segmentation/train.txt・val.txt
+                    original: pascal_voc の構成に加えて labelmap.txt
       responses:
         "201":
           description: 登録した(本文なし)
         "400":
-          description: file / name / type のどれかが欠けている、空である、または multipart の形が正しくない
+          description: file / name / type のどれかが欠けている、空である、type が知らない形式である、または multipart の形が正しくない
         "413":
           description: アップロードの受信上限を超えた
+        "422":
+          description: 解凍した中身が、type の形式に必要なファイル構成になっていない(登録せず、解凍したものも消す)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DatasetLayoutMismatch"
         "500":
           description: |
             保存・登録に失敗した。壊れた zip、解凍後のサイズ上限の超過、安全でないパスを含む zip も今はここに含む
@@ -881,6 +890,7 @@ components:
 
     PascalVocConfig:
       type: object
+      description: 本家 PASCAL VOC。マスクの色は VOC のカラーマップ(21 クラス固定)で解釈し、labelmap.txt は読まない
       required: [type, include_difficult]
       properties:
         type:
@@ -890,14 +900,37 @@ components:
           type: boolean
           description: Pascal VOC の difficult 指定の例を学習に含めるか
 
+    OriginalConfig:
+      type: object
+      description: 独自形式(CVAT の Segmentation mask 書き出しなど)。色とクラスの対応はデータセットの labelmap.txt で決める
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [original]
+
     ImageAnnotationConfig:
-      description: 現在は pascal_voc のみ
+      description: |
+        データセットの形式。どちらも VOC と同じディレクトリ構成(JPEGImages / ImageSets/Segmentation / SegmentationClass)を読む
       oneOf:
         - $ref: "#/components/schemas/PascalVocConfig"
+        - $ref: "#/components/schemas/OriginalConfig"
 
     SegmentationSpec:
       type: object
-      required: [type, ignore_index]
+      description: |
+        マスク画像の色のうち、色表(pascal_voc は VOC のカラーマップ、original は labelmap.txt)にない色の扱い:
+        ignore_color_enabled が true なら ignore_color_r/g/b の色だけを ignore_index に変換し、それ以外の未知の色はエラーにする。
+        false なら未知の色はすべてエラーにする(ignore_color_r/g/b は読まない)。
+      required:
+        [
+          type,
+          ignore_index,
+          ignore_color_enabled,
+          ignore_color_r,
+          ignore_color_g,
+          ignore_color_b,
+        ]
       properties:
         type:
           type: string
@@ -909,6 +942,31 @@ components:
           maximum: 255
           default: 255
           description: 損失の計算から除外するラベル値。必ず設定する(既定値 255)
+        ignore_color_enabled:
+          type: boolean
+          default: true
+          description: マスク画像の特定の色を ignore_index に変換するか
+        ignore_color_r:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 255
+          default: 224
+          description: 無視する色の R(Pascal VOC の境界・difficult 領域は 224,224,192)
+        ignore_color_g:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 255
+          default: 224
+          description: 無視する色の G
+        ignore_color_b:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 255
+          default: 192
+          description: 無視する色の B
 
     ClassificationSpec:
       type: object
@@ -1164,10 +1222,23 @@ components:
           description: アップロード時に付けた名前
         dataset_type:
           type: string
-          description: データセットの形式(pascal_voc など。アップロード時に指定した値)
+          description: データセットの形式(pascal_voc / original。アップロード時に指定した値。以前に登録したものは他の値のこともある)
         created_at:
           type: string
           description: 登録した日時(UTC, RFC 3339)
+
+    DatasetLayoutMismatch:
+      type: object
+      required: [format, missing]
+      properties:
+        format:
+          type: string
+          description: アップロード時に指定した形式
+        missing:
+          type: array
+          items:
+            type: string
+          description: 足りないファイル・ディレクトリ(データセットのルートからの相対パス。ディレクトリは末尾に /)
 
     DatasetSummariesResponse:
       type: object

@@ -49,10 +49,29 @@ message LossConfig {
 
 // ---Data---
 
+// データセットの形式。どちらも VOC と同じディレクトリ構成(JPEGImages / ImageSets / SegmentationClass)を読む。
+//   pascal_voc … 本家 PASCAL VOC。マスクは VOC のカラーマップ(21 クラス固定)。labelmap.txt は読まない
+//   original   … 独自形式(CVAT の Segmentation mask 書き出しなど)。色とクラスの対応は labelmap.txt で決める
 message PascalVocConfig { bool include_difficult = 1; }
-message ImageAnnotationConfig { oneof config { PascalVocConfig pascal_voc = 1; } }
+message OriginalConfig {}
+message ImageAnnotationConfig {
+    oneof config {
+        PascalVocConfig pascal_voc = 1;
+        OriginalConfig original = 2;
+    }
+}
 
-message SegmentationSpec    { uint32 ignore_index = 1; } //必ず設定する、0〜255、既定値は 255
+// マスク画像の色のうち、色表(pascal_voc は VOC のカラーマップ、original は labelmap.txt)にない色の扱い:
+//   ignore_color_enabled = true  … ignore_color_r/g/b の色だけを ignore_index に変換する。それ以外の未知の色はエラー
+//   ignore_color_enabled = false … 未知の色はすべてエラー(ignore_color_r/g/b は読まない)
+// Pascal VOC の境界・difficult 領域(void)の色は 224,224,192。
+message SegmentationSpec {
+    uint32 ignore_index = 1;         // 必ず設定する、0〜255、既定値は 255
+    bool ignore_color_enabled = 2;
+    uint32 ignore_color_r = 3;       // 0〜255
+    uint32 ignore_color_g = 4;       // 0〜255
+    uint32 ignore_color_b = 5;       // 0〜255
+}
 message ObjectDetectionSpec {}
 message ClassificationSpec  {}
 message ImageTaskSpecs {
