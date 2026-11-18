@@ -38,10 +38,10 @@
 "device":"cuda:0",
 "data_spec":{
   "image":{
-    "annotation":{"pascal_voc":{"include_difficult":false}},
+    "annotation":{"original":{}},
     "input_width":256,
     "input_height":256,
-    "task_specs": {"segmentation":{"ignore_index":255}}
+    "task_specs": {"segmentation":{"ignore_index":255,"ignore_color_enabled":true,"ignore_color_r":224,"ignore_color_g":224,"ignore_color_b":192}}
   }
 },
 "save_last_every":0,

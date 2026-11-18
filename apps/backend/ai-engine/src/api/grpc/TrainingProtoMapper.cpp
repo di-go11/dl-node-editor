@@ -391,6 +391,8 @@ namespace
             c.includeDifficult = annotation.pascal_voc().include_difficult();
             return c;
         }
+        case training::v1::ImageAnnotationConfig::kOriginal:
+            return OriginalConfig{};
         case training::v1::ImageAnnotationConfig::CONFIG_NOT_SET:
             break;
         }
@@ -411,6 +413,23 @@ namespace
             }
             SegmentationSpec spec;
             spec.ignoreIndex = static_cast<uint8_t>(ignoreIndex);
+
+            const auto &segmentation = taskSpecs.segmentation();
+            if (segmentation.ignore_color_enabled())
+            {
+                const auto component = [](const uint32_t value, const char *name) -> uint8_t
+                {
+                    if (value > 255)
+                    {
+                        invalid(std::string("data_spec.image.task_specs.segmentation.") + name +
+                                " は 0〜255 にしてください(" + std::to_string(value) + ")");
+                    }
+                    return static_cast<uint8_t>(value);
+                };
+                spec.ignoreColor = RgbColor(component(segmentation.ignore_color_r(), "ignore_color_r"),
+                                            component(segmentation.ignore_color_g(), "ignore_color_g"),
+                                            component(segmentation.ignore_color_b(), "ignore_color_b"));
+            }
             return spec;
         }
         case training::v1::ImageTaskSpecs::kObjectDetection:

@@ -1,7 +1,7 @@
 use super::dto::{
-    CapabilitiesDto, DatasetSummariesDto, ModelSummariesDto, ModelTrainingConfigDto,
-    ResumeTrainingConfigDto, StartTrainingResponseDto, TrainingConfigDto, TrainingJobStatusDto,
-    TrainingProcessDto,
+    CapabilitiesDto, DatasetLayoutMismatchDto, DatasetSummariesDto, ModelSummariesDto,
+    ModelTrainingConfigDto, ResumeTrainingConfigDto, StartTrainingResponseDto, TrainingConfigDto,
+    TrainingJobStatusDto, TrainingProcessDto,
 };
 use axum::{
     extract::{Path, State},
@@ -18,7 +18,9 @@ use usecases::{
     dataset::{
         dataset_id_generator::DatasetIdGenerator,
         error::DatasetError,
-        ports::{DatasetFinder, DatasetReader, DatasetRegister, DatasetSaver},
+        ports::{
+            DatasetFinder, DatasetLayoutChecker, DatasetReader, DatasetRegister, DatasetSaver,
+        },
         read_datasets_summary::ReadDatasetsSummary,
         upload_dataset::UploadDataset,
     },
@@ -38,6 +40,7 @@ use usecases::{
 
 use crate::utils::uuid_generator::generate_uuid;
 use axum::extract::Multipart;
+use axum::response::{IntoResponse, Response};
 use tokio::io::AsyncWriteExt;
 
 use axum::response::sse::{Event, KeepAlive, Sse};
@@ -297,14 +300,15 @@ where
 
 // データセットのアップロードPOSTリクエストハンドラ。
 // multipart/form-data で file(zip)・name・type を受け取り、zip を一時ファイルに書き出してから UploadDataset に渡す。
-// 解凍・配置とメタデータ登録は UploadDataset(DatasetSaver / DatasetRegister)の仕事で、ハンドラは関与しない。
+// 解凍・配置・形式に合うかの確認とメタデータ登録は UploadDataset の仕事で、ハンドラは関与しない。
+// 形式に合わなければ 422 で、足りないファイル・ディレクトリを本文(DatasetLayoutMismatchDto)で返す。
 pub async fn upload_dataset<G, S, R>(
     State(usecase): State<Arc<UploadDataset<G, S, R>>>,
     multipart: Multipart,
-) -> StatusCode
+) -> Response
 where
     G: DatasetIdGenerator + Send + Sync + 'static,
-    S: DatasetSaver + Send + Sync + 'static,
+    S: DatasetSaver + DatasetLayoutChecker + Send + Sync + 'static,
     R: DatasetRegister + Send + Sync + 'static,
 {
     // TODO: /tmp はコンテナでは tmpfs(メモリ上)のことがある。dataset_root と同じディスク上の置き場を設定で渡す
@@ -313,22 +317,55 @@ where
     // 成功・失敗に関わらず一時zipは消す(解凍済みのデータは dataset_root 側に残っている)
     let _ = tokio::fs::remove_file(&zip_path).await;
     match result {
-        Ok(()) => StatusCode::CREATED,
-        Err(code) => code,
+        Ok(()) => StatusCode::CREATED.into_response(),
+        Err(response) => response,
+    }
+}
+
+// アップロードの失敗を応答にする。形式に合わないときだけ本文を付ける
+fn response_from_upload_error(error: DatasetError) -> Response {
+    match error {
+        DatasetError::LayoutMismatch { format, missing } => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(DatasetLayoutMismatchDto { format, missing }),
+        )
+            .into_response(),
+        DatasetError::UnknownFormat(_) => StatusCode::BAD_REQUEST.into_response(),
+        DatasetError::SaveFailed(_)
+        | DatasetError::RegisterFailed(_)
+        | DatasetError::CallFailed(_)
+        | DatasetError::ReadFailed(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
 
 // multipart を読み、zip を zip_path に書き出してから UploadDataset を実行する
 async fn receive_and_upload<G, S, R>(
     usecase: &UploadDataset<G, S, R>,
-    mut multipart: Multipart,
+    multipart: Multipart,
     zip_path: &std::path::Path,
-) -> Result<(), StatusCode>
+) -> Result<(), Response>
 where
     G: DatasetIdGenerator + Send + Sync + 'static,
-    S: DatasetSaver + Send + Sync + 'static,
+    S: DatasetSaver + DatasetLayoutChecker + Send + Sync + 'static,
     R: DatasetRegister + Send + Sync + 'static,
 {
+    let (name, dataset_type) = receive_upload(multipart, zip_path)
+        .await
+        .map_err(IntoResponse::into_response)?;
+
+    // TODO: 壊れたzip(クライアントの誤り → 400/422)とディスク障害(500)を区別するには、
+    // DatasetError に InvalidArchive のような種類を足す必要がある。今はすべて 500 にしている。
+    usecase
+        .execute(zip_path, name, dataset_type)
+        .await
+        .map_err(response_from_upload_error)
+}
+
+// multipart を読んで zip を zip_path に書き出し、名前と形式を返す
+async fn receive_upload(
+    mut multipart: Multipart,
+    zip_path: &std::path::Path,
+) -> Result<(String, String), StatusCode> {
     let mut name = None;
     let mut dataset_type = None;
     let mut has_file = false;
@@ -369,18 +406,7 @@ where
     if name.trim().is_empty() || dataset_type.trim().is_empty() {
         return Err(StatusCode::BAD_REQUEST);
     }
-
-    // TODO: 壊れたzip(クライアントの誤り → 400/422)とディスク障害(500)を区別するには、
-    // DatasetError に InvalidArchive のような種類を足す必要がある。今はすべて 500 にしている。
-    usecase
-        .execute(zip_path, name, dataset_type)
-        .await
-        .map_err(|e| match e {
-            DatasetError::SaveFailed(_)
-            | DatasetError::RegisterFailed(_)
-            | DatasetError::CallFailed(_)
-            | DatasetError::ReadFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
-        })
+    Ok((name, dataset_type))
 }
 
 // DBからデータセットのメタデータ一覧を呼び出すGETリクエストハンドラ
@@ -390,11 +416,14 @@ pub async fn read_summary_datasets<R>(
 where
     R: DatasetReader + Send + Sync + 'static,
 {
+    // 一覧の読み取りでは形式の誤り(UnknownFormat / LayoutMismatch)は起きないが、起きても DB 側の問題として扱う
     let summary = usecase.execute().await.map_err(|e| match e {
         DatasetError::SaveFailed(_)
         | DatasetError::RegisterFailed(_)
         | DatasetError::CallFailed(_)
-        | DatasetError::ReadFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        | DatasetError::ReadFailed(_)
+        | DatasetError::UnknownFormat(_)
+        | DatasetError::LayoutMismatch { .. } => StatusCode::INTERNAL_SERVER_ERROR,
     })?;
     Ok(Json(DatasetSummariesDto::from(summary.as_slice())))
 }
@@ -402,6 +431,33 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // 形式に合わない zip は 422 で、足りないものを本文で返す
+    #[tokio::test]
+    async fn layout_mismatch_converts_to_422_with_missing_entries() {
+        let response = response_from_upload_error(DatasetError::LayoutMismatch {
+            format: "original".to_string(),
+            missing: vec!["JPEGImages/".to_string(), "labelmap.txt".to_string()],
+        });
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&body).unwrap(),
+            serde_json::json!({
+                "format": "original",
+                "missing": ["JPEGImages/", "labelmap.txt"]
+            })
+        );
+    }
+
+    #[test]
+    fn unknown_format_converts_to_400() {
+        let response = response_from_upload_error(DatasetError::UnknownFormat("coco".to_string()));
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
 
     #[test]
     fn not_found_error_converts_to_404() {

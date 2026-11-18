@@ -4,7 +4,7 @@ use crate::model;
 use entities::model::{LastRunSummary, ModelId, ModelSummary, ModelTaskType};
 use entities::training::config::{
     DataSpec, ImageAnnotationConfig, ImageSpec, ImageTaskSpec, Loss, Optimizer, PascalVocConfig,
-    SegmentationSpec, TrainingConfig,
+    RgbColor, SegmentationSpec, TrainingConfig,
 };
 use entities::training::TrainingJobStatus;
 use sqlx::sqlite::SqliteRow;
@@ -102,7 +102,8 @@ impl ModelTrainingConfigProvider for SqliteTrainingRepository {
                     c.optimizer_type, c.learning_rate, c.weight_decay, c.beta1, c.beta2, c.eps, \
                     c.momentum, c.nesterov, c.loss_type, c.loss_gamma, c.loss_alpha, \
                     c.data_type, c.input_width, c.input_height, c.task_type, c.ignore_index, \
-                    c.annotation_type, c.include_difficult \
+                    c.annotation_type, c.include_difficult, \
+                    c.ignore_color_r, c.ignore_color_g, c.ignore_color_b \
              FROM model m \
              JOIN training_runs r ON r.model_id = m.model_id \
              JOIN training_config c ON c.job_id = r.job_id \
@@ -203,6 +204,7 @@ fn read_data_spec(row: &SqliteRow) -> Result<DataSpec, FetchModelError> {
         "classification" => ImageTaskSpec::Classification,
         "segmentation" => ImageTaskSpec::Segmentation(SegmentationSpec {
             ignore_index: required(row, "ignore_index")?,
+            ignore_color: read_ignore_color(row)?,
         }),
         other => {
             return Err(FetchModelError::InvalidData(format!(
@@ -216,6 +218,7 @@ fn read_data_spec(row: &SqliteRow) -> Result<DataSpec, FetchModelError> {
         "pascal_voc" => ImageAnnotationConfig::PascalVoc(PascalVocConfig {
             include_difficult: required(row, "include_difficult")?,
         }),
+        "original" => ImageAnnotationConfig::Original,
         other => {
             return Err(FetchModelError::InvalidData(format!(
                 "unknown annotation_type: {other}"
@@ -229,6 +232,20 @@ fn read_data_spec(row: &SqliteRow) -> Result<DataSpec, FetchModelError> {
         image_task_spec,
         image_annotation_config,
     }))
+}
+
+// 無視する色の 3 列を読む。3 列とも NULL なら指定なし、一部だけ NULL なら壊れたデータ
+fn read_ignore_color(row: &SqliteRow) -> Result<Option<RgbColor>, FetchModelError> {
+    let r: Option<u32> = get(row, "ignore_color_r")?;
+    let g: Option<u32> = get(row, "ignore_color_g")?;
+    let b: Option<u32> = get(row, "ignore_color_b")?;
+    match (r, g, b) {
+        (Some(r), Some(g), Some(b)) => Ok(Some(RgbColor { r, g, b })),
+        (None, None, None) => Ok(None),
+        _ => Err(FetchModelError::InvalidData(
+            "ignore_color_r/g/b must be all NULL or all set".to_string(),
+        )),
+    }
 }
 
 // 列を読む。型が合わない・列がない場合は InvalidData
@@ -340,6 +357,11 @@ mod tests {
                 input_height: 240,
                 image_task_spec: ImageTaskSpec::Segmentation(SegmentationSpec {
                     ignore_index: 255,
+                    ignore_color: Some(RgbColor {
+                        r: 224,
+                        g: 224,
+                        b: 192,
+                    }),
                 }),
                 image_annotation_config: ImageAnnotationConfig::PascalVoc(PascalVocConfig {
                     include_difficult: true,
@@ -357,6 +379,68 @@ mod tests {
     async fn reads_back_saved_config() {
         let repo = gen_repository().await;
         let config = gen_config();
+        repo.insert_model(&model_id(), &config.model_name, &config.model_graph)
+            .await
+            .unwrap();
+        repo.insert_training_run(&JobId::new("job-1").unwrap(), &config, &model_id())
+            .await
+            .unwrap();
+
+        let fetched = ModelTrainingConfigProvider::fetch(&repo, &model_id())
+            .await
+            .unwrap();
+
+        assert_eq!(fetched, config);
+    }
+
+    // 無視する色の指定なし(3 列とも NULL)も、そのまま読み戻せること
+    #[tokio::test]
+    async fn reads_back_config_without_ignore_color() {
+        let repo = gen_repository().await;
+        let config = TrainingConfig {
+            data_spec: DataSpec::Image(ImageSpec {
+                input_width: 320,
+                input_height: 240,
+                image_task_spec: ImageTaskSpec::Segmentation(SegmentationSpec {
+                    ignore_index: 255,
+                    ignore_color: None,
+                }),
+                image_annotation_config: ImageAnnotationConfig::PascalVoc(PascalVocConfig {
+                    include_difficult: false,
+                }),
+            }),
+            ..gen_config()
+        };
+        repo.insert_model(&model_id(), &config.model_name, &config.model_graph)
+            .await
+            .unwrap();
+        repo.insert_training_run(&JobId::new("job-1").unwrap(), &config, &model_id())
+            .await
+            .unwrap();
+
+        let fetched = ModelTrainingConfigProvider::fetch(&repo, &model_id())
+            .await
+            .unwrap();
+
+        assert_eq!(fetched, config);
+    }
+
+    #[tokio::test]
+    async fn reads_back_original_annotation_config() {
+        // 独自形式は include_difficult を持たない(NULL で保存し、読み戻しても Original のまま)
+        let repo = gen_repository().await;
+        let config = TrainingConfig {
+            data_spec: DataSpec::Image(ImageSpec {
+                input_width: 320,
+                input_height: 240,
+                image_task_spec: ImageTaskSpec::Segmentation(SegmentationSpec {
+                    ignore_index: 255,
+                    ignore_color: None,
+                }),
+                image_annotation_config: ImageAnnotationConfig::Original,
+            }),
+            ..gen_config()
+        };
         repo.insert_model(&model_id(), &config.model_name, &config.model_graph)
             .await
             .unwrap();

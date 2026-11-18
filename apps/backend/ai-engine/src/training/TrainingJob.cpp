@@ -24,7 +24,7 @@
 #include "training/infrastructure/dataset/PreFetchDatasetRepository.hpp"
 #include "training/infrastructure/image/OpenCvImageDecoder.hpp"
 #include "training/entities/image/LetterboxPolicy.hpp"
-#include "training/infrastructure/dataset/LabelMapFileReader.hpp"
+#include "training/infrastructure/dataset/DatasetLabelMap.hpp"
 #include "training/infrastructure/torchFunc/DeviceToTorch.hpp"
 #include "training/infrastructure/dataset/TimedDatasetRepository.hpp"
 #include "training/infrastructure/timer/CoutTimeReportWriter.hpp"
@@ -176,12 +176,19 @@ TrainingStatus runTrainingJob(const TrainingRuntimeConfig &runtime,
     // ITimeRecorderの生成。(enableTimeMeasurement が false ならダミー実装)
     auto timeRecorder = createTimeRecorder(runtime.enableProcessTimeMeasurement);
 
-    // labelmap.txt からクラス数を決める(モデル出力チャンネル数の単一の参照元)。
-    const std::string labelMapPath =
-        (std::filesystem::path(command.datasetPath) / "labelmap.txt").string();
-    const ColorLabelMap labelMap = LabelMapFileReader{}.read(labelMapPath);
+    // データセットの形式の色表からクラス数を決める(モデル出力チャンネル数の単一の参照元)。
+    // pascal_voc は VOC のカラーマップ(21 クラス)、original は labelmap.txt の行数。
+    const ColorLabelMap labelMap = loadDatasetLabelMap(imageSpec->annotation, command.datasetPath);
     const int numClasses = static_cast<int>(labelMap.entryCount());
     std::cout << "numClasses = " << numClasses << std::endl;
+
+    // ignore_index がクラス ID(0〜numClasses-1)と重なると、そのクラスの画素がすべて学習・評価から外れる。
+    if (static_cast<int>(segmentationSpec->ignoreIndex) < numClasses)
+    {
+        throw std::runtime_error("runTrainingJob: ignore_index(" + std::to_string(segmentationSpec->ignoreIndex) +
+                                 ")がクラス ID(0〜" + std::to_string(numClasses - 1) +
+                                 ")と重なっています。クラス数以上の値(通常は 255)にしてください");
+    }
 
     // モデル / Optimizer の生成口。checkpoint からの再構築(CheckpointModelLoader)も
     // 同じ factory を使うため、cold start 側もここを通しておく。
@@ -265,7 +272,7 @@ TrainingStatus runTrainingJob(const TrainingRuntimeConfig &runtime,
     // 入力サイズ・ignoreIndex は command.dataSpec から Factory が読む。アスペクト比の扱いだけここで決める。
     DatasetSplit trainsplit = DatasetSplit::Train;
     DatasetSplit valsplit = DatasetSplit::Validation;
-    auto datasetRepository = std::make_shared<DatasetRepositoryFactory>(timedDecoder, std::make_shared<LabelMapFileReader>(), LetterboxPolicy{}, param, timeRecorder, parallelExecutor);
+    auto datasetRepository = std::make_shared<DatasetRepositoryFactory>(timedDecoder, LetterboxPolicy{}, param, timeRecorder, parallelExecutor);
 
     // Decorator で包み、次バッチの読み込みを学習と並行して行う。
     // さらに PreFetch の内側と外側を TimedDatasetRepository で包み、処理時間を計測する。

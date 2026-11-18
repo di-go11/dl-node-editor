@@ -35,6 +35,11 @@ impl From<&ImageAnnotationConfig> for training_pb::ImageAnnotationConfig {
                     },
                 )),
             },
+            ImageAnnotationConfig::Original => Self {
+                config: Some(training_pb::image_annotation_config::Config::Original(
+                    training_pb::OriginalConfig {},
+                )),
+            },
         }
     }
 }
@@ -46,8 +51,14 @@ impl From<&ImageTaskSpec> for training_pb::ImageTaskSpecs {
                 training_pb::ClassificationSpec {},
             ),
             ImageTaskSpec::Segmentation(segmentation_spec) => {
+                // 無効のときは r/g/b を 0 にする(C++ は ignore_color_enabled = false なら読まない)
+                let color = segmentation_spec.ignore_color;
                 training_pb::image_task_specs::Spec::Segmentation(training_pb::SegmentationSpec {
                     ignore_index: segmentation_spec.ignore_index,
+                    ignore_color_enabled: color.is_some(),
+                    ignore_color_r: color.map_or(0, |c| c.r),
+                    ignore_color_g: color.map_or(0, |c| c.g),
+                    ignore_color_b: color.map_or(0, |c| c.b),
                 })
             }
         };

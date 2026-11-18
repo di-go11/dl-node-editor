@@ -43,7 +43,7 @@
 #include "training/application/impl/TrainingDatasets.hpp"
 #include "training/application/impl/TrainingResumeState.hpp"
 
-#include "training/infrastructure/dataset/LabelMapFileReader.hpp"
+#include "training/infrastructure/dataset/DatasetLabelMap.hpp"
 #include "training/infrastructure/dataset/DatasetRepositoryFactory.hpp"
 #include "training/infrastructure/image/OpenCvImageDecoder.hpp"
 #include "training/entities/image/LetterboxPolicy.hpp"
@@ -142,7 +142,7 @@ namespace
     {
         fs::remove_all(dst);
         fs::create_directories(dst / "JPEGImages");
-        fs::create_directories(dst / "SegmentationClassP");
+        fs::create_directories(dst / "SegmentationClass");
         fs::create_directories(dst / "ImageSets" / "Segmentation");
         fs::copy_file(src / "labelmap.txt", dst / "labelmap.txt");
 
@@ -158,13 +158,13 @@ namespace
                     break;
                 }
                 const fs::path jpg = resolveJpeg(src / "JPEGImages", id);
-                const fs::path mask = src / "SegmentationClassP" / (id + ".png");
+                const fs::path mask = src / "SegmentationClass" / (id + ".png");
                 if (jpg.empty() || !fs::exists(mask))
                 {
                     continue;
                 }
                 fs::copy_file(jpg, dst / "JPEGImages" / jpg.filename());
-                fs::copy_file(mask, dst / "SegmentationClassP" / mask.filename());
+                fs::copy_file(mask, dst / "SegmentationClass" / mask.filename());
                 out << id << "\n";
                 ++n;
             }
@@ -252,7 +252,8 @@ int main()
     }
 
     // ---- パイプライン一式(main.cpp と同じ構成) ----
-    const ColorLabelMap labelMap = LabelMapFileReader{}.read((dst / "labelmap.txt").string());
+    // 実データは labelmap.txt 付きの独自形式(CVAT の書き出し)なので Original として読む
+    const ColorLabelMap labelMap = loadDatasetLabelMap(OriginalConfig{}, dst.string());
     const int numClasses = static_cast<int>(labelMap.entryCount());
     check(numClasses >= 2, "labelmap からクラス数を取得 (" + std::to_string(numClasses) + ")");
 
@@ -260,7 +261,7 @@ int main()
 
     auto decoder = std::make_shared<OpenCvImageDecoder>();
     ImageSpec imageSpec;
-    imageSpec.annotation = PascalVocConfig{};
+    imageSpec.annotation = OriginalConfig{};
     imageSpec.inputWidth = 128;
     imageSpec.inputHeight = 128;
     SegmentationSpec segmentationSpec;
@@ -269,7 +270,7 @@ int main()
     const DataSpec dataSpec = imageSpec;
 
     // 余白 = ignore_index。評価がここを無視できるか見る
-    auto datasetRepository = std::make_shared<DatasetRepositoryFactory>(decoder, std::make_shared<LabelMapFileReader>(), LetterboxPolicy{}, param, std::make_shared<NullTimeRecorder>(), std::make_shared<SequentialExecutor>());
+    auto datasetRepository = std::make_shared<DatasetRepositoryFactory>(decoder, LetterboxPolicy{}, param, std::make_shared<NullTimeRecorder>(), std::make_shared<SequentialExecutor>());
 
     auto trainDs = datasetRepository->create(dataSpec, dst.string(), DatasetSplit::Train);
     auto valDs = datasetRepository->create(dataSpec, dst.string(), DatasetSplit::Validation);

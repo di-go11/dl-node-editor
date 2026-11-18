@@ -1,5 +1,6 @@
 use entities::training::config::{
-    DataSpec, ImageAnnotationConfig, ImageSpec, ImageTaskSpec, PascalVocConfig, SegmentationSpec,
+    DataSpec, ImageAnnotationConfig, ImageSpec, ImageTaskSpec, PascalVocConfig, RgbColor,
+    SegmentationSpec,
 };
 use serde::{Deserialize, Serialize};
 
@@ -56,15 +57,26 @@ impl From<ImageTaskSpecDto> for ImageTaskSpec {
 }
 
 // SegmentationSpecのDTO
+// 無視する色は、フロントエンドのパラメータ(フラットな値の袋)と proto に合わせて
+// 「有効か」と r/g/b の 4 つの値で表す。無効なら r/g/b は読まない。
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SegmentationSpecDto {
     pub ignore_index: u32,
+    pub ignore_color_enabled: bool,
+    pub ignore_color_r: u32,
+    pub ignore_color_g: u32,
+    pub ignore_color_b: u32,
 }
 
 impl From<SegmentationSpecDto> for SegmentationSpec {
     fn from(value: SegmentationSpecDto) -> Self {
         SegmentationSpec {
             ignore_index: value.ignore_index,
+            ignore_color: value.ignore_color_enabled.then_some(RgbColor {
+                r: value.ignore_color_r,
+                g: value.ignore_color_g,
+                b: value.ignore_color_b,
+            }),
         }
     }
 }
@@ -74,6 +86,8 @@ impl From<SegmentationSpecDto> for SegmentationSpec {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ImageAnnotationConfigDto {
     PascalVoc(PascalVocConfigDto),
+    // パラメータを持たない。JSON は { "type": "original" }
+    Original,
 }
 
 impl From<ImageAnnotationConfigDto> for ImageAnnotationConfig {
@@ -82,6 +96,7 @@ impl From<ImageAnnotationConfigDto> for ImageAnnotationConfig {
             ImageAnnotationConfigDto::PascalVoc(config) => {
                 ImageAnnotationConfig::PascalVoc(config.into())
             }
+            ImageAnnotationConfigDto::Original => ImageAnnotationConfig::Original,
         }
     }
 }
@@ -132,8 +147,14 @@ impl From<ImageTaskSpec> for ImageTaskSpecDto {
 
 impl From<SegmentationSpec> for SegmentationSpecDto {
     fn from(value: SegmentationSpec) -> Self {
+        // 無効のときは色を持っていないので、r/g/b は 0 で埋める(ignore_color_enabled = false なら読まれない)
+        let color = value.ignore_color.unwrap_or(RgbColor { r: 0, g: 0, b: 0 });
         SegmentationSpecDto {
             ignore_index: value.ignore_index,
+            ignore_color_enabled: value.ignore_color.is_some(),
+            ignore_color_r: color.r,
+            ignore_color_g: color.g,
+            ignore_color_b: color.b,
         }
     }
 }
@@ -144,6 +165,7 @@ impl From<ImageAnnotationConfig> for ImageAnnotationConfigDto {
             ImageAnnotationConfig::PascalVoc(config) => {
                 ImageAnnotationConfigDto::PascalVoc(config.into())
             }
+            ImageAnnotationConfig::Original => ImageAnnotationConfigDto::Original,
         }
     }
 }

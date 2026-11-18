@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use super::error::DatasetError;
-use entities::dataset::{DatasetConfig, DatasetId};
+use entities::dataset::{DatasetConfig, DatasetId, RequiredEntry};
 
 // データセット保存用ポート
 pub trait DatasetSaver {
@@ -10,6 +10,19 @@ pub trait DatasetSaver {
         tmp_path: &Path,
         dataset_id: &DatasetId,
     ) -> impl Future<Output = Result<PathBuf, DatasetError>> + Send;
+    // save で置いたデータセットを消す(形式が合わず登録しないときに使う)
+    fn discard(&self, dataset_path: &Path)
+    -> impl Future<Output = Result<(), DatasetError>> + Send;
+}
+
+// 保存したデータセットのファイル構成を確かめるポート
+pub trait DatasetLayoutChecker {
+    // required のうち、dataset_path の下にないもの(種類が違うものを含む)を返す。すべてあれば空
+    fn find_missing(
+        &self,
+        dataset_path: &Path,
+        required: &[RequiredEntry],
+    ) -> impl Future<Output = Result<Vec<RequiredEntry>, DatasetError>> + Send;
 }
 // データセットのメタデータを登録用ポート
 pub trait DatasetRegister {

@@ -281,11 +281,12 @@ impl From<OptimizerConfig> for OptimizerConfigDto {
 
 #[cfg(test)]
 mod tests {
+    use super::super::data_spec::{ImageAnnotationConfigDto, ImageTaskSpecDto};
     use super::*;
     use entities::model::layer::{ConcatSpec, Conv2DSpec, NodeSpec};
     use entities::model::{ModelGraph, Node, NodeInput, PortRef};
     use entities::training::config::{
-        DataSpec, ImageAnnotationConfig, ImageSpec, ImageTaskSpec, PascalVocConfig,
+        DataSpec, ImageAnnotationConfig, ImageSpec, ImageTaskSpec, PascalVocConfig, RgbColor,
         SegmentationSpec,
     };
 
@@ -448,7 +449,14 @@ mod tests {
                 "type": "image",
                 "input_width": 256,
                 "input_height": 256,
-                "image_task_spec": { "type": "segmentation", "ignore_index": 255 },
+                "image_task_spec": {
+                    "type": "segmentation",
+                    "ignore_index": 255,
+                    "ignore_color_enabled": true,
+                    "ignore_color_r": 224,
+                    "ignore_color_g": 224,
+                    "ignore_color_b": 192
+                },
                 "image_annotation_config": { "type": "pascal_voc", "include_difficult": false }
             },
             "save_last_every": 0
@@ -518,6 +526,11 @@ mod tests {
                 input_height: 256,
                 image_task_spec: ImageTaskSpec::Segmentation(SegmentationSpec {
                     ignore_index: 255,
+                    ignore_color: Some(RgbColor {
+                        r: 224,
+                        g: 224,
+                        b: 192
+                    }),
                 }),
                 image_annotation_config: ImageAnnotationConfig::PascalVoc(PascalVocConfig {
                     include_difficult: false,
@@ -551,5 +564,71 @@ mod tests {
     fn unknown_optimizer_type_is_rejected() {
         let result = serde_json::from_str::<OptimizerConfigDto>(r#"{ "type": "rmsprop" }"#);
         assert!(result.is_err());
+    }
+
+    // 無視する色が無効なら、r/g/b の値に関係なく ignore_color は None になること
+    #[test]
+    fn disabled_ignore_color_converts_to_none() {
+        let dto: ImageTaskSpecDto = serde_json::from_value(serde_json::json!({
+            "type": "segmentation",
+            "ignore_index": 255,
+            "ignore_color_enabled": false,
+            "ignore_color_r": 1,
+            "ignore_color_g": 2,
+            "ignore_color_b": 3
+        }))
+        .unwrap();
+
+        assert_eq!(
+            ImageTaskSpec::from(dto),
+            ImageTaskSpec::Segmentation(SegmentationSpec {
+                ignore_index: 255,
+                ignore_color: None,
+            })
+        );
+    }
+
+    // 応答(entity -> DTO)では、無視する色の指定がなければ無効・r/g/b は 0 になること
+    #[test]
+    fn segmentation_without_ignore_color_serializes_as_disabled() {
+        let dto: ImageTaskSpecDto = ImageTaskSpec::Segmentation(SegmentationSpec {
+            ignore_index: 255,
+            ignore_color: None,
+        })
+        .into();
+
+        assert_eq!(
+            serde_json::to_value(&dto).unwrap(),
+            serde_json::json!({
+                "type": "segmentation",
+                "ignore_index": 255,
+                "ignore_color_enabled": false,
+                "ignore_color_r": 0,
+                "ignore_color_g": 0,
+                "ignore_color_b": 0
+            })
+        );
+    }
+
+    // 無視する色の項目が欠けたリクエストは拒否されること(フロントエンドは常に 4 項目を送る)
+    #[test]
+    fn segmentation_without_ignore_color_fields_is_rejected() {
+        let result = serde_json::from_value::<ImageTaskSpecDto>(serde_json::json!({
+            "type": "segmentation",
+            "ignore_index": 255
+        }));
+        assert!(result.is_err());
+    }
+
+    // 独自形式は { "type": "original" } で、パラメータを持たない。往復しても同じ JSON になること
+    #[test]
+    fn original_annotation_round_trips() {
+        let json = serde_json::json!({ "type": "original" });
+        let dto: ImageAnnotationConfigDto = serde_json::from_value(json.clone()).unwrap();
+        let entity = ImageAnnotationConfig::from(dto);
+        assert_eq!(entity, ImageAnnotationConfig::Original);
+
+        let back: ImageAnnotationConfigDto = entity.into();
+        assert_eq!(serde_json::to_value(&back).unwrap(), json);
     }
 }

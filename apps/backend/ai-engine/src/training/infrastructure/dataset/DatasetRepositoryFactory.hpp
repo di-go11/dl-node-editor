@@ -14,7 +14,7 @@
 #include "training/entities/domain-objects/TrainParam.hpp"
 #include "training/entities/image/AspectRatioPolicy.hpp"
 
-#include "training/infrastructure/dataset/LabelMapFileReader.hpp"
+#include "training/entities/image/ColorLabelMap.hpp"
 #include "training/infrastructure/image/ResizePreprocessorFactory.hpp"
 
 #include <memory>
@@ -30,7 +30,6 @@ class DatasetRepositoryFactory : public IDatasetRepositoryFactory
 public:
     // aspectRatioPolicy: リサイズ時のアスペクト比の扱い。DataSpec には含まれない、サーバー側の実装で決める値。
     DatasetRepositoryFactory(std::shared_ptr<IImageDecoder> decoder,
-                             std::shared_ptr<LabelMapFileReader> labelMapReader,
                              AspectRatioPolicy aspectRatioPolicy,
                              std::shared_ptr<TrainParam> trainParam,
                              std::shared_ptr<ITimeRecorder> timeRecorder,
@@ -41,15 +40,15 @@ public:
 private:
     // ① モダリティ (DataSpec の型で分岐)
     std::shared_ptr<IDatasetRepository> createImage(const ImageSpec &, const std::string &datasetPath, DatasetSplit) const;
-    // ② 形式 (ImageAnnotationConfig の型で分岐)
-    // ③ タスク (ImageTaskSpecs の型で分岐) は各 createXxx 内の visit
-    std::shared_ptr<IDatasetRepository> createPascalVoc(const PascalVocConfig &, const ImageSpec &, const std::string &datasetPath, DatasetSplit) const;
+    // ② 形式 (ImageAnnotationConfig の型で分岐)。pascal_voc / original はどちらも VOC のディレクトリ構成で、
+    //    違いは色表だけなので、loadDatasetLabelMap で色表を決めてから同じ createVocLayout に渡す。
+    // ③ タスク (ImageTaskSpecs の型で分岐) は createVocLayout 内の visit
+    std::shared_ptr<IDatasetRepository> createVocLayout(const ColorLabelMap &labelMap, const ImageSpec &, const std::string &datasetPath, DatasetSplit) const;
 
     // 画像・マスク共通のジオメトリ(入力サイズ + アスペクト比の扱い)を持つ前処理ファクトリを作る。
     ResizePreprocessorFactory makePreprocessorFactory(const ImageSpec &) const;
 
     std::shared_ptr<IImageDecoder> _decoder;
-    std::shared_ptr<LabelMapFileReader> _labelMapReader;
     AspectRatioPolicy _aspectRatioPolicy;
     std::shared_ptr<TrainParam> _trainParam;
     std::shared_ptr<ITimeRecorder> _timeRecorder;

@@ -31,3 +31,12 @@ impl From<&DatasetConfig> for DatasetConfigDto {
         }
     }
 }
+
+// アップロードした zip が、指定した形式のファイル構成になっていないときの 422 の本文
+#[derive(Debug, Serialize)]
+pub struct DatasetLayoutMismatchDto {
+    // 指定された形式(pascal_voc / original)
+    pub format: String,
+    // 足りないファイル・ディレクトリ(データセットのルートからの相対パス。ディレクトリは末尾に /)
+    pub missing: Vec<String>,
+}

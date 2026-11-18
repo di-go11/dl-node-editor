@@ -1,18 +1,45 @@
 #include "training/infrastructure/image/ColorMaskLabelConverter.hpp"
 #include "training/entities/image/RgbColor.hpp"
 #include <stdexcept>
+#include <string>
 #include <utility>
 #include <vector>
 
-ColorMaskLabelConverter::ColorMaskLabelConverter(const ColorLabelMap &labelMap)
+namespace
+{
+    std::string describeKey(const uint32_t key)
+    {
+        return "(" + std::to_string((key >> 16) & 0xFF) + "," + std::to_string((key >> 8) & 0xFF) + "," +
+               std::to_string(key & 0xFF) + ")";
+    }
+} // namespace
+
+uint32_t ColorMaskLabelConverter::toKey(const uint8_t r, const uint8_t g, const uint8_t b)
+{
+    return (uint32_t(r) << 16) | (uint32_t(g) << 8) | uint32_t(b);
+}
+
+ColorMaskLabelConverter::ColorMaskLabelConverter(const ColorLabelMap &labelMap,
+                                                 const uint8_t ignoreIndex,
+                                                 const std::optional<RgbColor> ignoreColor)
+    : _ignoreIndex(ignoreIndex)
 {
     for (const ColorClassEntry &entry : labelMap.getEntries())
     {
-        const uint32_t key = (uint32_t(entry.color.getR()) << 16) |
-                             (uint32_t(entry.color.getG()) << 8) |
-                             uint32_t(entry.color.getB());
-        _keys.push_back(key);
+        _keys.push_back(toKey(entry.color.getR(), entry.color.getG(), entry.color.getB()));
         _classIds.push_back(static_cast<uint8_t>(entry.classId));
+    }
+
+    if (ignoreColor.has_value())
+    {
+        const uint32_t ignoreKey = toKey(ignoreColor->getR(), ignoreColor->getG(), ignoreColor->getB());
+        if (const auto classId = lookupClassId(ignoreKey); classId.has_value())
+        {
+            // 同じ色を「クラス」と「無視」の両方に割り当てると、どちらが優先か分からなくなる。
+            throw std::invalid_argument("ignore_color " + describeKey(ignoreKey) +
+                                        " が labelmap のクラス " + std::to_string(*classId) + " の色と同じです");
+        }
+        _ignoreKey = ignoreKey;
     }
 }
 
@@ -36,16 +63,33 @@ ImageData ColorMaskLabelConverter::convert(const ImageData &colorMask) const
     // ローカルバッファに書き込んでから最後に構築する。
     std::vector<uint8_t> values(pixelCount);
 
-    uint32_t lastKey = 0xFFFFFFFF; // 初期値は存在しないRGB値
-    uint8_t lastClassId = 255;     // 初期値は存在しないクラスID
+    // 同じ色が続くことが多いので、直前の色の結果を使い回す。
+    // 初期値の 0xFFFFFFFF は 24bit の RGB では現れないキー。
+    uint32_t lastKey = 0xFFFFFFFF;
+    uint8_t lastClassId = 0;
 
     for (size_t i = 0; i < pixelCount; ++i)
     {
-        const uint32_t key = (uint32_t(r[i]) << 16) | (uint32_t(g[i]) << 8) | uint32_t(b[i]);
+        const uint32_t key = toKey(r[i], g[i], b[i]);
 
         if (key != lastKey)
         {
-            lastClassId = lookupClassId(key);
+            if (const auto classId = lookupClassId(key); classId.has_value())
+            {
+                lastClassId = *classId;
+            }
+            else if (_ignoreKey.has_value() && key == *_ignoreKey)
+            {
+                lastClassId = _ignoreIndex;
+            }
+            else
+            {
+                const size_t y = i / colorMask.getWidth();
+                const size_t x = i % colorMask.getWidth();
+                throw UnknownMaskColorError("labelmap にない色 " + describeKey(key) + " があります(x=" +
+                                            std::to_string(x) + ", y=" + std::to_string(y) +
+                                            ")。labelmap.txt に追加するか、無視する色に指定してください");
+            }
             lastKey = key;
         }
 
@@ -55,7 +99,7 @@ ImageData ColorMaskLabelConverter::convert(const ImageData &colorMask) const
     return ImageData({1, colorMask.getHeight(), colorMask.getWidth()}, std::move(values));
 }
 
-uint8_t ColorMaskLabelConverter::lookupClassId(const uint32_t key) const
+std::optional<uint8_t> ColorMaskLabelConverter::lookupClassId(const uint32_t key) const
 {
     for (size_t i = 0; i < _keys.size(); ++i)
     {
@@ -64,5 +108,5 @@ uint8_t ColorMaskLabelConverter::lookupClassId(const uint32_t key) const
             return _classIds[i];
         }
     }
-    return 255; // Not found, default to class ID 255
+    return std::nullopt;
 }
