@@ -11,24 +11,35 @@
 #include <memory>
 #include <utility>
 #include <optional>
+#include <numeric>
 
 SegmentationDatasetRepository::SegmentationDatasetRepository(std::shared_ptr<ISegmentationData> source,
                                                              std::shared_ptr<IImagePreprocessor> imagePreProcessor,
                                                              std::shared_ptr<IImagePreprocessor> maskPreProcessor,
                                                              const std::shared_ptr<TrainParam> &trainParam,
-                                                             std::shared_ptr<IParallelExecutor> parallelExecutor)
+                                                             std::shared_ptr<IParallelExecutor> parallelExecutor,
+                                                             const bool shuffle,
+                                                             const uint64_t shuffleSeed)
     : _source(std::move(source)),
       _imagePreProcessor(std::move(imagePreProcessor)),
       _maskPreProcessor(std::move(maskPreProcessor)),
       _batchSize(trainParam->getBatchSize()),
       _parallelExecutor(std::move(parallelExecutor)),
-      _currentIndex(0)
+      _currentIndex(0),
+      _shuffle(shuffle),
+      _rng(shuffleSeed)
 {
+    _order.resize(_source->size());
+    std::iota(_order.begin(), _order.end(), 0);
 }
 
 void SegmentationDatasetRepository::reset()
 {
     _currentIndex = 0;
+    if (_shuffle)
+    {
+        std::shuffle(_order.begin(), _order.end(), _rng); // 乱数_engから_begin()と_endの要素を入れ替える。
+    }
 }
 
 bool SegmentationDatasetRepository::hasNext() const
@@ -48,7 +59,7 @@ TrainingBatch SegmentationDatasetRepository::getNextBatch()
     // executer機能のテスト(スレッド数1での逐次処理)
     _parallelExecutor->parallelFor(count, [&](size_t index)
                                    {
-                                       const size_t i = start + index;
+                                       const size_t i = _order[start + index];
                                        ImageData image = _source->getImage(i);
                                        ImageData mask = _source->getMask(i);
 

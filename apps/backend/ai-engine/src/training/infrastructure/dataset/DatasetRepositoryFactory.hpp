@@ -33,7 +33,8 @@ public:
                              AspectRatioPolicy aspectRatioPolicy,
                              std::shared_ptr<TrainParam> trainParam,
                              std::shared_ptr<ITimeRecorder> timeRecorder,
-                             std::shared_ptr<IParallelExecutor> parallelExecutor);
+                             std::shared_ptr<IParallelExecutor> parallelExecutor,
+                             uint64_t shuffleSeed);
 
     std::shared_ptr<IDatasetRepository> create(const DataSpec &spec, const std::string &datasetPath, DatasetSplit split) const override;
 
@@ -53,4 +54,5 @@ private:
     std::shared_ptr<TrainParam> _trainParam;
     std::shared_ptr<ITimeRecorder> _timeRecorder;
     std::shared_ptr<IParallelExecutor> _parallelExecutor;
+    u_int64_t _shuffleSeed;
 };

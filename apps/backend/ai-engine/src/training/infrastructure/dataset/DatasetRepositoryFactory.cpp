@@ -33,12 +33,14 @@ DatasetRepositoryFactory::DatasetRepositoryFactory(std::shared_ptr<IImageDecoder
                                                    AspectRatioPolicy aspectRatioPolicy,
                                                    std::shared_ptr<TrainParam> trainParam,
                                                    std::shared_ptr<ITimeRecorder> timeRecorder,
-                                                   std::shared_ptr<IParallelExecutor> parallelExecutor)
+                                                   std::shared_ptr<IParallelExecutor> parallelExecutor,
+                                                   uint64_t shuffleSeed)
     : _decoder(std::move(decoder)),
       _aspectRatioPolicy(std::move(aspectRatioPolicy)),
       _trainParam(std::move(trainParam)),
       _timeRecorder(std::move(timeRecorder)),
-      _parallelExecutor(std::move(parallelExecutor))
+      _parallelExecutor(std::move(parallelExecutor)),
+      _shuffleSeed(shuffleSeed)
 {
 }
 
@@ -75,7 +77,15 @@ std::shared_ptr<IDatasetRepository> DatasetRepositoryFactory::createVocLayout(co
                 auto imagePreProcessor = preprocessorFactory.forImage();
                 // Letterbox の余白は ignoreIndex で埋め、損失・評価で無視させる。
                 auto maskPreProcessor = preprocessorFactory.forMask(segmentationSpec.ignoreIndex);
-                return std::make_shared<SegmentationDatasetRepository>(timedSource, imagePreProcessor, maskPreProcessor, _trainParam, _parallelExecutor);
+
+                bool shuffle = false;
+
+                if (split == DatasetSplit::Train)
+                {
+                    shuffle = true;
+                }
+
+                return std::make_shared<SegmentationDatasetRepository>(timedSource, imagePreProcessor, maskPreProcessor, _trainParam, _parallelExecutor, shuffle);
             },
             [](const ObjectDetectionSpec &) -> std::shared_ptr<IDatasetRepository>
             {

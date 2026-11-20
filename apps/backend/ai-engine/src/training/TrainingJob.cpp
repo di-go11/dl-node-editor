@@ -33,6 +33,7 @@
 
 #include <filesystem>
 #include <iostream>
+#include <random>
 
 // application(インターフェース)
 #include "training/application/interfaces/parallelProcessFn/IParallelExecutor.hpp"
@@ -272,7 +273,8 @@ TrainingStatus runTrainingJob(const TrainingRuntimeConfig &runtime,
     // 入力サイズ・ignoreIndex は command.dataSpec から Factory が読む。アスペクト比の扱いだけここで決める。
     DatasetSplit trainsplit = DatasetSplit::Train;
     DatasetSplit valsplit = DatasetSplit::Validation;
-    auto datasetRepository = std::make_shared<DatasetRepositoryFactory>(timedDecoder, LetterboxPolicy{}, param, timeRecorder, parallelExecutor);
+    uint64_t shuffleSeed = command.seed.value_or(std::random_device{}());
+    auto datasetRepository = std::make_shared<DatasetRepositoryFactory>(timedDecoder, LetterboxPolicy{}, param, timeRecorder, parallelExecutor, shuffleSeed);
 
     // Decorator で包み、次バッチの読み込みを学習と並行して行う。
     // さらに PreFetch の内側と外側を TimedDatasetRepository で包み、処理時間を計測する。
