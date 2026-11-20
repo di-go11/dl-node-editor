@@ -273,8 +273,11 @@ TrainingStatus runTrainingJob(const TrainingRuntimeConfig &runtime,
     // 入力サイズ・ignoreIndex は command.dataSpec から Factory が読む。アスペクト比の扱いだけここで決める。
     DatasetSplit trainsplit = DatasetSplit::Train;
     DatasetSplit valsplit = DatasetSplit::Validation;
-    uint64_t shuffleSeed = command.seed.value_or(std::random_device{}());
-    auto datasetRepository = std::make_shared<DatasetRepositoryFactory>(timedDecoder, LetterboxPolicy{}, param, timeRecorder, parallelExecutor, shuffleSeed);
+    // train のシャッフル順とデータ拡張の乱数の基準。未指定なら毎回変える。
+    // 決めた値をログに出し、seed 未指定の学習も後から同じ条件で再実行できるようにする。
+    const uint64_t dataSeed = command.seed.value_or(std::random_device{}());
+    std::cout << "data seed = " << dataSeed << std::endl;
+    auto datasetRepository = std::make_shared<DatasetRepositoryFactory>(timedDecoder, LetterboxPolicy{}, param, timeRecorder, parallelExecutor, dataSeed);
 
     // Decorator で包み、次バッチの読み込みを学習と並行して行う。
     // さらに PreFetch の内側と外側を TimedDatasetRepository で包み、処理時間を計測する。

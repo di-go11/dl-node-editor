@@ -29,12 +29,13 @@ class DatasetRepositoryFactory : public IDatasetRepositoryFactory
 {
 public:
     // aspectRatioPolicy: リサイズ時のアスペクト比の扱い。DataSpec には含まれない、サーバー側の実装で決める値。
+    // dataSeed: train のシャッフル順とデータ拡張の乱数の基準。学習 1 回の間変わらないのでコンストラクタで受け取る。
     DatasetRepositoryFactory(std::shared_ptr<IImageDecoder> decoder,
                              AspectRatioPolicy aspectRatioPolicy,
                              std::shared_ptr<TrainParam> trainParam,
                              std::shared_ptr<ITimeRecorder> timeRecorder,
                              std::shared_ptr<IParallelExecutor> parallelExecutor,
-                             uint64_t shuffleSeed);
+                             uint64_t dataSeed);
 
     std::shared_ptr<IDatasetRepository> create(const DataSpec &spec, const std::string &datasetPath, DatasetSplit split) const override;
 
@@ -54,5 +55,5 @@ private:
     std::shared_ptr<TrainParam> _trainParam;
     std::shared_ptr<ITimeRecorder> _timeRecorder;
     std::shared_ptr<IParallelExecutor> _parallelExecutor;
-    u_int64_t _shuffleSeed;
+    uint64_t _dataSeed;
 };
