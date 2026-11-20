@@ -270,7 +270,8 @@ int main()
     const DataSpec dataSpec = imageSpec;
 
     // 余白 = ignore_index。評価がここを無視できるか見る
-    auto datasetRepository = std::make_shared<DatasetRepositoryFactory>(decoder, LetterboxPolicy{}, param, std::make_shared<NullTimeRecorder>(), std::make_shared<SequentialExecutor>());
+    // dataSeed を固定し、train のシャッフル順と拡張を毎回同じにする
+    auto datasetRepository = std::make_shared<DatasetRepositoryFactory>(decoder, LetterboxPolicy{}, param, std::make_shared<NullTimeRecorder>(), std::make_shared<SequentialExecutor>(), /*dataSeed=*/0u);
 
     auto trainDs = datasetRepository->create(dataSpec, dst.string(), DatasetSplit::Train);
     auto valDs = datasetRepository->create(dataSpec, dst.string(), DatasetSplit::Validation);

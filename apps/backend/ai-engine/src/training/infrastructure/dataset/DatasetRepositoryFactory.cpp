@@ -4,6 +4,8 @@
 #include "training/infrastructure/dataset/SegmentationDatasetRepository.hpp"
 #include "training/infrastructure/dataset/VocSegmentationData.hpp"
 #include "training/infrastructure/dataset/TimedVocSegmentationData.hpp"
+#include "training/infrastructure/image/OpenCvSegmentationAugmenter.hpp"
+#include "training/entities/image/AugmentationConfig.hpp"
 #include "training/entities/utils/Overloaded.hpp"
 
 #include <stdexcept>
@@ -33,12 +35,14 @@ DatasetRepositoryFactory::DatasetRepositoryFactory(std::shared_ptr<IImageDecoder
                                                    AspectRatioPolicy aspectRatioPolicy,
                                                    std::shared_ptr<TrainParam> trainParam,
                                                    std::shared_ptr<ITimeRecorder> timeRecorder,
-                                                   std::shared_ptr<IParallelExecutor> parallelExecutor)
+                                                   std::shared_ptr<IParallelExecutor> parallelExecutor,
+                                                   uint64_t dataSeed)
     : _decoder(std::move(decoder)),
       _aspectRatioPolicy(std::move(aspectRatioPolicy)),
       _trainParam(std::move(trainParam)),
       _timeRecorder(std::move(timeRecorder)),
-      _parallelExecutor(std::move(parallelExecutor))
+      _parallelExecutor(std::move(parallelExecutor)),
+      _dataSeed(dataSeed)
 {
 }
 
@@ -75,7 +79,18 @@ std::shared_ptr<IDatasetRepository> DatasetRepositoryFactory::createVocLayout(co
                 auto imagePreProcessor = preprocessorFactory.forImage();
                 // Letterbox の余白は ignoreIndex で埋め、損失・評価で無視させる。
                 auto maskPreProcessor = preprocessorFactory.forMask(segmentationSpec.ignoreIndex);
-                return std::make_shared<SegmentationDatasetRepository>(timedSource, imagePreProcessor, maskPreProcessor, _trainParam, _parallelExecutor);
+
+                // train だけシャッフルと拡張をする。validation は毎回同じ条件で測るため、どちらもしない。
+                // 拡張の設定は固定値(AugmentationConfig の既定値)。
+                const bool isTrain = (split == DatasetSplit::Train);
+                std::shared_ptr<ISegmentationAugmenter> augmenter;
+                if (isTrain)
+                {
+                    augmenter = std::make_shared<OpenCvSegmentationAugmenter>(AugmentationConfig{}, segmentationSpec.ignoreIndex);
+                }
+
+                return std::make_shared<SegmentationDatasetRepository>(timedSource, imagePreProcessor, maskPreProcessor, _trainParam, _parallelExecutor,
+                                                                       isTrain, augmenter, _dataSeed);
             },
             [](const ObjectDetectionSpec &) -> std::shared_ptr<IDatasetRepository>
             {
