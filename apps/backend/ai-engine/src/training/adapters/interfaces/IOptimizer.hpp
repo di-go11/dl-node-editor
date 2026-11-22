@@ -9,8 +9,9 @@ class IOptimizer
 {
 public:
     virtual ~IOptimizer() = default;
-    virtual void resetGradients() = 0;  // 勾配リセット
-    virtual void updateParmeters() = 0; // パラメータ更新
+    virtual void resetGradients() = 0;                        // 勾配リセット
+    virtual void updateParmeters() = 0;                       // パラメータ更新
+    virtual void updateLearningRate(double learningRate) = 0; // 学習率設定(更新用)
 
     // 自分がどの Optimizer なのか。checkpoint に記録して、復元時に
     // 「Adam の状態を SGD に読ませる」といった取り違えを検出するために使う。

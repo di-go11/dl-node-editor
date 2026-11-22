@@ -1,8 +1,5 @@
 #pragma once
 
-#include "LearningRateSchedulerType.hpp"
-#include "training/entities/utils/Overloaded.hpp"
-
 #include <variant>
 
 struct NoneLearningRateSchedulerConfig
@@ -11,16 +8,19 @@ struct NoneLearningRateSchedulerConfig
 
 struct PolyLearningRateSchedulerConfig
 {
+    double initialLR = 0.0;
     double power = 0.9;
 };
 
 struct CosineLearningRateSchedulerConfig
 {
-    double minLearningRate = 0.0;
+    double initialLR = 0.0;
+    double minLR = 0.0;
 };
 
 struct StepLearningRateSchedulerConfig
 {
+    double initialLR = 0.0;
     unsigned stepSize = 30;
     double gamma = 0.1;
 };

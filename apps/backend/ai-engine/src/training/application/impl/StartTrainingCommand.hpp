@@ -5,6 +5,7 @@
 #include "training/entities/domain-objects/LossConfig.hpp"
 #include "training/entities/domain-objects/ComputeDevice.hpp"
 #include "training/entities/domain-objects/DataSpecs/DataSpec.hpp"
+#include "training/entities/domain-objects/Optimizer/LearningRateSchedulerConfig.hpp"
 
 #include <cstdint>
 #include <optional>
@@ -34,4 +35,7 @@ struct StartTrainingCommand
     DataSpec dataSpec;
     // seed: 乱数シード。0 も有効な値なので optional で「未指定」と区別する(未指定 = 固定しない)。
     std::optional<std::uint64_t> seed;
+
+    // lrScheduler: 学習率スケジューラ。
+    std::optional<LearningRateSchedulerConfig> lrScheduler;
 };

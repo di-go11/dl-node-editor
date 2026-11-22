@@ -2,12 +2,13 @@
 
 #include "./TorchModelTrainer.hpp"
 #include "./BatchTensorConverter.hpp"
+#include "./LearningRateSchedulerType.hpp"
 
-#include "../../entities/domain-objects/Metrics/EpochMetrics.hpp"
-#include "../../entities/domain-objects/TrainingBatch.hpp"
-#include "../../entities/domain-objects/BatchData.hpp"
-#include "../../entities/image/ImageData.hpp"
-#include "../../entities/image/NormalizedImageData.hpp"
+#include "training/entities/domain-objects/Metrics/EpochMetrics.hpp"
+#include "training/entities/domain-objects/TrainingBatch.hpp"
+#include "training/entities/domain-objects/BatchData.hpp"
+#include "training/entities/image/ImageData.hpp"
+#include "training/entities/image/NormalizedImageData.hpp"
 
 #include "../interfaces/IModel.hpp"
 #include "../interfaces/ILoss.hpp"
@@ -17,10 +18,12 @@
 TorchModelTrainer::TorchModelTrainer(
     const std::shared_ptr<IModel> &model,
     const std::shared_ptr<ILoss> &loss,
-    const std::shared_ptr<IOptimizer> &optimizer)
+    const std::shared_ptr<IOptimizer> &optimizer,
+    const std::shared_ptr<ILearningRateScheduler> &lrScheduler)
     : _model(model),
       _loss(loss),
-      _optimizer(optimizer)
+      _optimizer(optimizer),
+      _lrscheduler(lrScheduler)
 {
 }
 
@@ -40,13 +43,22 @@ EpochMetrics TorchModelTrainer::trainOneEpoch(IDatasetRepository &trainData)
     {
         TrainingBatch batch = trainData.getNextBatch();
 
-        torch::Tensor input = converter.convert(batch.input);        // [N,C,H,W] float
+        torch::Tensor input = converter.convert(batch.input);         // [N,C,H,W] float
         torch::Tensor target = converter.convertTarget(batch.target); // [N,H,W]   int64
 
         torch::Tensor loss = _model->trainStep(input, target, *_loss, *_optimizer);
+        if (LearningRateSchedulerType::OneBatch == _lrscheduler->getType())
+        {
+            _lrscheduler->learningRateAt(); // 学習率更新
+        }
 
         lossSum += loss.item<double>() * target.numel();
         pixelCount += target.numel();
+    }
+
+    if (LearningRateSchedulerType::OneEpoch == _lrscheduler->getType())
+    {
+        _lrscheduler->learningRateAt(); // 学習率更新
     }
 
     EpochMetrics metrics;

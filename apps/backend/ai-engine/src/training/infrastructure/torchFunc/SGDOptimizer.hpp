@@ -35,6 +35,7 @@ public:
 
     void resetGradients() override;
     void updateParmeters() override;
+    void updateLearningRate(double learningRate) override;
     void writeTo(ICheckpointWriter &archive) const override;
     void readFrom(ICheckpointReader &archive) override;
 };

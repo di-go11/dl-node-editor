@@ -29,6 +29,14 @@ void AdamOptimizer::writeTo(ICheckpointWriter &archive) const
     _optim->save(toTorchArchive(archive));
 }
 
+void AdamOptimizer::updateLearningRate(double learningRate)
+{
+    for (auto &group : _optim->param_groups())
+    {
+        group.options().set_lr(learningRate);
+    }
+}
+
 void AdamOptimizer::readFrom(ICheckpointReader &archive)
 {
     // 状態(exp_avg / exp_avg_sq / step)は checkpoint から引き継ぎ、lr などは今回の指定値のまま残す

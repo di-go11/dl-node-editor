@@ -24,6 +24,14 @@ void SGDOptimizer::updateParmeters()
     _optim->step();
 }
 
+void SGDOptimizer::updateLearningRate(double learningRate)
+{
+    for (auto &group : _optim->param_groups())
+    {
+        group.options().set_lr(learningRate);
+    }
+}
+
 void SGDOptimizer::writeTo(ICheckpointWriter &archive) const
 {
     _optim->save(toTorchArchive(archive));

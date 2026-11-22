@@ -24,6 +24,14 @@ void AdamWOptimizer::updateParmeters()
     _optim->step();
 }
 
+void AdamWOptimizer::updateLearningRate(double learningRate)
+{
+    for (auto &group : _optim->param_groups())
+    {
+        group.options().set_lr(learningRate);
+    }
+}
+
 void AdamWOptimizer::writeTo(ICheckpointWriter &archive) const
 {
     _optim->save(toTorchArchive(archive));
