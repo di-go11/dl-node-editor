@@ -1,18 +1,17 @@
 #pragma once
 #include "training/adapters/interfaces/ILearningRateScheduler.hpp"
-#include "training/adapters/impl/LearningRateSchedulerType.hpp"
 
 class PolyLR : public ILearningRateScheduler
 {
 public:
-    PolyLR(double totalSteps, double initialLR, double power, LearningRateSchedulerType type);
+    PolyLR(uint64_t totalSteps, double initialLR, double power, LearningRateUpdateInterval updateInterval);
 
     double learningRateAt(uint64_t step) const override;
-    LearningRateSchedulerType getType() const override { return _type; }
+    LearningRateUpdateInterval getUpdateInterval() const override { return _updateInterval; }
 
 private:
     const double _initialLR;
-    const double _totalSteps;
+    const uint64_t _totalSteps;
     const double _power;
-    const LearningRateSchedulerType _type;
+    const LearningRateUpdateInterval _updateInterval;
 };

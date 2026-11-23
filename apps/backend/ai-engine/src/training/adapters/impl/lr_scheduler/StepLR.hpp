@@ -1,20 +1,20 @@
 #pragma once
 
 #include "training/adapters/interfaces/ILearningRateScheduler.hpp"
-#include "training/adapters/impl/LearningRateSchedulerType.hpp"
 
 #include <cstdint>
 
 class StepLR : public ILearningRateScheduler
 {
 public:
-    StepLR(uint64_t totalSteps, double initialLR, double gamma, LearningRateSchedulerType type);
+    // stepSize: 何ステップごとに gamma を掛けるか(ステップの単位は updateInterval に従う。1 以上)
+    StepLR(uint64_t stepSize, double initialLR, double gamma, LearningRateUpdateInterval updateInterval);
     double learningRateAt(uint64_t step) const override;
-    LearningRateSchedulerType getType() const override { return _type; }
+    LearningRateUpdateInterval getUpdateInterval() const override { return _updateInterval; }
 
 private:
-    const uint64_t _totalSteps;
+    const uint64_t _stepSize;
     const double _initialLR;
     const double _gamma;
-    const LearningRateSchedulerType _type;
+    const LearningRateUpdateInterval _updateInterval;
 };

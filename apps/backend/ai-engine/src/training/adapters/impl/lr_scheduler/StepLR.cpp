@@ -1,16 +1,16 @@
 #include "StepLR.hpp"
 
-#include <algorithm>
 #include <cmath>
 
-StepLR::StepLR(uint64_t totalSteps, double initialLR, double gamma, LearningRateSchedulerType type)
-    : _totalSteps(totalSteps), _initialLR(initialLR), _gamma(gamma), _type(type)
+StepLR::StepLR(uint64_t stepSize, double initialLR, double gamma, LearningRateUpdateInterval updateInterval)
+    : _stepSize(stepSize), _initialLR(initialLR), _gamma(gamma), _updateInterval(updateInterval)
 {
 }
 
 double StepLR::learningRateAt(uint64_t step) const
 {
-    const double remaining = std::max(0.0, 1.0 - static_cast<double>(step) / _totalSteps); // 学習率が負になるのを防ぐ。
-    const double stepCount = step / _totalSteps;
-    return _initialLR * std::pow(_gamma, stepCount);
+    // 何回目の区切りか。整数どうしの割り算は切り捨てなので、これがそのまま床関数になる。
+    // double で割ってから floor すると、丸め誤差で区切りが 1 つずれることがある。
+    const uint64_t k = step / _stepSize;
+    return _initialLR * std::pow(_gamma, static_cast<double>(k));
 }
