@@ -17,6 +17,7 @@ public:
     void reset() override;
     bool hasNext() const override;
     TrainingBatch getNextBatch() override;
+    std::size_t batchCount() const override { return _batchCount > 0 ? static_cast<std::size_t>(_batchCount) : 0; }
 
 private:
     // input 用: 0.5 で埋めた正規化済みダミー。

@@ -88,7 +88,7 @@ TrainingStatus TrainModelUsecase::execute(const TrainingDatasets &datasets,
     {
         const auto epochStart = std::chrono::steady_clock::now();
 
-        const EpochMetrics trainMetrics = _trainer->trainOneEpoch(*datasets.trainDataset);
+        const EpochMetrics trainMetrics = _trainer->trainOneEpoch(*datasets.trainDataset, epoch);
         const EpochMetrics valMetrics = _evaluator->evaluate(*datasets.validationDataset);
         const MonitoredMetric monitored = monitoredMetric(valMetrics.taskMetrics);
 
