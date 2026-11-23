@@ -2,7 +2,6 @@
 
 #include "./TorchModelTrainer.hpp"
 #include "./BatchTensorConverter.hpp"
-#include "./LearningRateSchedulerType.hpp"
 
 #include "training/entities/domain-objects/Metrics/EpochMetrics.hpp"
 #include "training/entities/domain-objects/TrainingBatch.hpp"
@@ -13,7 +12,10 @@
 #include "../interfaces/IModel.hpp"
 #include "../interfaces/ILoss.hpp"
 #include "../interfaces/IOptimizer.hpp"
+#include "../interfaces/ILearningRateScheduler.hpp"
 #include "training/application/interfaces/IDatasetRepository.hpp"
+
+#include <cstdint>
 
 TorchModelTrainer::TorchModelTrainer(
     const std::shared_ptr<IModel> &model,
@@ -23,14 +25,24 @@ TorchModelTrainer::TorchModelTrainer(
     : _model(model),
       _loss(loss),
       _optimizer(optimizer),
-      _lrscheduler(lrScheduler)
+      _lrScheduler(lrScheduler)
 {
 }
 
 TorchModelTrainer::~TorchModelTrainer() = default;
 
-EpochMetrics TorchModelTrainer::trainOneEpoch(IDatasetRepository &trainData)
+EpochMetrics TorchModelTrainer::trainOneEpoch(IDatasetRepository &trainData, unsigned int nowEpoch)
 {
+    // スケジューラーがない(None)ときは、学習率を Optimizer の設定値のまま変えない。
+    const bool updatePerEpoch = _lrScheduler && _lrScheduler->getUpdateInterval() == LearningRateUpdateInterval::PerEpoch;
+    const bool updatePerBatch = _lrScheduler && _lrScheduler->getUpdateInterval() == LearningRateUpdateInterval::PerBatch;
+
+    if (updatePerEpoch)
+    {
+        // エポックの最初に、このエポックで使う学習率を設定する
+        _optimizer->updateLearningRate(_lrScheduler->learningRateAt(nowEpoch));
+    }
+
     BatchTensorConverter converter;
 
     _model->setTrain();
@@ -39,26 +51,26 @@ EpochMetrics TorchModelTrainer::trainOneEpoch(IDatasetRepository &trainData)
     int64_t pixelCount = 0;
 
     trainData.reset();
-    while (trainData.hasNext())
+    const uint64_t batchesPerEpoch = trainData.batchCount();
+
+    for (uint64_t b = 0; trainData.hasNext(); ++b)
     {
+        if (updatePerBatch)
+        {
+            // 各バッチを学習する前に、そのバッチで使う学習率を設定する。
+            // step はエポック番号から計算するので、途中から再開しても中断しなかった場合と同じ値になる。
+            const uint64_t step = static_cast<uint64_t>(nowEpoch) * batchesPerEpoch + b;
+            _optimizer->updateLearningRate(_lrScheduler->learningRateAt(step));
+        }
         TrainingBatch batch = trainData.getNextBatch();
 
         torch::Tensor input = converter.convert(batch.input);         // [N,C,H,W] float
         torch::Tensor target = converter.convertTarget(batch.target); // [N,H,W]   int64
 
         torch::Tensor loss = _model->trainStep(input, target, *_loss, *_optimizer);
-        if (LearningRateSchedulerType::OneBatch == _lrscheduler->getType())
-        {
-            _lrscheduler->learningRateAt(); // 学習率更新
-        }
 
         lossSum += loss.item<double>() * target.numel();
         pixelCount += target.numel();
-    }
-
-    if (LearningRateSchedulerType::OneEpoch == _lrscheduler->getType())
-    {
-        _lrscheduler->learningRateAt(); // 学習率更新
     }
 
     EpochMetrics metrics;

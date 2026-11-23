@@ -42,11 +42,13 @@
 #include "training/adapters/interfaces/IModel.hpp"
 #include "training/adapters/interfaces/IOptimizer.hpp"
 #include "training/adapters/interfaces/ISeed.hpp"
+#include "training/adapters/interfaces/ILearningRateScheduler.hpp"
 
 // adapters/application(具象クラス)
 #include "training/adapters/impl/TorchModelTrainer.hpp"
 #include "training/adapters/impl/timer/BufferTimeRecorder.hpp"
 #include "training/adapters/impl/timer/NullTimeRecorder.hpp"
+#include "training/adapters/impl/lr_scheduler/LRSchedulerFactory.hpp"
 #include "training/application/impl/TrainModelUsecase.hpp"
 #include "training/application/impl/TrainingDatasets.hpp"
 #include "training/application/impl/TrainingResumeState.hpp"
@@ -260,12 +262,7 @@ TrainingStatus runTrainingJob(const TrainingRuntimeConfig &runtime,
     // 双方でこの値のピクセルを無視する。評価器と DatasetRepositoryFactory も同じ SegmentationSpec から読む。
     auto loss = lossFactory->create(command.loss, numClasses, segmentationSpec->ignoreIndex);
 
-    auto trainer = std::make_shared<TorchModelTrainer>(model, loss, optimizer);
-    auto evaluator = std::make_shared<TorchModelEvaluator>(*model, *loss, numClasses, imageSpec->taskSpecs);
-    auto checkpointStore = std::make_shared<TorchCheckpointStore>(model, optimizer, runtime.checkpointOutputDirPath, command.modelId, graph);
-
-    TrainModelUsecase usecase(param, command.saveLastEvery, trainer, evaluator, checkpointStore, progressObserver);
-
+    // Dataset は学習率スケジューラーより先に作る(スケジューラーの総ステップ数に train の 1 エポックのバッチ数が要るため)。
     auto decoder = std::make_shared<OpenCvImageDecoder>();
     auto timedDecoder = std::make_shared<TimedImageDecoder>(decoder, timeRecorder, "image.decode");
 
@@ -292,6 +289,18 @@ TrainingStatus runTrainingJob(const TrainingRuntimeConfig &runtime,
     auto validationProduce = std::make_shared<TimedDatasetRepository>(validationInner, timeRecorder, "val.produce");
     auto validationPrefetch = std::make_shared<PreFetchDatasetRepository>(validationProduce);
     auto validationDataset = std::make_shared<TimedDatasetRepository>(validationPrefetch, timeRecorder, "val.wait");
+
+    // 学習率スケジューラー。未指定なら None(nullptr が返り、学習率は Optimizer の設定値のまま)。
+    // config はエポック単位で、ステップ単位への換算は Factory が train のバッチ数を使って行う。
+    auto lrScheduler = createLRScheduler(command.lrScheduler.value_or(LearningRateSchedulerConfig{}),
+                                         command.epochSize,
+                                         trainDataset->batchCount());
+
+    auto trainer = std::make_shared<TorchModelTrainer>(model, loss, optimizer, lrScheduler);
+    auto evaluator = std::make_shared<TorchModelEvaluator>(*model, *loss, numClasses, imageSpec->taskSpecs);
+    auto checkpointStore = std::make_shared<TorchCheckpointStore>(model, optimizer, runtime.checkpointOutputDirPath, command.modelId, graph);
+
+    TrainModelUsecase usecase(param, command.saveLastEvery, trainer, evaluator, checkpointStore, progressObserver);
 
     TrainingDatasets datasets;
     datasets.trainDataset = trainDataset;

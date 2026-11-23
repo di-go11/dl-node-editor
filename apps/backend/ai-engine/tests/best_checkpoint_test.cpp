@@ -70,13 +70,14 @@ public:
     void reset() override {}
     bool hasNext() const override { return false; }
     TrainingBatch getNextBatch() override { return {}; }
+    std::size_t batchCount() const override { return 0; }
 };
 
 // train は毎エポック固定の loss を返すだけ。
 class FakeTrainer : public IModelTrainer
 {
 public:
-    EpochMetrics trainOneEpoch(IDatasetRepository &) override
+    EpochMetrics trainOneEpoch(IDatasetRepository &, unsigned int) override
     {
         EpochMetrics m;
         m.loss = 1.0;
