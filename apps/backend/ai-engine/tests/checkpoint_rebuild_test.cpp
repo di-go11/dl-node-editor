@@ -140,9 +140,9 @@ int main()
     const int numClasses = 3;
     const ModelGraph graph = makeGraph(numClasses);
 
-    AdamOptimizerConfig adamConfig;
-    adamConfig.learningRate = 0.05;
-    const OptimizerConfig optimizerConfig = adamConfig;
+    OptimizerConfig optimizerConfig;
+    optimizerConfig.learningRate = 0.05;
+    optimizerConfig.kind = AdamOptimizerConfig{};
 
     at::Tensor input = torch::randn({1, 3, 4, 4});
     at::Tensor target = torch::randint(0, numClasses, {1, 4, 4},
@@ -232,9 +232,9 @@ int main()
     // .pt は Adam で保存されている。SGD として読もうとすると、libtorch に
     // 状態を渡す前に optimizer_type の照合で弾かれる。
     {
-        SGDOptimizerConfig sgd;
-        sgd.learningRate = 0.01;
-        const OptimizerConfig sgdConfig = sgd;
+        OptimizerConfig sgdConfig;
+        sgdConfig.learningRate = 0.01;
+        sgdConfig.kind = SGDOptimizerConfig{};
 
         bool threw = false;
         try
@@ -250,9 +250,9 @@ int main()
 
     // ---- 正常系: 同じ種別なら別インスタンスの config でも読める ----
     {
-        AdamOptimizerConfig adam;
-        adam.learningRate = 0.001; // LR が違っても種別が同じなら読める
-        const OptimizerConfig sameKind = adam;
+        OptimizerConfig sameKind;
+        sameKind.learningRate = 0.001; // LR が違っても種別が同じなら読める
+        sameKind.kind = AdamOptimizerConfig{};
 
         RestoredCheckpoint again = loader.load(ptPath.string(), sameKind, kTestDevice);
         check(allClose(again.parameters, savedParams),

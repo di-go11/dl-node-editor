@@ -177,14 +177,14 @@ namespace
         }
     }
 
-    OptimizerConfig buildOptimizerConfig(const OptimizerFields &fields)
+    // 種別ごとの固有フィールドだけを組み立てる(学習率は共通なので buildOptimizerConfig 側で扱う)。
+    OptimizerKind buildOptimizerKind(const OptimizerFields &fields)
     {
         switch (fields.type)
         {
         case OptimizerType::Adam:
         {
             AdamOptimizerConfig c;
-            applyIfSet(c.learningRate, fields.learningRate);
             applyIfSet(c.weightDecay, fields.weightDecay);
             applyIfSet(c.beta1, fields.beta1);
             applyIfSet(c.beta2, fields.beta2);
@@ -194,7 +194,6 @@ namespace
         case OptimizerType::AdamW:
         {
             AdamWOptimizerConfig c;
-            applyIfSet(c.learningRate, fields.learningRate);
             applyIfSet(c.weightDecay, fields.weightDecay);
             applyIfSet(c.beta1, fields.beta1);
             applyIfSet(c.beta2, fields.beta2);
@@ -203,7 +202,6 @@ namespace
         case OptimizerType::SGD:
         {
             SGDOptimizerConfig c;
-            applyIfSet(c.learningRate, fields.learningRate);
             applyIfSet(c.weightDecay, fields.weightDecay);
             applyIfSet(c.momentum, fields.momentum);
             if (fields.nesterov.has_value())
@@ -214,7 +212,15 @@ namespace
         }
         }
 
-        throw std::runtime_error("buildOptimizerConfig: 未知の OptimizerType");
+        throw std::runtime_error("buildOptimizerKind: 未知の OptimizerType");
+    }
+
+    OptimizerConfig buildOptimizerConfig(const OptimizerFields &fields)
+    {
+        OptimizerConfig config;
+        applyIfSet(config.learningRate, fields.learningRate);
+        config.kind = buildOptimizerKind(fields);
+        return config;
     }
 
     struct LossConfigFields

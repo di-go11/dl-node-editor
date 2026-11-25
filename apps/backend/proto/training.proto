@@ -13,17 +13,42 @@ service TrainingService {
 
 // ---optimizer---
 
-message AdamConfig  { double learning_rate = 1; double weight_decay = 2; double beta1 = 3; double beta2 = 4; double eps = 5; }
-message AdamWConfig { double learning_rate = 1; double weight_decay = 2; double beta1 = 3; double beta2 = 4; }
-message SGDConfig   { double learning_rate = 1; double weight_decay = 2; double momentum = 3; bool nesterov = 4; }
+message AdamConfig  { reserved 1; double weight_decay = 2; double beta1 = 3; double beta2 = 4; double eps = 5; }
+message AdamWConfig { reserved 1; double weight_decay = 2; double beta1 = 3; double beta2 = 4; }
+message SGDConfig   { reserved 1; double weight_decay = 2; double momentum = 3; bool nesterov = 4; }
 
 message OptimizerConfig {
+    double learning_rate = 10;
     oneof config {
         AdamConfig adam = 1;
         AdamWConfig adam_w = 2;
         SGDConfig sgd = 3;
     }
 }
+
+// --lrScheduler--
+
+message PolySchedulerConfig   {  double power = 1; }
+message CosineSchedulerConfig {  double min_lr = 1; }
+message StepSchedulerConfig   {  uint32 step_size = 1; double gamma = 2; } // step_size はエポック数
+message NoneSchedulerConfig   {}
+
+enum LearningRateUpdateInterval {
+    LEARNING_RATE_UPDATE_INTERVAL_PER_BATCH = 0;
+    LEARNING_RATE_UPDATE_INTERVAL_PER_EPOCH = 1;
+}
+
+message LearningRateSchedulerConfig {
+    oneof config {
+        NoneSchedulerConfig   none   = 1;
+        PolySchedulerConfig   poly   = 2;
+        CosineSchedulerConfig cosine = 3;
+        StepSchedulerConfig   step   = 4;
+    }
+    LearningRateUpdateInterval update_interval = 5;
+    uint32 warmup_epochs = 6; // 0 なら warmup しない
+}
+
 
 // ---loss---
 
@@ -112,6 +137,7 @@ message StartTrainingRequest {
     Seed seed = 12; // 未設定(has_seed = false)なら乱数を固定しない
     string model_id = 13; // モデル保存用のモデルid
     bool resume = 14; // 再開するかしないか
+    LearningRateSchedulerConfig lr_scheduler = 15;
 }
 
 message StartTrainingResponse {

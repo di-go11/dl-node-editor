@@ -11,6 +11,7 @@
 #include <variant>
 
 std::shared_ptr<ILearningRateScheduler> createLRScheduler(const LearningRateSchedulerConfig &config,
+                                                          double baseLR,
                                                           unsigned int totalEpochs,
                                                           uint64_t batchesPerEpoch)
 {
@@ -52,11 +53,11 @@ std::shared_ptr<ILearningRateScheduler> createLRScheduler(const LearningRateSche
             },
             [&](const PolyLearningRateSchedulerConfig &polyConfig) -> std::shared_ptr<ILearningRateScheduler>
             {
-                return std::make_shared<PolyLR>(baseTotalSteps, polyConfig.initialLR, polyConfig.power, interval);
+                return std::make_shared<PolyLR>(baseTotalSteps, baseLR, polyConfig.power, interval);
             },
             [&](const CosineLearningRateSchedulerConfig &cosineConfig) -> std::shared_ptr<ILearningRateScheduler>
             {
-                return std::make_shared<CosineLR>(baseTotalSteps, cosineConfig.initialLR, cosineConfig.minLR, interval);
+                return std::make_shared<CosineLR>(baseTotalSteps, baseLR, cosineConfig.minLR, interval);
             },
             [&](const StepLearningRateSchedulerConfig &stepConfig) -> std::shared_ptr<ILearningRateScheduler>
             {
@@ -65,7 +66,7 @@ std::shared_ptr<ILearningRateScheduler> createLRScheduler(const LearningRateSche
                     throw std::invalid_argument("lr_scheduler: stepSize は 1 以上にしてください");
                 }
                 const uint64_t stepSizeInSteps = static_cast<uint64_t>(stepConfig.stepSize) * stepsPerEpoch;
-                return std::make_shared<StepLR>(stepSizeInSteps, stepConfig.initialLR, stepConfig.gamma, interval);
+                return std::make_shared<StepLR>(stepSizeInSteps, baseLR, stepConfig.gamma, interval);
             }},
         config.scheduler);
 

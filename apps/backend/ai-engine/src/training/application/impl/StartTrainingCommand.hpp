@@ -37,5 +37,5 @@ struct StartTrainingCommand
     std::optional<std::uint64_t> seed;
 
     // lrScheduler: 学習率スケジューラ。
-    std::optional<LearningRateSchedulerConfig> lrScheduler;
+    LearningRateSchedulerConfig lrScheduler;
 };

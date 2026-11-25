@@ -283,9 +283,9 @@ int main()
     std::shared_ptr<IModel> model = modelFactory->create(ValidatedModelGraph::create(graph), kTestDevice);
     std::vector<at::Tensor> params = model->parameters();
 
-    AdamOptimizerConfig adam;
-    adam.learningRate = 0.01;
-    const OptimizerConfig optimizerConfig = adam;
+    OptimizerConfig optimizerConfig;
+    optimizerConfig.learningRate = 0.01;
+    optimizerConfig.kind = AdamOptimizerConfig{};
     std::shared_ptr<IOptimizer> optimizer = optimizerFactory->create(params, optimizerConfig);
 
     auto loss = std::make_shared<CrossEntropy>();

@@ -69,8 +69,8 @@ namespace
         connect(addConvNode(r, "conv1"), "x", "", "");
         addOutput(r, "conv1", "y");
 
+        r.mutable_optimizer()->set_learning_rate(0.005);
         auto *adam = r.mutable_optimizer()->mutable_adam();
-        adam->set_learning_rate(0.005);
         adam->set_beta1(0.9);
         adam->set_beta2(0.999);
         adam->set_eps(1e-8);
@@ -165,8 +165,8 @@ int main()
             check(g.outputs.size() == 1 && g.outputs[0].nodeId == "conv1" && g.outputs[0].port == "y",
                   "変換: model_graph の outputs");
         }
-        check(std::holds_alternative<AdamOptimizerConfig>(c.optimizer) &&
-                  std::get<AdamOptimizerConfig>(c.optimizer).learningRate == 0.005,
+        check(std::holds_alternative<AdamOptimizerConfig>(c.optimizer.kind) &&
+                  c.optimizer.learningRate == 0.005,
               "変換: optimizer(Adam)");
         check(std::holds_alternative<CrossEntropyConfig>(c.loss), "変換: loss(CrossEntropy)");
         check(c.epochSize == 3 && c.batchSize == 2 && c.saveLastEvery == 2, "変換: epoch / batch / save_last_every");
@@ -520,7 +520,7 @@ int main()
     checkRejected([](auto &r)
                   { r.clear_optimizer(); }, "optimizer が未指定");
     checkRejected([](auto &r)
-                  { r.mutable_optimizer()->mutable_adam()->set_learning_rate(0.0); }, "learning_rate = 0");
+                  { r.mutable_optimizer()->set_learning_rate(0.0); }, "optimizer.learning_rate = 0");
     checkRejected([](auto &r)
                   { r.mutable_optimizer()->mutable_adam()->set_eps(0.0); }, "adam.eps = 0");
     checkRejected([](auto &r)

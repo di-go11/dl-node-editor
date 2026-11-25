@@ -94,9 +94,9 @@ std::vector<double> runTraining(const ComputeDevice &device,
     std::shared_ptr<IModel> model = modelFactory.create(ValidatedModelGraph::create(graph), device);
 
     std::vector<at::Tensor> params = model->parameters();
-    AdamOptimizerConfig adam;
-    adam.learningRate = 0.01;
-    const OptimizerConfig optimizerConfig = adam;
+    OptimizerConfig optimizerConfig;
+    optimizerConfig.learningRate = 0.01;
+    optimizerConfig.kind = AdamOptimizerConfig{};
     std::shared_ptr<IOptimizer> optimizer = optimizerFactory.create(params, optimizerConfig);
 
     CrossEntropy loss;

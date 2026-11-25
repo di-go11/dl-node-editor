@@ -301,51 +301,58 @@ namespace
         return ValidatedModelGraph::create(graph);
     }
 
-    // ---- optimizer / loss ----
+    // ---- optimizer / lr_scheduler /loss ----
 
     OptimizerConfig toOptimizer(const training::v1::OptimizerConfig &optimizer)
     {
+
+        OptimizerConfig result;
         switch (optimizer.config_case())
         {
         case training::v1::OptimizerConfig::kAdam:
         {
             const auto &p = optimizer.adam();
             AdamOptimizerConfig c;
-            c.learningRate = p.learning_rate();
             c.weightDecay = p.weight_decay();
             c.beta1 = p.beta1();
             c.beta2 = p.beta2();
             c.eps = p.eps();
-            requireGreaterThanZero(c.learningRate, "optimizer.adam.learning_rate");
             requireGreaterThanZero(c.eps, "optimizer.adam.eps");
-            return c;
+            result.kind = c;
         }
         case training::v1::OptimizerConfig::kAdamW:
         {
             const auto &p = optimizer.adam_w();
             AdamWOptimizerConfig c;
-            c.learningRate = p.learning_rate();
             c.weightDecay = p.weight_decay();
             c.beta1 = p.beta1();
             c.beta2 = p.beta2();
-            requireGreaterThanZero(c.learningRate, "optimizer.adam_w.learning_rate");
-            return c;
+            result.kind = c;
         }
         case training::v1::OptimizerConfig::kSgd:
         {
             const auto &p = optimizer.sgd();
             SGDOptimizerConfig c;
-            c.learningRate = p.learning_rate();
             c.weightDecay = p.weight_decay();
             c.momentum = p.momentum();
             c.nesterov = p.nesterov();
-            requireGreaterThanZero(c.learningRate, "optimizer.sgd.learning_rate");
-            return c;
+            result.kind = c;
         }
         case training::v1::OptimizerConfig::CONFIG_NOT_SET:
             break;
         }
         invalid("optimizer の種類が指定されていません");
+        result.learningRate = optimizer.learning_rate();
+        requireGreaterThanZero(result.learningRate, "optimizer.learning_rate");
+        return result;
+    }
+
+    LearningRateSchedulerConfig toLrScheduler(const training::v1::LearningRateSchedulerConfig &scheduler)
+    {
+        LearningRateSchedulerConfig result;
+        switch (scheduler.config_case()){
+            case training::v1::LearningRateSchedulerConfig::
+        }
     }
 
     LossConfig toLoss(const training::v1::LossConfig &loss)

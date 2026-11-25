@@ -10,25 +10,26 @@ enum class LearningRateUpdateInterval
     PerEpoch,
 };
 
+// 基準となる学習率(warmup 後のピーク)は各スケジューラーには持たせず、
+// OptimizerConfig::learningRate を Factory に渡して使う(学習率の指定箇所を 1 か所にするため)。
+// ここに置くのは「学習率をどう変化させるか」を決めるパラメータだけ。
+
 struct NoneLearningRateSchedulerConfig
 {
 };
 
 struct PolyLearningRateSchedulerConfig
 {
-    double initialLR = 0.0;
     double power = 0.9;
 };
 
 struct CosineLearningRateSchedulerConfig
 {
-    double initialLR = 0.0;
     double minLR = 0.0;
 };
 
 struct StepLearningRateSchedulerConfig
 {
-    double initialLR = 0.0;
     unsigned stepSize = 30; // 何エポックごとに下げるか(PerBatch のときは Factory がバッチ数に換算する)
     double gamma = 0.1;
 };
