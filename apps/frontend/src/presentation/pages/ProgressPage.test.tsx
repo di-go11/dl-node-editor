@@ -29,6 +29,7 @@ const progress = (patch: Partial<TrainingProgress> = {}): TrainingProgress => ({
   epochElapsedMs: 1500,
   totalElapsedMs: 61000,
   errorMessage: null,
+  learningRate: null,
   ...patch,
 })
 

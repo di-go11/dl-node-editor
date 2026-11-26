@@ -17,6 +17,7 @@ import type { Issue } from '../../../entity/validation/issue'
 import { ParamField } from '../param-form/ParamField'
 
 import { DatasetField } from './DatasetField'
+import { LrSchedulerField } from './LrSchedulerField'
 import styles from './TrainingForm.module.css'
 import type { UseDatasets } from '../dataset/use-datasets'
 import { VariantField } from './VariantField'
@@ -221,6 +222,22 @@ export function TrainingForm({
         variant={settings.optimizer}
         onChange={(optimizer) => onChange((s) => ({ ...s, optimizer }))}
         {...(resuming ? { kindLockedReason: OPTIMIZER_LOCKED_REASON } : {})}
+      />
+
+      <LrSchedulerField
+        value={settings.lrScheduler}
+        onChange={(update) => onChange((s) => ({ ...s, lrScheduler: update(s.lrScheduler) }))}
+        // 数値の範囲は ParamField が自分で出すので、ほかの項目との組み合わせと、サーバー・再開の問題だけを出す
+        messages={issues
+          .filter(
+            (issue) =>
+              (issue.field === 'lr_scheduler' || issue.field?.startsWith('lr_scheduler.') === true) &&
+              (issue.code === 'training/lr-scheduler-conflict' ||
+                issue.code === 'training/lr-schedule-discontinuous' ||
+                issue.code === 'training/server-rejected'),
+          )
+          .map((issue) => issue.message)}
+        readOnly={resuming}
       />
 
       <VariantField<LossKind>

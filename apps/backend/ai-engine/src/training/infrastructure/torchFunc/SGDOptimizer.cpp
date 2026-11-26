@@ -24,6 +24,14 @@ void SGDOptimizer::updateParmeters()
     _optim->step();
 }
 
+void SGDOptimizer::updateLearningRate(double learningRate)
+{
+    for (auto &group : _optim->param_groups())
+    {
+        group.options().set_lr(learningRate);
+    }
+}
+
 void SGDOptimizer::writeTo(ICheckpointWriter &archive) const
 {
     _optim->save(toTorchArchive(archive));
@@ -45,4 +53,9 @@ void SGDOptimizer::readFrom(ICheckpointReader &archive)
             if (s.momentum_buffer().defined())
                 s.momentum_buffer(s.momentum_buffer().to(dev));
         });
+}
+double SGDOptimizer::learningRate() const
+{
+    // updateLearningRate は全 param group に同じ値を入れるので、先頭の group を読めば足りる
+    return _optim->param_groups().at(0).options().get_lr();
 }

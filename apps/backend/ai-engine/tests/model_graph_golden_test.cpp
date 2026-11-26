@@ -265,9 +265,9 @@ int main()
 
     // 3. 学習
     TorchOptimizerFactory optimizerFactory;
-    AdamOptimizerConfig adam;
-    adam.learningRate = 0.01;
-    const OptimizerConfig optimizerConfig = adam;
+    OptimizerConfig optimizerConfig;
+    optimizerConfig.learningRate = 0.01;
+    optimizerConfig.kind = AdamOptimizerConfig{};
     std::shared_ptr<IOptimizer> optimizer = optimizerFactory.create(params, optimizerConfig);
     CrossEntropy loss;
 

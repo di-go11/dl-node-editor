@@ -7,6 +7,7 @@ import { LOSS_TYPES } from '../../entity/training/loss'
 import { defaultTrainingSettings } from '../../entity/training/training-settings'
 import { defaultVariant } from '../../entity/training/variant'
 import type { ValidationResult } from '../../entity/validation/issue'
+import { issueError } from '../../entity/validation/issue'
 import { buildGraph, validSegnetGraph } from '../../entity/validation/test-fixtures'
 import type { ApiResult } from '../ports/api-result'
 import { apiError, apiOk } from '../ports/api-result'
@@ -88,6 +89,33 @@ describe('checkIntegrityWithServer', () => {
       { severity: 'error', code: 'training/model-name-used', field: 'model_name' },
     ])
   })
+
+  it('サーバーが見つけた設定・モデル構造の誤りは、位置付きの error としてそのまま並べる', async () => {
+    // 出力チャンネル数とクラス数の比較のように、手元のチェックでは分からない誤り
+    const nodeIdOfHead = validSegnetGraph().nodes[0]?.id
+    const serverIssue = issueError(
+      'training/server-rejected',
+      "ポート 'y': モデルの出力のチャンネル数(3)が、クラス数(21)と一致しません",
+      nodeIdOfHead === undefined ? {} : { nodeId: nodeIdOfHead, port: 'y' },
+    )
+    const { deps } = fakeValidate(apiOk({ kind: 'invalid-config', issues: [serverIssue] }))
+    const result = await checkIntegrityWithServer(deps, validInput())
+    expect(result.ok).toBe(false)
+    expect(result.issues).toEqual([serverIssue])
+  })
+
+  it.each([
+    ['dataset-not-found', 'training/dataset-not-found'],
+    ['dataset-unreadable', 'training/dataset-unreadable'],
+  ] as const)(
+    'データセットの問題(%s)は、データセットの欄(dataset_id)を指す error にする',
+    async (kind, code) => {
+      const { deps } = fakeValidate(apiOk({ kind }))
+      const result = await checkIntegrityWithServer(deps, validInput())
+      expect(result.ok).toBe(false)
+      expect(result.issues).toMatchObject([{ severity: 'error', code, field: 'dataset_id' }])
+    },
+  )
 
   it('サーバーで確かめられなければ error にする(確かめていない内容では実行させない)', async () => {
     const { deps } = fakeValidate(

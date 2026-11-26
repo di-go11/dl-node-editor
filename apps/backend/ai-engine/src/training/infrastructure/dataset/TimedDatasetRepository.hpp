@@ -16,6 +16,8 @@ public:
     void reset() override;
     bool hasNext() const override;
     TrainingBatch getNextBatch() override;
+    // 計算するだけの軽い処理なので計測はせず、中のリポジトリの値をそのまま返す。
+    std::size_t batchCount() const override { return _datasetRepository->batchCount(); }
 
 private:
     // 区間の名前は、呼び出しのたびに文字列を組み立てないよう、コンストラクタで1回だけ作る。

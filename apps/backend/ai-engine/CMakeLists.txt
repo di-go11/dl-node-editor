@@ -201,6 +201,19 @@ target_link_options(dataset_label_map_test PRIVATE "-Wl,--allow-shlib-undefined"
 set_property(TARGET image_pipeline_test PROPERTY CXX_STANDARD 17)
 set_property(TARGET dataset_label_map_test PROPERTY CXX_STANDARD 17)
 
+# 学習開始前のグラフの検証(gRPC の ValidateModelGraph が呼ぶ checkModelGraph)。torch は使わないが、
+# クラス数を求める loadDatasetLabelMap が ai_engine_lib にあるので、dataset_label_map_test と同じくリンクする
+add_executable(model_graph_check_test tests/model_graph_check_test.cpp)
+target_include_directories(model_graph_check_test PRIVATE
+	${CMAKE_CURRENT_SOURCE_DIR}/src
+	${CMAKE_CURRENT_SOURCE_DIR}
+	${TORCH_INCLUDE_DIRS}
+	${OpenCV_INCLUDE_DIRS}
+)
+target_link_libraries(model_graph_check_test PRIVATE ai_engine_lib "${TORCH_LIBRARIES}" ${OpenCV_LIBS})
+target_link_options(model_graph_check_test PRIVATE "-Wl,--allow-shlib-undefined")
+set_property(TARGET model_graph_check_test PROPERTY CXX_STANDARD 17)
+
 # segmentation の train 用データ拡張(拡大縮小・切り抜き / 余白・左右反転)
 add_executable(segmentation_augmenter_test tests/segmentation_augmenter_test.cpp)
 target_include_directories(segmentation_augmenter_test PRIVATE
@@ -507,6 +520,7 @@ add_test(NAME torch_concat_test COMMAND torch_concat_test)
 add_test(NAME optimizer_resume_options_test COMMAND optimizer_resume_options_test)
 add_test(NAME thread_executor_test COMMAND thread_executor_test)
 add_test(NAME dataset_label_map_test COMMAND dataset_label_map_test)
+add_test(NAME model_graph_check_test COMMAND model_graph_check_test)
 add_test(NAME segmentation_augmenter_test COMMAND segmentation_augmenter_test)
 add_test(NAME segmentation_dataset_repository_test COMMAND segmentation_dataset_repository_test)
 
@@ -534,6 +548,7 @@ set_tests_properties(torch_concat_test PROPERTIES LABELS "cpu")
 set_tests_properties(optimizer_resume_options_test PROPERTIES LABELS "cpu")
 set_tests_properties(thread_executor_test PROPERTIES LABELS "cpu")
 set_tests_properties(dataset_label_map_test PROPERTIES LABELS "cpu")
+set_tests_properties(model_graph_check_test PROPERTIES LABELS "cpu")
 set_tests_properties(segmentation_augmenter_test PROPERTIES LABELS "cpu")
 set_tests_properties(segmentation_dataset_repository_test PROPERTIES LABELS "cpu")
 

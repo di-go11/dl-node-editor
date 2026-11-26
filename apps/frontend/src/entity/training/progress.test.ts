@@ -5,7 +5,9 @@ import type { TrainingProgress } from './progress'
 import {
   TRAINING_STATUSES,
   TRAINING_STATUS_LABELS,
+  appendLearningRatePoint,
   appendLossPoint,
+  hasLearningRate,
   isTerminalStatus,
 } from './progress'
 
@@ -40,6 +42,7 @@ describe('appendLossPoint', () => {
     epochElapsedMs: 0,
     totalElapsedMs: 0,
     errorMessage: null,
+    learningRate: null,
     ...patch,
   })
 
@@ -67,5 +70,43 @@ describe('appendLossPoint', () => {
 
   it('loss の null(NaN や inf)も点として残す', () => {
     expect(appendLossPoint([], progress({ trainLoss: null }))[0]?.trainLoss).toBeNull()
+  })
+})
+
+describe('appendLearningRatePoint', () => {
+  const progress = (patch: Partial<TrainingProgress>): TrainingProgress => ({
+    epoch: 1,
+    trainLoss: 0.5,
+    valLoss: 0.6,
+    status: 'running',
+    metrics: null,
+    epochElapsedMs: 0,
+    totalElapsedMs: 0,
+    errorMessage: null,
+    learningRate: 1e-3,
+    ...patch,
+  })
+
+  it('エポックの学習率を加え、epoch 0 は描かず、同じエポックは置き換える', () => {
+    expect(appendLearningRatePoint([], progress({ epoch: 0 }))).toEqual([])
+    const points = appendLearningRatePoint([], progress({ epoch: 1 }))
+    expect(appendLearningRatePoint(points, progress({ epoch: 1, learningRate: 5e-4 }))).toEqual([
+      { epoch: 1, learningRate: 5e-4 },
+    ])
+  })
+
+  it('エポックの順に保つ', () => {
+    const points = appendLearningRatePoint(
+      appendLearningRatePoint([], progress({ epoch: 3 })),
+      progress({ epoch: 2 }),
+    )
+    expect(points.map((point) => point.epoch)).toEqual([2, 3])
+  })
+
+  it('学習率が分からない(null)エポックも点として残し、全部 null ならグラフを出さない', () => {
+    const unknown = appendLearningRatePoint([], progress({ learningRate: null }))
+    expect(unknown).toEqual([{ epoch: 1, learningRate: null }])
+    expect(hasLearningRate(unknown)).toBe(false)
+    expect(hasLearningRate(appendLearningRatePoint(unknown, progress({ epoch: 2 })))).toBe(true)
   })
 })

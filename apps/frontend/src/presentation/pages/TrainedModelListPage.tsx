@@ -114,6 +114,9 @@ function ModelTable({ models }: { readonly models: readonly TrainedModelSummary[
                   再開できません
                 </span>
               )}
+              {' / '}
+              {/* 学習の記録(グラフと表)は、再開できない古いモデルでも見られる */}
+              <Link to={`/models/${encodeURIComponent(model.modelId)}/history`}>学習の記録</Link>
             </td>
           </tr>
         ))}

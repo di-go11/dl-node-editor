@@ -88,9 +88,22 @@ paths:
         "422":
           description: |
             リクエストの形が合わない(dataset_id が空を含む)、dataset_id のデータセットが登録されていない、
-            または C++ が設定を拒否した
+            データセットの色表(labelmap.txt)が読めない、または設定に誤りがある。
+            設定の誤りのときは本文が InvalidConfig で、値の違反とモデルのグラフの違反(構造・形。学習エンジンが確かめる)を
+            すべて返す。このときモデルは登録されないので、直せば同じ model_name で送り直せる。
+            確認の後にデータセットが差し替えられ、学習を始める時点で学習エンジンがグラフの問題を見つけた場合も同じ本文
+            (field は model_graph の違反 1 件。message に問題のあるノードと内容)。
+            それ以外は本文が ErrorCode で、原因を区別する(dataset_not_found / dataset_unreadable / invalid_request)。
+            JSON として読めない・フィールドが足りないときは、サーバーのフレームワークが text/plain の説明を返す
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/InvalidConfig"
+                  - $ref: "#/components/schemas/ErrorCode"
         "500":
-          description: DB の読み書きに失敗した
+          description: |
+            DB の読み書きに失敗した。または学習エンジンが設定を拒否した(サーバーの検証漏れで、クライアントの誤りではない)
         "502":
           $ref: "#/components/responses/UpstreamError"
 
@@ -100,8 +113,11 @@ paths:
       operationId: validateTraining
       summary: 学習開始前の整合性チェック
       description: |
-        学習開始と同じリクエストを受け取り、DB の状態と矛盾しないかを確認する(C++ には送らない)。
-        新規学習のチェック: 同じ model_name のモデルがすでにあれば 409 を返す。
+        学習開始と同じリクエストを受け取り、学習を始めずに /trainings と同じ確認を行う。学習中でも使える。
+        1. dataset_id のデータセットが登録されているか(なければ 422)
+        2. 設定の値(サーバー)と、モデルのグラフの構造・形(学習エンジン。クラス数との比較を含む)。
+           誤りがあれば 422 と違反の一覧を返す(/trainings と同じ規則・同じ本文)
+        3. 同じ model_name のモデルがすでにないか(あれば 409)
       requestBody:
         required: true
         content:
@@ -114,9 +130,20 @@ paths:
         "409":
           description: model_name がすでに使用されている
         "422":
-          description: リクエストの形が合わない(dataset_id が空を含む)。データセットが登録されているかはここでは確かめない
+          description: |
+            リクエストの形が合わない(dataset_id が空を含む)、dataset_id のデータセットが登録されていない、
+            データセットの色表(labelmap.txt)が読めない、または設定に誤りがある。
+            本文は /trainings と同じ(設定の誤りは InvalidConfig、それ以外は ErrorCode)
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/InvalidConfig"
+                  - $ref: "#/components/schemas/ErrorCode"
         "500":
-          description: DB の読み取りに失敗した
+          description: DB の読み取りに失敗した。または学習エンジンが依頼を拒否した(サーバーの検証漏れ)
+        "502":
+          $ref: "#/components/responses/UpstreamError"
 
   /trainings/{job_id}:
     get:
@@ -258,6 +285,31 @@ paths:
         "500":
           description: DB の読み取りに失敗した
 
+  /models/{model_id}/history:
+    get:
+      tags: [models]
+      operationId: getModelHistory
+      summary: モデルの学習の記録を取得する
+      description: |
+        モデルの全 run(新規学習と再開)の、エポックごとの loss・学習率・メトリクスを返す。
+        フロントはこれから loss・学習率のグラフ(SVG で保存できる)とメトリクスの表(CSV で保存できる)を作る。
+        学習中のモデルでも、それまでに記録したエポックを返す。
+      parameters:
+        - $ref: "#/components/parameters/ModelId"
+      responses:
+        "200":
+          description: 取得できた
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelHistory"
+        "400":
+          $ref: "#/components/responses/InvalidModelId"
+        "404":
+          $ref: "#/components/responses/ModelNotFound"
+        "500":
+          description: DB の読み取りに失敗した
+
   /models/{model_id}/resume:
     post:
       tags: [models]
@@ -292,11 +344,24 @@ paths:
         "409":
           description: |
             再開できない。すでに学習が実行中、checkpoint がない、epoch が完了済みのエポック数以下、
-            モデル構造が保存されていない、C++ が設定を拒否した、のいずれか
+            モデル構造が保存されていない、のいずれか
         "422":
-          description: リクエストの形が合わない、または optimizer の type が前回と違う
+          description: |
+            リクエストの形が合わない、optimizer の type が前回と違う、設定の値に誤りがある、
+            保存したモデル構造がいまのデータセットでは学習できない(学習エンジンが確かめる。field は model_graph、
+            message に問題のあるノードと内容)、またはデータセットの色表(labelmap.txt)が読めない。
+            設定の値の誤りとモデル構造の問題は本文が InvalidConfig。前回の設定に送った値を上書きした結果を
+            検証するので、送っていない項目(model_graph など)の違反が入ることもある。
+            色表が読めないときは本文が ErrorCode(dataset_unreadable)。optimizer の type が前回と違うときは本文なし
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/InvalidConfig"
+                  - $ref: "#/components/schemas/ErrorCode"
         "500":
-          description: DB の読み書きに失敗した
+          description: |
+            DB の読み書きに失敗した。または学習エンジンが設定を拒否した(サーバーの検証漏れで、クライアントの誤りではない)
         "502":
           $ref: "#/components/responses/UpstreamError"
 
@@ -1065,6 +1130,97 @@ components:
           format: int64
           minimum: 0
           description: 乱数シード。0 も有効な値である。固定しない場合はキーごと省略する
+        lr_scheduler:
+          $ref: "#/components/schemas/LearningRateScheduler"
+
+    # ------------------------------------------------------------
+    # 学習率スケジューラ
+    # ------------------------------------------------------------
+
+    LearningRateScheduler:
+      description: |
+        学習率スケジューラ。基準の学習率(lr0)は optimizer の learning_rate で、ここには持たない。
+        学習開始のリクエストでは省略でき、省略すると none(学習率は optimizer の値のまま)。
+        保存済みの設定の応答(ModelTrainingConfig)では必ず返す。再開では変えられない(保存した設定で再開する)。
+        種類を type に入れ、パラメータを同じ階層に並べる(optimizer と同じ書き方)
+      oneOf:
+        - $ref: "#/components/schemas/NoneScheduler"
+        - $ref: "#/components/schemas/PolyScheduler"
+        - $ref: "#/components/schemas/CosineScheduler"
+        - $ref: "#/components/schemas/StepScheduler"
+
+    LearningRateSchedulerCommon:
+      type: object
+      required: [update_interval, warmup_epochs]
+      properties:
+        update_interval:
+          type: string
+          enum: [per_batch, per_epoch]
+          description: 学習率を変える単位(バッチごと / エポックごと)
+        warmup_epochs:
+          type: integer
+          format: int32
+          minimum: 0
+          description: 最初のこのエポック数で学習率を 0 付近から lr0 まで上げる。0 なら warmup しない。none のときは 0、それ以外は epoch より小さくする
+
+    NoneScheduler:
+      allOf:
+        - $ref: "#/components/schemas/LearningRateSchedulerCommon"
+        - type: object
+          required: [type]
+          properties:
+            type:
+              type: string
+              enum: [none]
+
+    PolyScheduler:
+      description: lr = lr0 × (1 − t / T)^power
+      allOf:
+        - $ref: "#/components/schemas/LearningRateSchedulerCommon"
+        - type: object
+          required: [type, power]
+          properties:
+            type:
+              type: string
+              enum: [poly]
+            power:
+              type: number
+              exclusiveMinimum: 0
+
+    CosineScheduler:
+      description: lr0 から min_lr まで余弦曲線で下げる
+      allOf:
+        - $ref: "#/components/schemas/LearningRateSchedulerCommon"
+        - type: object
+          required: [type, min_lr]
+          properties:
+            type:
+              type: string
+              enum: [cosine]
+            min_lr:
+              type: number
+              minimum: 0
+              description: optimizer の learning_rate 以下
+
+    StepScheduler:
+      description: step_size エポックごとに学習率を gamma 倍する
+      allOf:
+        - $ref: "#/components/schemas/LearningRateSchedulerCommon"
+        - type: object
+          required: [type, step_size, gamma]
+          properties:
+            type:
+              type: string
+              enum: [step]
+            step_size:
+              type: integer
+              format: int32
+              minimum: 1
+              description: エポック数
+            gamma:
+              type: number
+              exclusiveMinimum: 0
+              maximum: 1
 
     StartTrainingRequest:
       description: POST /trainings と POST /trainings/validate の本体
@@ -1144,6 +1300,85 @@ components:
               type: [string, "null"]
               description: 学習が終わった日時(UTC)。学習中、または終了を記録できていなければ null
 
+    ModelHistory:
+      type: object
+      description: GET /models/{model_id}/history の応答。モデルの全 run の、エポックごとの結果
+      required: [model_id, model_name, runs, epochs]
+      properties:
+        model_id:
+          type: string
+          minLength: 1
+        model_name:
+          type: string
+        runs:
+          type: array
+          description: 学習を始めた順(新規学習 1 件と、再開ごとに 1 件)
+          items:
+            $ref: "#/components/schemas/RunRecord"
+        epochs:
+          type: array
+          description: |
+            run の順、run の中はエポックの順。エポック番号は再開をまたいで続く。
+            checkpoint を間引いて保存していると(save_last_every > 1)、再開した run が前の run と同じエポック番号を
+            持つことがある。どちらも返す(後の run が新しい値)
+          items:
+            $ref: "#/components/schemas/EpochRecord"
+
+    RunRecord:
+      description: 1 回の学習(新規学習または再開)。status と reason は TrainingStatusResponse と同じ
+      allOf:
+        - $ref: "#/components/schemas/TrainingStatusResponse"
+        - type: object
+          required: [job_id, started_at, finished_at]
+          properties:
+            job_id:
+              type: string
+              minLength: 1
+            started_at:
+              type: string
+              description: 学習を始めた日時(UTC)
+            finished_at:
+              type: [string, "null"]
+              description: 学習が終わった日時(UTC)。学習中、または終了を記録できていなければ null
+
+    EpochRecord:
+      type: object
+      description: 1 エポックの結果
+      required:
+        [job_id, epoch, train_loss, val_loss, learning_rate, epoch_elapsed_ms, metrics]
+      properties:
+        job_id:
+          type: string
+          minLength: 1
+          description: このエポックを学習した run
+        epoch:
+          type: integer
+          format: int32
+          minimum: 1
+          description: 終了したエポック数(再開をまたいで続く)
+        train_loss:
+          type: [number, "null"]
+          format: double
+          description: NaN や inf、記録なしは null
+        val_loss:
+          type: [number, "null"]
+          format: double
+          description: NaN や inf、記録なしは null
+        learning_rate:
+          type: [number, "null"]
+          format: double
+          description: このエポックの最後のバッチで使った学習率。学習率を記録する前の学習では null
+        epoch_elapsed_ms:
+          type: integer
+          format: int64
+          minimum: 0
+        metrics:
+          description: 進捗(TrainingProcess)の metrics と同じ形。記録していないエポックは null
+          oneOf:
+            - $ref: "#/components/schemas/SegmentationMetrics"
+            - $ref: "#/components/schemas/ClassificationMetrics"
+            - type: "null"
+
     ModelSummariesResponse:
       type: object
       required: [models]
@@ -1161,7 +1396,7 @@ components:
       allOf:
         - $ref: "#/components/schemas/TrainingConfigBase"
         - type: object
-          required: [model_id]
+          required: [model_id, lr_scheduler]
           properties:
             model_id:
               type: string
@@ -1239,6 +1474,57 @@ components:
           items:
             type: string
           description: 足りないファイル・ディレクトリ(データセットのルートからの相対パス。ディレクトリは末尾に /)
+
+    ErrorCode:
+      type: object
+      description: |
+        違反の一覧のない 422 の本文。同じ状態コードで原因が違うものを区別する(作業 9 のエラーコードと同じ書き方)
+      required: [error]
+      properties:
+        error:
+          type: string
+          enum: [dataset_not_found, dataset_unreadable, invalid_request]
+          description: |
+            dataset_not_found … dataset_id のデータセットが登録されていない(削除された、など)
+            dataset_unreadable … データセットの色表(labelmap.txt)が読めず、クラス数が分からない
+            invalid_request … リクエストの中身が受け付けられない(空の dataset_id など)
+
+    InvalidConfig:
+      type: object
+      description: 学習設定の値に誤りがあったときの 422 の本文。違反は最初の 1 つで止めず、すべて入れる
+      required: [error, violations]
+      properties:
+        error:
+          type: string
+          enum: [invalid_config]
+        violations:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/ConfigViolation"
+
+    ConfigViolation:
+      type: object
+      required: [field, message]
+      properties:
+        field:
+          type: string
+          description: |
+            違反のある項目の位置。リクエストの JSON と同じ項目名をドットでつなぐ。配列は [添字] で示す。
+            モデルのグラフの違反(学習エンジンが確かめる構造・形)は、次のいずれか:
+            model_graph.nodes[i].inputs[j](入力の接続)/ model_graph.nodes[i](ノード。ポート単位の問題は
+            message の先頭に「ポート 'x': 」が付く)/ model_graph.outputs[k] / model_graph(グラフ全体。閉路など)
+          examples:
+            - optimizer.learning_rate
+            - lr_scheduler.warmup_epochs
+            - model_graph.nodes[3].spec.stride
+            - data_spec.image_task_spec.ignore_index
+            - model_graph.nodes[3].inputs[0]
+            - model_graph.nodes[7]
+            - model_graph
+        message:
+          type: string
+          description: 利用者に見せる説明(日本語)
 
     DatasetSummariesResponse:
       type: object
@@ -1360,3 +1646,10 @@ components:
           format: int64
           minimum: 0
           description: 累計の処理時間(ミリ秒)。再開すると 0 から数え直す
+        learning_rate:
+          type: [number, "null"]
+          format: double
+          description: |
+            このエポックの最後のバッチで使った学習率(学習エンジンが optimizer から読んだ値。スケジューラなしなら
+            optimizer の設定値)。まだ 1 エポックも終わっていない・記録がないときは null。
+            学習率を送らない古いサーバーでは、キーがないこともある

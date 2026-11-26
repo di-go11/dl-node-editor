@@ -58,8 +58,11 @@ export interface paths {
         put?: never;
         /**
          * 学習開始前の整合性チェック
-         * @description 学習開始と同じリクエストを受け取り、DB の状態と矛盾しないかを確認する(C++ には送らない)。
-         *     新規学習のチェック: 同じ model_name のモデルがすでにあれば 409 を返す。
+         * @description 学習開始と同じリクエストを受け取り、学習を始めずに /trainings と同じ確認を行う。学習中でも使える。
+         *     1. dataset_id のデータセットが登録されているか(なければ 422)
+         *     2. 設定の値(サーバー)と、モデルのグラフの構造・形(学習エンジン。クラス数との比較を含む)。
+         *        誤りがあれば 422 と違反の一覧を返す(/trainings と同じ規則・同じ本文)
+         *     3. 同じ model_name のモデルがすでにないか(あれば 409)
          */
         post: operations["validateTraining"];
         delete?: never;
@@ -186,6 +189,28 @@ export interface paths {
          *     /models/{model_id}/resume には、この応答のうち変えてよい項目(ResumeTrainingConfig)だけを送る。
          */
         get: operations["getModelConfig"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/models/{model_id}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * モデルの学習の記録を取得する
+         * @description モデルの全 run(新規学習と再開)の、エポックごとの loss・学習率・メトリクスを返す。
+         *     フロントはこれから loss・学習率のグラフ(SVG で保存できる)とメトリクスの表(CSV で保存できる)を作る。
+         *     学習中のモデルでも、それまでに記録したエポックを返す。
+         */
+        get: operations["getModelHistory"];
         put?: never;
         post?: never;
         delete?: never;
@@ -605,6 +630,54 @@ export interface components {
              * @description 乱数シード。0 も有効な値である。固定しない場合はキーごと省略する
              */
             seed?: number | null;
+            lr_scheduler?: components["schemas"]["LearningRateScheduler"];
+        };
+        /**
+         * @description 学習率スケジューラ。基準の学習率(lr0)は optimizer の learning_rate で、ここには持たない。
+         *     学習開始のリクエストでは省略でき、省略すると none(学習率は optimizer の値のまま)。
+         *     保存済みの設定の応答(ModelTrainingConfig)では必ず返す。再開では変えられない(保存した設定で再開する)。
+         *     種類を type に入れ、パラメータを同じ階層に並べる(optimizer と同じ書き方)
+         */
+        LearningRateScheduler: components["schemas"]["NoneScheduler"] | components["schemas"]["PolyScheduler"] | components["schemas"]["CosineScheduler"] | components["schemas"]["StepScheduler"];
+        LearningRateSchedulerCommon: {
+            /**
+             * @description 学習率を変える単位(バッチごと / エポックごと)
+             * @enum {string}
+             */
+            update_interval: "per_batch" | "per_epoch";
+            /**
+             * Format: int32
+             * @description 最初のこのエポック数で学習率を 0 付近から lr0 まで上げる。0 なら warmup しない。none のときは 0、それ以外は epoch より小さくする
+             */
+            warmup_epochs: number;
+        };
+        NoneScheduler: components["schemas"]["LearningRateSchedulerCommon"] & {
+            /** @enum {string} */
+            type: "none";
+        };
+        /** @description lr = lr0 × (1 − t / T)^power */
+        PolyScheduler: components["schemas"]["LearningRateSchedulerCommon"] & {
+            /** @enum {string} */
+            type: "poly";
+            power: number;
+        };
+        /** @description lr0 から min_lr まで余弦曲線で下げる */
+        CosineScheduler: components["schemas"]["LearningRateSchedulerCommon"] & {
+            /** @enum {string} */
+            type: "cosine";
+            /** @description optimizer の learning_rate 以下 */
+            min_lr: number;
+        };
+        /** @description step_size エポックごとに学習率を gamma 倍する */
+        StepScheduler: components["schemas"]["LearningRateSchedulerCommon"] & {
+            /** @enum {string} */
+            type: "step";
+            /**
+             * Format: int32
+             * @description エポック数
+             */
+            step_size: number;
+            gamma: number;
         };
         /** @description POST /trainings と POST /trainings/validate の本体 */
         StartTrainingRequest: components["schemas"]["TrainingConfigBase"] & {
@@ -643,6 +716,56 @@ export interface components {
             started_at: string;
             /** @description 学習が終わった日時(UTC)。学習中、または終了を記録できていなければ null */
             finished_at: string | null;
+        };
+        /** @description GET /models/{model_id}/history の応答。モデルの全 run の、エポックごとの結果 */
+        ModelHistory: {
+            model_id: string;
+            model_name: string;
+            /** @description 学習を始めた順(新規学習 1 件と、再開ごとに 1 件) */
+            runs: components["schemas"]["RunRecord"][];
+            /**
+             * @description run の順、run の中はエポックの順。エポック番号は再開をまたいで続く。
+             *     checkpoint を間引いて保存していると(save_last_every > 1)、再開した run が前の run と同じエポック番号を
+             *     持つことがある。どちらも返す(後の run が新しい値)
+             */
+            epochs: components["schemas"]["EpochRecord"][];
+        };
+        /** @description 1 回の学習(新規学習または再開)。status と reason は TrainingStatusResponse と同じ */
+        RunRecord: components["schemas"]["TrainingStatusResponse"] & {
+            job_id: string;
+            /** @description 学習を始めた日時(UTC) */
+            started_at: string;
+            /** @description 学習が終わった日時(UTC)。学習中、または終了を記録できていなければ null */
+            finished_at: string | null;
+        };
+        /** @description 1 エポックの結果 */
+        EpochRecord: {
+            /** @description このエポックを学習した run */
+            job_id: string;
+            /**
+             * Format: int32
+             * @description 終了したエポック数(再開をまたいで続く)
+             */
+            epoch: number;
+            /**
+             * Format: double
+             * @description NaN や inf、記録なしは null
+             */
+            train_loss: number | null;
+            /**
+             * Format: double
+             * @description NaN や inf、記録なしは null
+             */
+            val_loss: number | null;
+            /**
+             * Format: double
+             * @description このエポックの最後のバッチで使った学習率。学習率を記録する前の学習では null
+             */
+            learning_rate: number | null;
+            /** Format: int64 */
+            epoch_elapsed_ms: number;
+            /** @description 進捗(TrainingProcess)の metrics と同じ形。記録していないエポックは null */
+            metrics: components["schemas"]["SegmentationMetrics"] | components["schemas"]["ClassificationMetrics"] | null;
         };
         ModelSummariesResponse: {
             models: components["schemas"]["ModelSummary"][];
@@ -694,6 +817,40 @@ export interface components {
             format: string;
             /** @description 足りないファイル・ディレクトリ(データセットのルートからの相対パス。ディレクトリは末尾に /) */
             missing: string[];
+        };
+        /** @description 違反の一覧のない 422 の本文。同じ状態コードで原因が違うものを区別する(作業 9 のエラーコードと同じ書き方) */
+        ErrorCode: {
+            /**
+             * @description dataset_not_found … dataset_id のデータセットが登録されていない(削除された、など)
+             *     dataset_unreadable … データセットの色表(labelmap.txt)が読めず、クラス数が分からない
+             *     invalid_request … リクエストの中身が受け付けられない(空の dataset_id など)
+             * @enum {string}
+             */
+            error: "dataset_not_found" | "dataset_unreadable" | "invalid_request";
+        };
+        /** @description 学習設定の値に誤りがあったときの 422 の本文。違反は最初の 1 つで止めず、すべて入れる */
+        InvalidConfig: {
+            /** @enum {string} */
+            error: "invalid_config";
+            violations: components["schemas"]["ConfigViolation"][];
+        };
+        ConfigViolation: {
+            /**
+             * @description 違反のある項目の位置。リクエストの JSON と同じ項目名をドットでつなぐ。配列は [添字] で示す。
+             *     モデルのグラフの違反(学習エンジンが確かめる構造・形)は、次のいずれか:
+             *     model_graph.nodes[i].inputs[j](入力の接続)/ model_graph.nodes[i](ノード。ポート単位の問題は
+             *     message の先頭に「ポート 'x': 」が付く)/ model_graph.outputs[k] / model_graph(グラフ全体。閉路など)
+             * @example optimizer.learning_rate
+             * @example lr_scheduler.warmup_epochs
+             * @example model_graph.nodes[3].spec.stride
+             * @example data_spec.image_task_spec.ignore_index
+             * @example model_graph.nodes[3].inputs[0]
+             * @example model_graph.nodes[7]
+             * @example model_graph
+             */
+            field: string;
+            /** @description 利用者に見せる説明(日本語) */
+            message: string;
         };
         DatasetSummariesResponse: {
             datasets: components["schemas"]["DatasetSummary"][];
@@ -759,6 +916,13 @@ export interface components {
              * @description 累計の処理時間(ミリ秒)。再開すると 0 から数え直す
              */
             total_elapsed_ms: number;
+            /**
+             * Format: double
+             * @description このエポックの最後のバッチで使った学習率(学習エンジンが optimizer から読んだ値。スケジューラなしなら
+             *     optimizer の設定値)。まだ 1 エポックも終わっていない・記録がないときは null。
+             *     学習率を送らない古いサーバーでは、キーがないこともある
+             */
+            learning_rate?: number | null;
         };
     };
     responses: {
@@ -862,15 +1026,23 @@ export interface operations {
             };
             /**
              * @description リクエストの形が合わない(dataset_id が空を含む)、dataset_id のデータセットが登録されていない、
-             *     または C++ が設定を拒否した
+             *     データセットの色表(labelmap.txt)が読めない、または設定に誤りがある。
+             *     設定の誤りのときは本文が InvalidConfig で、値の違反とモデルのグラフの違反(構造・形。学習エンジンが確かめる)を
+             *     すべて返す。このときモデルは登録されないので、直せば同じ model_name で送り直せる。
+             *     確認の後にデータセットが差し替えられ、学習を始める時点で学習エンジンがグラフの問題を見つけた場合も同じ本文
+             *     (field は model_graph の違反 1 件。message に問題のあるノードと内容)。
+             *     それ以外は本文が ErrorCode で、原因を区別する(dataset_not_found / dataset_unreadable / invalid_request)。
+             *     JSON として読めない・フィールドが足りないときは、サーバーのフレームワークが text/plain の説明を返す
              */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["InvalidConfig"] | components["schemas"]["ErrorCode"];
+                };
             };
-            /** @description DB の読み書きに失敗した */
+            /** @description DB の読み書きに失敗した。または学習エンジンが設定を拒否した(サーバーの検証漏れで、クライアントの誤りではない) */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -907,20 +1079,27 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description リクエストの形が合わない(dataset_id が空を含む)。データセットが登録されているかはここでは確かめない */
+            /**
+             * @description リクエストの形が合わない(dataset_id が空を含む)、dataset_id のデータセットが登録されていない、
+             *     データセットの色表(labelmap.txt)が読めない、または設定に誤りがある。
+             *     本文は /trainings と同じ(設定の誤りは InvalidConfig、それ以外は ErrorCode)
+             */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["InvalidConfig"] | components["schemas"]["ErrorCode"];
+                };
             };
-            /** @description DB の読み取りに失敗した */
+            /** @description DB の読み取りに失敗した。または学習エンジンが依頼を拒否した(サーバーの検証漏れ) */
             500: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
+            502: components["responses"]["UpstreamError"];
         };
     };
     getTrainingProcess: {
@@ -1093,6 +1272,38 @@ export interface operations {
             };
         };
     };
+    getModelHistory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description /models の応答で返る学習済みモデルの識別子 */
+                model_id: components["parameters"]["ModelId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 取得できた */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelHistory"];
+                };
+            };
+            400: components["responses"]["InvalidModelId"];
+            404: components["responses"]["ModelNotFound"];
+            /** @description DB の読み取りに失敗した */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     resumeTraining: {
         parameters: {
             query?: never;
@@ -1122,7 +1333,7 @@ export interface operations {
             404: components["responses"]["ModelNotFound"];
             /**
              * @description 再開できない。すでに学習が実行中、checkpoint がない、epoch が完了済みのエポック数以下、
-             *     モデル構造が保存されていない、C++ が設定を拒否した、のいずれか
+             *     モデル構造が保存されていない、のいずれか
              */
             409: {
                 headers: {
@@ -1130,14 +1341,23 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description リクエストの形が合わない、または optimizer の type が前回と違う */
+            /**
+             * @description リクエストの形が合わない、optimizer の type が前回と違う、設定の値に誤りがある、
+             *     保存したモデル構造がいまのデータセットでは学習できない(学習エンジンが確かめる。field は model_graph、
+             *     message に問題のあるノードと内容)、またはデータセットの色表(labelmap.txt)が読めない。
+             *     設定の値の誤りとモデル構造の問題は本文が InvalidConfig。前回の設定に送った値を上書きした結果を
+             *     検証するので、送っていない項目(model_graph など)の違反が入ることもある。
+             *     色表が読めないときは本文が ErrorCode(dataset_unreadable)。optimizer の type が前回と違うときは本文なし
+             */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["InvalidConfig"] | components["schemas"]["ErrorCode"];
+                };
             };
-            /** @description DB の読み書きに失敗した */
+            /** @description DB の読み書きに失敗した。または学習エンジンが設定を拒否した(サーバーの検証漏れで、クライアントの誤りではない) */
             500: {
                 headers: {
                     [name: string]: unknown;

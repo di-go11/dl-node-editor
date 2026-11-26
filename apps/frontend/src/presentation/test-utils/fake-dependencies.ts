@@ -48,6 +48,7 @@ export function fakeDependencies(overrides: Partial<Dependencies> = {}): Depende
     trainedModelApi: {
       list: () => Promise.resolve(apiOk([])),
       getConfig: () => Promise.resolve(apiOk(defaultTrainingSettings())),
+      getHistory: (modelId) => Promise.resolve(apiOk({ modelId, modelName: 'model', runs: [], epochs: [] })),
       resume: () => Promise.resolve(apiOk({ jobId: 'job-1', status: 'running' })),
     },
     datasetApi: {

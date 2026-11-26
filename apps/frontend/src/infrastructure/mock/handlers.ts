@@ -266,6 +266,8 @@ function mockProcess(epoch: number, status: Schemas['TrainingStatus']): Schemas[
           },
     epoch_elapsed_ms: epoch === 0 ? 0 : 1000,
     total_elapsed_ms: epoch * 1000,
+    // 本物と同じく、まだ 1 エポックも終わっていなければ null。学習率は step のように 1 桁ずつ下がって見える
+    learning_rate: epoch === 0 ? null : 1e-3 * 0.1 ** Math.floor((epoch - 1) / 2),
   }
 }
 
@@ -369,6 +371,10 @@ export function createHandlers(options: MockOptions = {}) {
     http.post(`${base}/trainings/validate`, async ({ request }) => {
       const parsed = rustStartTrainingRequestSchema.safeParse(await request.json())
       if (!parsed.success) return new HttpResponse(null, { status: 422 })
+      // 本物と同じく、整合性チェックでも登録されていないデータセットは原因のコード付きの 422 にする
+      if (!datasets.some((dataset) => dataset.dataset_id === parsed.data.dataset_id)) {
+        return HttpResponse.json({ error: 'dataset_not_found' }, { status: 422 })
+      }
       if (usedModelNames.has(parsed.data.model_name)) return new HttpResponse(null, { status: 409 })
       return new HttpResponse(null, { status: 204 })
     }),
@@ -377,9 +383,9 @@ export function createHandlers(options: MockOptions = {}) {
       if (options.alreadyRunning === true) return new HttpResponse(null, { status: 409 })
       const parsed = rustStartTrainingRequestSchema.safeParse(await request.json())
       if (!parsed.success) return new HttpResponse(null, { status: 422 })
-      // 本物と同じく、登録されていないデータセットは受け付けない
+      // 本物と同じく、登録されていないデータセットは原因のコード付きの 422 にする
       if (!datasets.some((dataset) => dataset.dataset_id === parsed.data.dataset_id)) {
-        return new HttpResponse(null, { status: 422 })
+        return HttpResponse.json({ error: 'dataset_not_found' }, { status: 422 })
       }
       usedModelNames.add(parsed.data.model_name)
       const response: Schemas['StartTrainingResponse'] = {
@@ -424,6 +430,39 @@ export function createHandlers(options: MockOptions = {}) {
         model_id: params.modelId,
         ...config,
         seed: config.seed ?? null,
+        // 本物と同じく、保存済みの設定には必ず返す(学習開始で省略されていれば none)
+        lr_scheduler: config.lr_scheduler ?? {
+          type: 'none',
+          update_interval: 'per_batch',
+          warmup_epochs: 0,
+        },
+      }
+      return HttpResponse.json(response)
+    }),
+
+    // 学習の記録。モックの学習は必ず最後まで進んだものとみなし、完了エポック数ぶんの記録を作る
+    http.get<{ modelId: string }>(`${base}/models/:modelId/history`, ({ params }) => {
+      const model = models.get(params.modelId)
+      if (model === undefined) return new HttpResponse(null, { status: 404 })
+      const jobId = `${params.modelId}-run-1`
+      const baseLr = model.config.optimizer.learning_rate
+      const response: Schemas['ModelHistory'] = {
+        model_id: params.modelId,
+        model_name: model.config.model_name,
+        runs: [{ job_id: jobId, ...model.lastRun }],
+        epochs: Array.from({ length: model.completedEpochs }, (_, i) => {
+          const process = mockProcess(i + 1, 'running')
+          return {
+            job_id: jobId,
+            epoch: process.epoch,
+            train_loss: process.train_loss,
+            val_loss: process.val_loss,
+            // 学習率は poly(power 1)で下がっていくように見せる
+            learning_rate: baseLr * (1 - i / Math.max(model.completedEpochs, 1)),
+            epoch_elapsed_ms: process.epoch_elapsed_ms,
+            metrics: process.metrics,
+          }
+        }),
       }
       return HttpResponse.json(response)
     }),

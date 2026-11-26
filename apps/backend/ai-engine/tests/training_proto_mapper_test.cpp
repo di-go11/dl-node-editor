@@ -8,8 +8,10 @@
 #include <functional>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -69,8 +71,8 @@ namespace
         connect(addConvNode(r, "conv1"), "x", "", "");
         addOutput(r, "conv1", "y");
 
+        r.mutable_optimizer()->set_learning_rate(0.005);
         auto *adam = r.mutable_optimizer()->mutable_adam();
-        adam->set_learning_rate(0.005);
         adam->set_beta1(0.9);
         adam->set_beta2(0.999);
         adam->set_eps(1e-8);
@@ -165,8 +167,8 @@ int main()
             check(g.outputs.size() == 1 && g.outputs[0].nodeId == "conv1" && g.outputs[0].port == "y",
                   "変換: model_graph の outputs");
         }
-        check(std::holds_alternative<AdamOptimizerConfig>(c.optimizer) &&
-                  std::get<AdamOptimizerConfig>(c.optimizer).learningRate == 0.005,
+        check(std::holds_alternative<AdamOptimizerConfig>(c.optimizer.kind) &&
+                  c.optimizer.learningRate == 0.005,
               "変換: optimizer(Adam)");
         check(std::holds_alternative<CrossEntropyConfig>(c.loss), "変換: loss(CrossEntropy)");
         check(c.epochSize == 3 && c.batchSize == 2 && c.saveLastEvery == 2, "変換: epoch / batch / save_last_every");
@@ -410,8 +412,6 @@ int main()
     checkRejected([](auto &r)
                   { r.set_model_id("../evil"); }, "model_id にパスの区切りが含まれる");
     checkRejected([](auto &r)
-                  { r.set_resume_from("/somewhere/model_last.pt"); }, "resume_from は廃止(resume を使う)");
-    checkRejected([](auto &r)
                   { r.clear_model_graph(); }, "model_graph.nodes が空");
     checkRejected([](auto &r)
                   { r.mutable_model_graph()->add_nodes()->set_id("n2"); }, "層の種類が未指定");
@@ -520,7 +520,7 @@ int main()
     checkRejected([](auto &r)
                   { r.clear_optimizer(); }, "optimizer が未指定");
     checkRejected([](auto &r)
-                  { r.mutable_optimizer()->mutable_adam()->set_learning_rate(0.0); }, "learning_rate = 0");
+                  { r.mutable_optimizer()->set_learning_rate(0.0); }, "optimizer.learning_rate = 0");
     checkRejected([](auto &r)
                   { r.mutable_optimizer()->mutable_adam()->set_eps(0.0); }, "adam.eps = 0");
     checkRejected([](auto &r)
@@ -582,6 +582,7 @@ int main()
         s.latest.validation.loss = 0.3;
         s.latest.epochElapsedMs = 1200;
         s.latest.totalElapsedMs = 6000;
+        s.latest.learningRate = 0.0005;
         SegmentationMetricsConfig seg{};
         seg.pixelAccuracy = 0.9;
         seg.meanIoU = 0.5;
@@ -595,11 +596,98 @@ int main()
         check(res.epoch() == 5, "進捗: epoch は終了したエポック数(EpochReport::epoch + 1)");
         check(res.train_loss() == 0.4 && res.val_loss() == 0.3, "進捗: train_loss / val_loss");
         check(res.epoch_elapsed_ms() == 1200 && res.total_elapsed_ms() == 6000, "進捗: 経過時間");
+        check(res.learning_rate() == 0.0005, "進捗: 学習率(このエポックの最後のバッチで使った値)");
         check(res.has_segmentation() && res.segmentation().miou() == 0.5 && res.segmentation().fw_iou() == 0.8,
               "進捗: segmentation の指標");
         check(res.has_segmentation() && res.segmentation().per_class_iou_size() == 3 &&
                   std::isnan(res.segmentation().per_class_iou(1)),
               "進捗: per_class_iou(NaN も含めてそのまま送る)");
+    }
+
+    // ---------- ValidateModelGraph の依頼の変換 ----------
+    {
+        training::v1::ValidateModelGraphRequest req;
+        const training::v1::StartTrainingRequest valid = makeValidRequest();
+        *req.mutable_model_graph() = valid.model_graph();
+        *req.mutable_data_spec() = valid.data_spec();
+        req.set_dataset_path("/data/train");
+
+        const ModelGraphCheckRequest check1 = toModelGraphCheckRequest(req);
+        check(check1.graph.nodes.size() == 1 && check1.graph.nodes[0].id == "conv1", "グラフ検証の依頼: model_graph");
+        check(std::get<ImageSpec>(check1.dataSpec).inputWidth == 128, "グラフ検証の依頼: data_spec");
+        check(check1.datasetPath == "/data/train", "グラフ検証の依頼: dataset_path");
+
+        // 構造の問題は例外にしない(checkModelGraph が集めて応答で返すため)
+        training::v1::ValidateModelGraphRequest unconnected = req;
+        unconnected.mutable_model_graph()->mutable_nodes(0)->clear_inputs();
+        bool threw = false;
+        try
+        {
+            toModelGraphCheckRequest(unconnected);
+        }
+        catch (const std::exception &)
+        {
+            threw = true;
+        }
+        check(!threw, "グラフ検証の依頼: 未接続のポートがあっても例外にしない");
+
+        // 層のパラメータの値と data_spec の未設定は、StartTraining と同じく拒否する
+        training::v1::ValidateModelGraphRequest badParam = req;
+        badParam.mutable_model_graph()->mutable_nodes(0)->mutable_spec()->mutable_conv2d()->set_stride(0);
+        training::v1::ValidateModelGraphRequest noDataSpec = req;
+        noDataSpec.clear_data_spec();
+        for (const auto &[bad, label] : {std::pair{badParam, std::string("層のパラメータが不正")},
+                                         std::pair{noDataSpec, std::string("data_spec がない")}})
+        {
+            bool rejected = false;
+            try
+            {
+                toModelGraphCheckRequest(bad);
+            }
+            catch (const std::invalid_argument &)
+            {
+                rejected = true;
+            }
+            check(rejected, "グラフ検証の依頼: 拒否: " + label);
+        }
+    }
+
+    // ---------- ValidateModelGraph の応答 ----------
+    {
+        std::vector<GraphValidationError> errors;
+        errors.push_back({"pool1", "x", "参照先のノードが存在しません: enc9", 2, 1});              // 入力の接続
+        errors.push_back({"unpool1", "indices", "必須の入力ポートがつながっていません", 4});         // 入力ポート単位
+        errors.push_back({"head", "y", "モデルの出力のチャンネル数(3)が、クラス数(21)と一致しません", 7}); // 出力ポート単位
+        errors.push_back({"", "y", "outputs の参照先のノードが存在しません: none", std::nullopt, std::nullopt, 0});
+        errors.push_back({"", "", "グラフに閉路があります。実行できないノード: a, b"});           // グラフ全体
+
+        training::v1::ValidateModelGraphResponse res;
+        fillValidateModelGraphResponse(errors, res);
+        check(res.violations_size() == 5, "グラフ検証の応答: 問題をすべて詰める");
+
+        const auto &connection = res.violations(0);
+        check(connection.has_node_index() && connection.node_index().value() == 2 && connection.has_input_index() &&
+                  connection.input_index().value() == 1 && !connection.has_output_index(),
+              "グラフ検証の応答: 入力の接続はノードと入力の添字");
+        check(connection.message() == "参照先のノードが存在しません: enc9",
+              "グラフ検証の応答: 入力の接続のメッセージはそのまま");
+
+        const auto &inputPort = res.violations(1);
+        check(inputPort.has_node_index() && inputPort.node_index().value() == 4 && !inputPort.has_input_index(),
+              "グラフ検証の応答: ポート単位はノードの添字だけ");
+        check(inputPort.message() == "ポート 'indices': 必須の入力ポートがつながっていません",
+              "グラフ検証の応答: ポート単位はポート名を前に付ける(入力ポート)");
+        check(res.violations(2).message() == "ポート 'y': モデルの出力のチャンネル数(3)が、クラス数(21)と一致しません",
+              "グラフ検証の応答: ポート単位はポート名を前に付ける(出力ポート)");
+
+        const auto &output = res.violations(3);
+        check(!output.has_node_index() && output.has_output_index() && output.output_index().value() == 0 &&
+                  output.message() == "outputs の参照先のノードが存在しません: none",
+              "グラフ検証の応答: outputs の問題は outputs の添字だけ");
+
+        const auto &whole = res.violations(4);
+        check(!whole.has_node_index() && !whole.has_input_index() && !whole.has_output_index(),
+              "グラフ検証の応答: グラフ全体の問題は添字なし");
     }
 
     if (failureCount == 0)

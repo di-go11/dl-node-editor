@@ -55,6 +55,7 @@ function renderAt(path: string, api: Partial<TrainedModelApi> = {}) {
   const trainedModelApi: TrainedModelApi = {
     list: () => Promise.resolve(apiOk([summary])),
     getConfig: () => Promise.resolve(apiOk(savedSettings)),
+    getHistory: (modelId) => Promise.resolve(apiOk({ modelId, modelName: 'model', runs: [], epochs: [] })),
     resume,
     ...api,
   }

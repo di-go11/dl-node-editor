@@ -1,8 +1,8 @@
 use super::{
     error::ModelRepositoryError,
-    ports::{ModelSummaryProvider, ModelTrainingConfigProvider},
+    ports::{ModelHistoryProvider, ModelSummaryProvider, ModelTrainingConfigProvider},
 };
-use entities::model::{ModelId, ModelSummary, ModelTraingConfig};
+use entities::model::{ModelHistory, ModelId, ModelSummary, ModelTraingConfig};
 
 // 学習済みモデルの一覧を取得する
 #[derive(Debug, Clone)]
@@ -46,5 +46,26 @@ where
         model_id: &ModelId,
     ) -> Result<ModelTraingConfig, ModelRepositoryError> {
         Ok(self.config.fetch(model_id).await?)
+    }
+}
+
+// 学習済みモデルの学習の記録を取得する(loss・学習率のグラフとメトリクスの表に使う)
+#[derive(Debug, Clone)]
+pub struct GetModelHistory<H> {
+    history: H,
+}
+
+impl<H> GetModelHistory<H>
+where
+    H: ModelHistoryProvider,
+{
+    pub fn new(history_provider: H) -> Self {
+        Self {
+            history: history_provider,
+        }
+    }
+
+    pub async fn get_history(&self, model_id: &ModelId) -> Result<ModelHistory, ModelRepositoryError> {
+        Ok(self.history.fetch_history(model_id).await?)
     }
 }

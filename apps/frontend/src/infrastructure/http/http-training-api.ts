@@ -1,11 +1,17 @@
 import { z } from 'zod'
 
 import { apiError } from '../../application/ports/api-result'
-import type { StartedTraining, TrainingApi } from '../../application/ports/training-api'
+import type {
+  ServerCheck,
+  StartedTraining,
+  TrainingApi,
+} from '../../application/ports/training-api'
 import { toStartTrainingRequestJson } from '../../entity/training/proto-json/convert'
 
 import type { ApiClient, HttpErrorMessages } from './api-client'
 import { API_BASE_PATH, callApi, callApiByStatus } from './api-client'
+import { configViolationIssues } from './config-violations'
+import { serverErrorCode, trainingRejectionDetails } from './server-error-code'
 import type { ProgressEventSource } from './http-training-progress'
 import { listenTrainingProgress, trainingStatusResponseSchema } from './http-training-progress'
 import { toRustStartTrainingRequest } from './rust-training-request'
@@ -21,6 +27,16 @@ const startResponseSchema = z.object({
 /** 学習開始の 422 は、学習設定・モデル構造の拒否のほかに、選んだデータセットがない場合もある */
 const START_MESSAGES: HttpErrorMessages = {
   422: '学習設定またはモデル構造が受け付けられませんでした。選んだデータセットが削除されている場合は、選び直してください。',
+}
+
+/**
+ * 整合性チェックの 422 で、本文から原因が分からないもの(古いサーバーなど)と、502(学習エンジンに届かない)。
+ * データセットの問題・設定の誤りは本文から結果にするので、ここには来ない。
+ * 整合性チェックもグラフの確認のために学習エンジンを呼ぶ
+ */
+const VALIDATE_MESSAGES: HttpErrorMessages = {
+  422: '整合性チェックのリクエストが受け付けられませんでした。',
+  502: '学習サーバーに接続できないため、モデル構造を確認できません。',
 }
 
 function toStartedTraining(json: z.infer<typeof startResponseSchema>): StartedTraining {
@@ -46,10 +62,30 @@ export function createHttpTrainingApi(
     validate: async (graph, settings) => {
       const request = toRustStartTrainingRequest(toStartTrainingRequestJson(graph, settings))
       if (!request.ok) return apiError({ kind: 'invalid-request', message: request.message })
-      return callApiByStatus(() => client.POST('/trainings/validate', { body: request.value }), {
-        204: { kind: 'ok' },
-        409: { kind: 'model-name-used' },
-      })
+      return callApiByStatus<ServerCheck>(
+        () => client.POST('/trainings/validate', { body: request.value }),
+        {
+          204: { kind: 'ok' },
+          409: { kind: 'model-name-used' },
+        },
+        VALIDATE_MESSAGES,
+        // 設定の誤りとデータセットの問題の 422 は「結果」にする(通信の失敗ではない。画面は欄に出す)
+        (status, body) => {
+          if (status !== 422) return undefined
+          const issues = configViolationIssues(body, request.value)
+          if (issues !== undefined) return { kind: 'invalid-config', issues }
+          switch (serverErrorCode(body)) {
+            case 'dataset_not_found':
+              return { kind: 'dataset-not-found' }
+            case 'dataset_unreadable':
+              return { kind: 'dataset-unreadable' }
+            default:
+              return undefined
+          }
+        },
+        // 結果にならなかった 422(invalid_request、JSON でない本文)は、原因に合った説明のエラーにする
+        trainingRejectionDetails(request.value),
+      )
     },
 
     start: async (graph, settings) => {
@@ -60,6 +96,7 @@ export function createHttpTrainingApi(
         startResponseSchema,
         toStartedTraining,
         START_MESSAGES,
+        trainingRejectionDetails(request.value),
       )
     },
 

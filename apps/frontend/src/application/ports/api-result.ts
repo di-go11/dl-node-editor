@@ -10,6 +10,8 @@
  * 保存ファイルの読み込み(entity/document/parse.ts)と同じ考え方である。
  */
 
+import type { Issue } from '../../entity/validation/issue'
+
 export type ApiErrorKind =
   /** 送る内容を契約の形にできなかった(サーバーには送っていない) */
   | 'invalid-request'
@@ -26,6 +28,11 @@ export type ApiError = {
   readonly message: string
   /** HTTP の状態コード(kind が 'http' のとき) */
   readonly status?: number
+  /**
+   * サーバーが設定・モデル構造の誤りを見つけたときの、違反の一覧(学習開始の 422 など)。
+   * 位置(ノード・項目)付きなので、message とは別に、ノードや欄に結びつけて表示できる。
+   */
+  readonly issues?: readonly Issue[]
 }
 
 export type ApiResult<T> =

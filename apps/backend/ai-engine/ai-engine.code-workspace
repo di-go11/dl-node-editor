@@ -11,6 +11,10 @@
       "path": "../../../docs/notes",
       "name": "notes",
     },
+    {
+      "path":"../proto",
+      "name":"proto",
+    }
   ],
   "settings": {
     "remote.autoForwardPortsFallback": 0,

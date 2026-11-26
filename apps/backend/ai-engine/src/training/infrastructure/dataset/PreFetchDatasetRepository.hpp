@@ -20,6 +20,9 @@ public:
     void reset() override;
     bool hasNext() const override;
     TrainingBatch getNextBatch() override;
+    // バッチ数は中のリポジトリの値をそのまま返す(先読みしても数は変わらない)。
+    // 中の batchCount() はデータ件数とバッチサイズから計算するだけで、ワーカーが進める読み出し位置には触れない。
+    std::size_t batchCount() const override { return _datasetRepository->batchCount(); }
 
 private:
     void startWorker();

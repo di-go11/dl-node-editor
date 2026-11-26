@@ -17,7 +17,7 @@ use tonic::transport::Channel;
 use usecases::capabilities::GetCapabilities;
 use usecases::dataset::read_datasets_summary::ReadDatasetsSummary;
 use usecases::dataset::upload_dataset::UploadDataset;
-use usecases::model::{GetModelSummary, GetModelTrainingConfig};
+use usecases::model::{GetModelHistory, GetModelSummary, GetModelTrainingConfig};
 use usecases::training::{
     GetTrainingProcess, RecordTrainingProgress, ResumeProgressRecordings, ResumeTraining,
     StartTraining, StopTraining, ValidateTrainingConfig,
@@ -105,14 +105,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             channel.clone(),
         ))),
         stop_training: Arc::new(StopTraining::new(GrpcTrainingStopper::new(channel.clone()))),
-        validate_training: Arc::new(ValidateTrainingConfig::new(SqliteTrainingRepository::new(
-            pool.clone(),
-        ))),
+        // 整合性チェックも学習開始と同じく、グラフを C++ で確かめ、dataset_id からパスを引く
+        validate_training: Arc::new(ValidateTrainingConfig::new(
+            SqliteTrainingRepository::new(pool.clone()),
+            GrpcTrainingStarter::new(channel.clone()),
+            SqliteDatasetRepository::new(pool.clone()),
+        )),
         record_training: training_progress_recorder.clone(),
         get_model_summary: Arc::new(GetModelSummary::new(SqliteTrainingRepository::new(
             pool.clone(),
         ))),
         get_model_config: Arc::new(GetModelTrainingConfig::new(SqliteTrainingRepository::new(
+            pool.clone(),
+        ))),
+        // 学習の記録(全 run のエポックごとの loss・学習率・メトリクス)
+        get_model_history: Arc::new(GetModelHistory::new(SqliteTrainingRepository::new(
             pool.clone(),
         ))),
         // 再開も新規学習と同じ GrpcTrainingStarter(resume = true で送る)と scheduler を使う

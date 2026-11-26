@@ -1,6 +1,7 @@
 #include "TrainingServiceImpl.hpp"
 
 #include "api/grpc/TrainingProtoMapper.hpp"
+#include "training/ModelGraphCheck.hpp"
 
 #include <chrono>
 #include <cstdint>
@@ -18,6 +19,22 @@ namespace
                status == TrainingStatus::Failed ||
                status == TrainingStatus::Stopped;
     }
+
+    // FAILED_PRECONDITION には理由が複数あるので、トレーラーの error-reason で区別できるようにする
+    // (値の一覧は training.proto の TrainingService の説明。Rust はこれでエラーの種類を分ける)。
+    constexpr const char *kErrorReasonKey = "error-reason";
+    constexpr const char *kReasonResumePrecondition = "resume_precondition"; // checkpoint がない・学習済み
+    constexpr const char *kReasonModelGraphMismatch = "model_graph_mismatch"; // グラフがこのデータセットで学習できない
+    constexpr const char *kReasonDatasetUnreadable = "dataset_unreadable";   // 色表(labelmap.txt)が読めない
+
+    grpc::Status failedPrecondition(grpc::ServerContext *context, const char *reason, const std::exception &e)
+    {
+        if (context != nullptr)
+        {
+            context->AddTrailingMetadata(kErrorReasonKey, reason);
+        }
+        return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, e.what());
+    }
 }
 
 TrainingServiceImpl::TrainingServiceImpl(ITrainingJobManager &jobManager)
@@ -25,7 +42,7 @@ TrainingServiceImpl::TrainingServiceImpl(ITrainingJobManager &jobManager)
 {
 }
 
-grpc::Status TrainingServiceImpl::StartTraining(grpc::ServerContext * /*context*/,
+grpc::Status TrainingServiceImpl::StartTraining(grpc::ServerContext *context,
                                                 const training::v1::StartTrainingRequest *request,
                                                 training::v1::StartTrainingResponse *response)
 {
@@ -51,7 +68,15 @@ grpc::Status TrainingServiceImpl::StartTraining(grpc::ServerContext * /*context*
     }
     catch (const TrainingPreconditionError &e)
     {
-        return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, e.what());
+        return failedPrecondition(context, kReasonResumePrecondition, e);
+    }
+    catch (const ModelGraphMismatchError &e)
+    {
+        return failedPrecondition(context, kReasonModelGraphMismatch, e);
+    }
+    catch (const DatasetUnreadableError &e)
+    {
+        return failedPrecondition(context, kReasonDatasetUnreadable, e);
     }
     catch (const std::invalid_argument &e)
     {
@@ -160,5 +185,36 @@ grpc::Status TrainingServiceImpl::StopTraining(grpc::ServerContext * /*context*/
     catch (const TrainingJobNotFoundError &e)
     {
         return grpc::Status(grpc::StatusCode::NOT_FOUND, e.what());
+    }
+}
+
+grpc::Status TrainingServiceImpl::ValidateModelGraph(grpc::ServerContext *context,
+                                                     const training::v1::ValidateModelGraphRequest *request,
+                                                     training::v1::ValidateModelGraphResponse *response)
+{
+    ModelGraphCheckRequest check;
+    try
+    {
+        check = toModelGraphCheckRequest(*request);
+    }
+    catch (const std::invalid_argument &e)
+    {
+        // 層のパラメータの値などは Rust が先に確かめるので、ここに来るのは Rust 側の検証漏れ
+        return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, e.what());
+    }
+
+    try
+    {
+        fillValidateModelGraphResponse(checkModelGraph(check.graph, check.dataSpec, check.datasetPath), *response);
+        return grpc::Status::OK;
+    }
+    catch (const DatasetUnreadableError &e)
+    {
+        return failedPrecondition(context, kReasonDatasetUnreadable, e); // データセットの色表が読めない
+    }
+    catch (const std::exception &e)
+    {
+        // 構造の検証が通った後の create や形の計算での想定外の失敗。gRPC のスレッドの外に例外を出さない
+        return grpc::Status(grpc::StatusCode::INTERNAL, e.what());
     }
 }

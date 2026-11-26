@@ -5,7 +5,11 @@ import {
   trainingSettingsFromJson,
   trainingSettingsToJson,
 } from '../../entity/training/proto-json/convert'
-import type { StartTrainingRequestJson, VariantJson } from '../../entity/training/proto-json/schema'
+import type {
+  LrSchedulerJson,
+  StartTrainingRequestJson,
+  VariantJson,
+} from '../../entity/training/proto-json/schema'
 import { trainingSettingsJsonSchema } from '../../entity/training/proto-json/schema'
 import type { TrainingSettings } from '../../entity/training/training-settings'
 
@@ -153,6 +157,26 @@ export const rustDataSpecSchema = z.object({
   ]),
 })
 
+// 学習率スケジューラ。種類を type に入れ、パラメータと update_interval・warmup_epochs を同じ階層に並べる
+const rustLrSchedulerCommon = {
+  update_interval: z.enum(['per_batch', 'per_epoch']),
+  warmup_epochs: nonNegativeInteger,
+}
+
+export const rustLrSchedulerSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('none'), ...rustLrSchedulerCommon }),
+  z.object({ type: z.literal('poly'), power: z.number(), ...rustLrSchedulerCommon }),
+  z.object({ type: z.literal('cosine'), min_lr: z.number(), ...rustLrSchedulerCommon }),
+  z.object({
+    type: z.literal('step'),
+    step_size: integer,
+    gamma: z.number(),
+    ...rustLrSchedulerCommon,
+  }),
+])
+
+export type RustLrScheduler = z.infer<typeof rustLrSchedulerSchema>
+
 export const rustStartTrainingRequestSchema = z.object({
   model_name: z.string(),
   model_graph: rustModelGraphSchema,
@@ -166,6 +190,8 @@ export const rustStartTrainingRequestSchema = z.object({
   data_spec: rustDataSpecSchema,
   save_last_every: nonNegativeInteger,
   seed: nonNegativeInteger.nullable().optional(),
+  // 契約では省略できる(省略 = none)。画面からは常に送る。保存済みの設定の応答には必ずある
+  lr_scheduler: rustLrSchedulerSchema.optional(),
 })
 
 export type RustNodeSpec = z.infer<typeof rustNodeSpecSchema>
@@ -187,6 +213,16 @@ const ENUM_PREFIXES: Readonly<Record<string, string>> = {
 function tagged(json: VariantJson): Record<string, unknown> {
   const [type, params] = Object.entries(json)[0] ?? []
   return { type, ...params }
+}
+
+/** proto-json の学習率スケジューラ(種類は scheduler の下)を、Rust の形(種類も同じ階層)にする */
+function toRustLrScheduler(json: LrSchedulerJson): Record<string, unknown> {
+  return {
+    ...tagged(json.scheduler),
+    update_interval:
+      json.update_interval === 'LEARNING_RATE_UPDATE_INTERVAL_PER_EPOCH' ? 'per_epoch' : 'per_batch',
+    warmup_epochs: json.warmup_epochs,
+  }
 }
 
 /** スキーマを通す前の、層の種類とパラメータの変換(enum の名前も短くする) */
@@ -241,6 +277,7 @@ export function toRustStartTrainingRequest(json: StartTrainingRequestJson): Rust
     save_last_every: json.save_last_every,
     // 固定しないときは、キーごと省く
     ...(json.seed === undefined ? {} : { seed: json.seed.value }),
+    ...(json.lr_scheduler === undefined ? {} : { lr_scheduler: toRustLrScheduler(json.lr_scheduler) }),
   })
   if (parsed.success) return { ok: true, value: parsed.data }
   const first = parsed.error.issues[0]
@@ -315,6 +352,19 @@ function untagged(json: Readonly<{ type: string }>): Record<string, unknown> {
   return { [type]: params }
 }
 
+/** Rust の形の学習率スケジューラを、proto-json の形(種類は scheduler の下)に戻す(toRustLrScheduler の逆) */
+function fromRustLrScheduler(json: RustLrScheduler): Record<string, unknown> {
+  const { update_interval, warmup_epochs, ...variant } = json
+  return {
+    scheduler: untagged(variant),
+    update_interval:
+      update_interval === 'per_epoch'
+        ? 'LEARNING_RATE_UPDATE_INTERVAL_PER_EPOCH'
+        : 'LEARNING_RATE_UPDATE_INTERVAL_PER_BATCH',
+    warmup_epochs,
+  }
+}
+
 /** Rust の形の学習設定を、学習設定の型にする(proto-json を通して、カタログにない種類を弾く) */
 export function fromRustModelConfig(json: RustModelConfig): RustConfigConversion {
   const parsed = trainingSettingsJsonSchema.safeParse({
@@ -337,6 +387,10 @@ export function fromRustModelConfig(json: RustModelConfig): RustConfigConversion
     resume_from: '',
     // null(固定しない)は、proto-json ではキーごと省く
     ...(json.seed === null || json.seed === undefined ? {} : { seed: { value: json.seed } }),
+    // 古いサーバーの応答には項目がない。省けば none として読む
+    ...(json.lr_scheduler === undefined
+      ? {}
+      : { lr_scheduler: fromRustLrScheduler(json.lr_scheduler) }),
   })
   if (parsed.success) return { ok: true, value: trainingSettingsFromJson(parsed.data) }
   const first = parsed.error.issues[0]

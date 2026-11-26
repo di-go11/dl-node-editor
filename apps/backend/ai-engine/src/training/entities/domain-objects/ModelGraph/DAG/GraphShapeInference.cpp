@@ -104,12 +104,12 @@ GraphShapes inferGraphShapes(const ValidatedModelGraph &validated, const Feature
         ShapeResult inferred = inferOutputShapes(node.spec, inputs);
         if (!inferred.ok())
         {
-            result.errors.push_back({node.id, "", inferred.error});
+            result.errors.push_back({node.id, "", inferred.error, nodeIndex});
             continue;
         }
         if (inferred.outputs.size() != spec.outputPorts.size())
         {
-            result.errors.push_back({node.id, "", "形状の規則が返した出力の数が、出力ポートの数と一致しません"});
+            result.errors.push_back({node.id, "", "形状の規則が返した出力の数が、出力ポートの数と一致しません", nodeIndex});
             continue;
         }
         result.nodeOutputs[nodeIndex] = std::move(inferred.outputs);
@@ -147,21 +147,24 @@ std::vector<GraphValidationError> validateGraphShapes(const ValidatedModelGraph 
     if (map == nullptr)
     {
         errors.push_back({outputRef.nodeId, outputRef.port,
-                          "モデルの出力は特徴マップである必要があります(実際: " + toString(outputShape) + ")"});
+                          "モデルの出力は特徴マップである必要があります(実際: " + toString(outputShape) + ")",
+                          nodeIndex});
         return errors;
     }
     if (map->channels != numClasses)
     {
         errors.push_back({outputRef.nodeId, outputRef.port,
                           "モデルの出力のチャンネル数(" + std::to_string(map->channels) +
-                              ")が、クラス数(" + std::to_string(numClasses) + ")と一致しません"});
+                              ")が、クラス数(" + std::to_string(numClasses) + ")と一致しません",
+                          nodeIndex});
     }
     if (map->height != input.height || map->width != input.width)
     {
         errors.push_back({outputRef.nodeId, outputRef.port,
                           "モデルの出力の H / W(" + std::to_string(map->height) + " x " + std::to_string(map->width) +
                               ")が、入力(" + std::to_string(input.height) + " x " + std::to_string(input.width) +
-                              ")と一致しません"});
+                              ")と一致しません",
+                          nodeIndex});
     }
     return errors;
 }

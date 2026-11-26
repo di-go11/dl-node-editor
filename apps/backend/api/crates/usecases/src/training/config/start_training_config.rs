@@ -1,6 +1,6 @@
 use entities::dataset::DatasetId;
 use entities::model::ModelGraph;
-use entities::training::config::{DataSpec, Loss, Optimizer, TrainingConfig};
+use entities::training::config::{DataSpec, LearningRateScheduler, Loss, Optimizer, TrainingConfig};
 
 // 新規学習の入力。クライアントはデータセットを ID で指定し、パスは持たない。
 // パスは StartTraining が DatasetFinder で ID から引き、TrainingConfig に入れて C++ に送る。
@@ -20,6 +20,8 @@ pub struct StartTrainingConfig {
     pub seed: Option<u64>,
     pub data_spec: DataSpec,
     pub save_last_every: u32,
+    // 省略されたら none(HTTP の DTO が埋める)。再開では変えられない(ResumeTrainingConfig には持たせない)
+    pub lr_scheduler: LearningRateScheduler,
 }
 
 impl StartTrainingConfig {
@@ -37,6 +39,7 @@ impl StartTrainingConfig {
             seed: self.seed,
             data_spec: self.data_spec.clone(),
             save_last_every: self.save_last_every,
+            lr_scheduler: self.lr_scheduler.clone(),
         }
     }
 }

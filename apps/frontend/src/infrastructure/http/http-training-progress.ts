@@ -36,7 +36,7 @@ export const trainingStatusResponseSchema = z.object({
   reason: z.string().optional(),
 })
 
-const metricsJsonSchema = z.discriminatedUnion('type', [
+export const metricsJsonSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('segmentation'),
     pixel_accuracy: z.number(),
@@ -63,11 +63,13 @@ export const trainingProcessJsonSchema = z.object({
   metrics: metricsJsonSchema.nullable(),
   epoch_elapsed_ms: z.number(),
   total_elapsed_ms: z.number(),
+  // 学習率を送らない古いサーバーではキーがない。まだ 1 エポックも終わっていなければ null
+  learning_rate: z.number().nullable().optional(),
 })
 
 export type TrainingProcessJson = z.infer<typeof trainingProcessJsonSchema>
 
-function metricsFromJson(json: z.infer<typeof metricsJsonSchema>): ProgressMetrics {
+export function metricsFromJson(json: z.infer<typeof metricsJsonSchema>): ProgressMetrics {
   switch (json.type) {
     case 'segmentation':
       return {
@@ -98,6 +100,7 @@ export function progressFromJson(json: TrainingProcessJson): TrainingProgress {
     epochElapsedMs: json.epoch_elapsed_ms,
     totalElapsedMs: json.total_elapsed_ms,
     errorMessage: json.reason ?? null,
+    learningRate: json.learning_rate ?? null,
   }
 }
 

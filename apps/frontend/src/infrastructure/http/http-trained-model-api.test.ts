@@ -109,6 +109,63 @@ describe('createHttpTrainedModelApi', () => {
     expect(result).toMatchObject({ ok: false, error: { kind: 'http', status: 422 } })
   })
 
+  it('違反の一覧がある 422 は、内容を issues に入れる(保存したモデル構造がデータセットに合わない、など)', async () => {
+    const settings = settingsNamed('resume_mismatch')
+    server.use(
+      http.post(`${TEST_BASE_URL}/models/:modelId/resume`, () =>
+        HttpResponse.json(
+          {
+            error: 'invalid_config',
+            violations: [
+              { field: 'model_graph', message: "ノード 'head': クラス数と一致しません" },
+              { field: 'optimizer.learning_rate', message: '0 より大きくしてください(0)' },
+            ],
+          },
+          { status: 422 },
+        ),
+      ),
+    )
+
+    const result = await createHttpTrainedModelApi(client()).resume('model-x', {
+      ...settings,
+      epoch: 10,
+    })
+
+    expect(result).toMatchObject({ ok: false, error: { kind: 'http', status: 422 } })
+    if (result.ok) return
+    // 再開のリクエストにはモデル構造がないので、グラフの違反は model_graph のまま
+    expect(result.error.issues?.map((i) => i.field)).toEqual([
+      'model_graph',
+      `optimizer.${settings.optimizer.kind}.learning_rate`,
+    ])
+  })
+
+  it('学習の記録は、run とエポックごとの loss・学習率・メトリクスをエンティティの形にする', async () => {
+    const settings = settingsNamed('history_model')
+    const modelId = await trainModel(settings)
+
+    const result = await createHttpTrainedModelApi(client()).getHistory(modelId)
+
+    if (!result.ok) throw new Error(result.error.message)
+    expect(result.value.modelName).toBe('history_model')
+    expect(result.value.runs).toHaveLength(1)
+    // モックの学習は完了エポック数(5)ぶん記録される
+    expect(result.value.epochs.map((epoch) => epoch.epoch)).toEqual([1, 2, 3, 4, 5])
+    expect(result.value.epochs[0]).toMatchObject({
+      jobId: result.value.runs[0]?.jobId,
+      metrics: { kind: 'segmentation' },
+    })
+    expect(typeof result.value.epochs[0]?.learningRate).toBe('number')
+  })
+
+  it('学習の記録の 404 は、モデルが見つからないという説明にする', async () => {
+    const result = await createHttpTrainedModelApi(client()).getHistory('no-such-model')
+    expect(result).toEqual({
+      ok: false,
+      error: { kind: 'http', status: 404, message: '指定されたモデルが見つかりません。' },
+    })
+  })
+
   it('epoch が完了済み以下だと 409 になる', async () => {
     const settings = settingsNamed('resume_epoch')
     const modelId = await trainModel(settings)

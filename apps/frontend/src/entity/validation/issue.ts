@@ -56,9 +56,19 @@ export type IssueCode =
   | 'training/output-activation'
   // 学習再開: epoch(合計)が完了済みのエポック数以下
   | 'training/epoch-not-increased'
+  // 学習率スケジューラとほかの項目の組み合わせ(warmup ≥ epoch、min_lr > 学習率、none で warmup あり)
+  | 'training/lr-scheduler-conflict'
+  // 学習再開: 学習率スケジューラの曲線が再開の前後でつながらない変更(warning。学習は止めない)
+  | 'training/lr-schedule-discontinuous'
   // サーバーでの整合性チェック(POST /trainings/validate)
   | 'training/model-name-used'
   | 'training/server-check-failed'
+  // サーバーが設定・モデル構造の誤りを見つけた(422 の違反の一覧。値の範囲と、学習エンジンが
+  // 確かめるグラフの構造・形。出力チャンネル数とクラス数の比較など、手元では分からないものを含む)
+  | 'training/server-rejected'
+  // サーバーで分かったデータセットの問題(登録されていない / 色表が読めない)
+  | 'training/dataset-not-found'
+  | 'training/dataset-unreadable'
   // 保存ファイル(指示書 7 章)
   | 'document/invalid-json'
   | 'document/not-a-document'

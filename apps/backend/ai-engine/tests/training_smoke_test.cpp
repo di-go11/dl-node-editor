@@ -283,13 +283,14 @@ int main()
     std::shared_ptr<IModel> model = modelFactory->create(ValidatedModelGraph::create(graph), kTestDevice);
     std::vector<at::Tensor> params = model->parameters();
 
-    AdamOptimizerConfig adam;
-    adam.learningRate = 0.01;
-    const OptimizerConfig optimizerConfig = adam;
+    OptimizerConfig optimizerConfig;
+    optimizerConfig.learningRate = 0.01;
+    optimizerConfig.kind = AdamOptimizerConfig{};
     std::shared_ptr<IOptimizer> optimizer = optimizerFactory->create(params, optimizerConfig);
 
     auto loss = std::make_shared<CrossEntropy>();
-    auto trainer = std::make_shared<TorchModelTrainer>(model, loss, optimizer);
+    // 学習率スケジューラーなし(nullptr): 学習率は Optimizer の設定値のまま。
+    auto trainer = std::make_shared<TorchModelTrainer>(model, loss, optimizer, nullptr);
     auto evaluator = std::make_shared<TorchModelEvaluator>(*model, *loss, numClasses, imageSpec.taskSpecs);
 
     const std::vector<at::Tensor> initialWeights = snapshot(params);
@@ -303,7 +304,7 @@ int main()
 
     for (int e = 0; e < epochs; ++e)
     {
-        const EpochMetrics tm = trainer->trainOneEpoch(*trainDs);
+        const EpochMetrics tm = trainer->trainOneEpoch(*trainDs, static_cast<unsigned int>(e));
         const EpochMetrics vm = evaluator->evaluate(*valDs); // ← ignore_index を含むマスクで落ちないこと
         const auto &seg = std::get<SegmentationMetricsConfig>(vm.taskMetrics);
         trainLoss.push_back(tm.loss);
@@ -356,8 +357,9 @@ int main()
               "再構築した重みが保存時(TrainModelUsecase 実行後)と一致する");
 
         // 続きを 1 エポック回して落ちないこと
-        auto trainer2 = std::make_shared<TorchModelTrainer>(r.model, loss, r.optimizer);
-        const EpochMetrics resumed = trainer2->trainOneEpoch(*trainDs);
+        auto trainer2 = std::make_shared<TorchModelTrainer>(r.model, loss, r.optimizer, nullptr);
+        // TrainModelUsecase で 2 エポック(0, 1)回した続きなので、エポック番号は 2。
+        const EpochMetrics resumed = trainer2->trainOneEpoch(*trainDs, 2u);
         check(std::isfinite(resumed.loss), "再開後の学習ステップが有限 loss を返す");
     }
 

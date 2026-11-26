@@ -2,6 +2,8 @@ use thiserror::Error;
 
 use crate::capabilities::ProviderError;
 
+use entities::validation::ConfigViolation;
+
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum StartTrainingError {
     // C++サーバーに対して学習プロセスを開始するための命令を送る関数が失敗した場合のエラー
@@ -13,12 +15,13 @@ pub enum StartTrainingError {
     // すでに実行中のジョブがある
     #[error("Training job is already running: {0}")]
     AlreadyRunning(String),
-    // 学習設定が不正でC++サーバーからの拒否
+    // C++ が設定を INVALID_ARGUMENT で拒否した。設定の誤りは Rust の検証で先に返すので、
+    // これが起きるのは Rust の検証漏れ(バグ)。クライアントの誤りではない
     #[error("Training config was rejected: {0}")]
-    InvalidConfig(String),
+    EngineRejectedConfig(String),
     #[error("Failed to record training run: {0}")]
     RecordFailed(String),
-    // エポック数が達していたり、checkpointが存在しないなどで学習を実行できない
+    // 再開の条件を満たさない(エポック数が達していたり、checkpointが存在しないなど)
     #[error("Failed to resume training: {0}")]
     ResumePreconditionFailed(String),
     // 指定された dataset_id のデータセットが登録されていない(削除済み・ID の誤りなど)
@@ -27,6 +30,35 @@ pub enum StartTrainingError {
     // データセットの情報を DB から読めなかった
     #[error("Failed to read dataset: {0}")]
     DatasetReadFailed(String),
+    // 学習設定が不正(値の違反と、C++ で確かめたグラフの違反をまとめて持つ)
+    #[error("invalid config: {} violation(s)", .0.len())]
+    InvalidConfig(Vec<ConfigViolation>),
+    // C++ でのグラフの検証が、結果を返せなかった(違反があったのではない)
+    #[error(transparent)]
+    GraphCheckFailed(ModelGraphValidatorError),
+    // 学習開始の時点で、C++ がモデルのグラフはこのデータセットでは学習できないと判断した。
+    // 新規学習は開始前に確かめるので、起きるのは再開(グラフは checkpoint から復元する)や、
+    // 確認の後にデータセットが差し替えられた場合。中身は C++ のメッセージ(問題のあるノードと内容)
+    #[error("model graph does not fit the dataset: {0}")]
+    ModelGraphMismatch(String),
+    // 学習開始の時点で、C++ がデータセットの色表(labelmap.txt)を読めなかった
+    #[error("dataset is not readable: {0}")]
+    DatasetUnreadable(String),
+}
+
+// C++ でのグラフの検証(ModelGraphValidator)が、検証の結果を返せなかったときのエラー。
+// グラフに問題があった場合はエラーではなく、違反の一覧(Ok)で返る。
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum ModelGraphValidatorError {
+    // C++ と通信できない
+    #[error("failed to call model graph validation: {0}")]
+    CallFailed(String),
+    // データセットの色表(labelmap.txt)が読めず、クラス数が分からない。設定ではなくデータセットの問題
+    #[error("dataset is not readable: {0}")]
+    DatasetUnreadable(String),
+    // C++ が依頼を拒否した(層のパラメータなどの Rust の検証漏れ)、または C++ の内部の失敗
+    #[error("model graph validation was rejected: {0}")]
+    Rejected(String),
 }
 
 // 学習再開(ResumeTraining)のエラー
@@ -47,6 +79,9 @@ pub enum ResumeTrainingError {
     // C++ での学習開始・記録の失敗。AlreadyRunning / ResumePreconditionFailed などは新規学習と同じ扱い
     #[error(transparent)]
     Start(#[from] StartTrainingError),
+    // 学習設定が不正
+    #[error("invalid config: {} violation(s)", .0.len())]
+    InvalidConfig(Vec<ConfigViolation>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -126,4 +161,16 @@ pub enum ValidateTrainingConfigError {
     ModelNameAlreadyUsed(String),
     #[error("failed to read training record: {0}")]
     ReadFailed(String),
+    // 設定の値が不正(値の違反と、C++ で確かめたグラフの違反をまとめて持つ)
+    #[error("invalid config: {} violation(s)", .0.len())]
+    InvalidConfig(Vec<ConfigViolation>),
+    // 指定された dataset_id のデータセットが登録されていない(グラフの形の検証にクラス数が要るため確かめる)
+    #[error("dataset not found: {0}")]
+    DatasetNotFound(String),
+    // データセットの情報を DB から読めなかった
+    #[error("failed to read dataset: {0}")]
+    DatasetReadFailed(String),
+    // C++ でのグラフの検証が、結果を返せなかった(違反があったのではない)
+    #[error(transparent)]
+    GraphCheckFailed(ModelGraphValidatorError),
 }

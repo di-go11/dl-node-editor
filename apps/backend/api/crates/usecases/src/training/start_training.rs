@@ -4,12 +4,16 @@ use super::ModelIdGenerator;
 use super::TrainingRunRegistar;
 use super::TrainingStarter;
 use super::config::StartTrainingConfig;
+use super::config_check::{ConfigCheckError, check_training_config};
 use super::error::StartTrainingError;
+use super::ports::ModelGraphValidator;
 use crate::dataset::ports::DatasetFinder;
 use entities::model::ModelId;
 use entities::training::JobId;
 
 pub struct StartTraining<S, R, G, K, F> {
+    // 学習の開始に加えて、開始前のグラフの検証(ModelGraphValidator)にも使う。
+    // どちらも学習エンジン(C++)への依頼なので、同じアダプター(GrpcTrainingStarter)が両方を実装する
     starter: S,
     repository: R,
     id_generator: G,
@@ -19,7 +23,7 @@ pub struct StartTraining<S, R, G, K, F> {
 }
 
 impl<
-    S: TrainingStarter,
+    S: TrainingStarter + ModelGraphValidator,
     R: TrainingRunRegistar,
     G: ModelIdGenerator,
     K: ProgressRecordingScheduler,
@@ -48,7 +52,16 @@ impl<
                 StartTrainingError::DatasetNotFound(input.dataset_id.as_str().to_string())
             })?;
         let config = &input.to_training_config(dataset.dataset_path);
-
+        // 設定にミスが無いか確認。ある場合すべてのエラーをGUIに送る。
+        // 値(Rust)とグラフ(C++)の両方を、model の行を作る前に確かめる
+        check_training_config(config, &self.starter)
+            .await
+            .map_err(|e| match e {
+                ConfigCheckError::Invalid(violations) => {
+                    StartTrainingError::InvalidConfig(violations)
+                }
+                ConfigCheckError::GraphCheckFailed(e) => StartTrainingError::GraphCheckFailed(e),
+            })?;
         let model_id: ModelId = self.id_generator.generate();
         self.repository
             .insert_model(&model_id, &config.model_name, &config.model_graph)
@@ -67,12 +80,15 @@ impl<
 
 #[cfg(test)]
 mod tests {
+    use super::ModelGraphValidator;
     use super::ModelIdGenerator;
     use super::StartTraining;
     use super::StartTrainingError;
     use super::TrainingRunRegistar;
     use super::TrainingStarter;
     use crate::dataset::error::DatasetError;
+    use crate::training::ModelGraphValidatorError;
+    use entities::validation::ConfigViolation;
     use crate::dataset::ports::DatasetFinder;
     use crate::training::ProgressRecordingScheduler;
     use crate::training::RecordError;
@@ -153,6 +169,7 @@ mod tests {
 
     fn gen_normal_order() -> StartTrainingConfig {
         StartTrainingConfig {
+            lr_scheduler: entities::training::config::LearningRateScheduler::none(),
             model_name: "test_model".to_string(),
             model_graph: gen_model_graph(),
             epoch: 1,
@@ -190,6 +207,22 @@ mod tests {
         log: CallLog,
         // C++ に送られた学習設定(データセットのパスが ID から引いた値になっているかを確認する)
         sent_config: Mutex<Option<TrainingConfig>>,
+        // C++ でのグラフの検証の結果(既定は問題なし)
+        graph_result: Result<Vec<ConfigViolation>, ModelGraphValidatorError>,
+        // グラフの検証に渡されたデータセットのパス
+        graph_dataset_path: Mutex<Option<String>>,
+    }
+    impl ModelGraphValidator for FakeStarter {
+        async fn validate_model_graph(
+            &self,
+            _model_graph: &ModelGraph,
+            _data_spec: &DataSpec,
+            dataset_path: &str,
+        ) -> Result<Vec<ConfigViolation>, ModelGraphValidatorError> {
+            self.log.lock().unwrap().push("validate_model_graph");
+            *self.graph_dataset_path.lock().unwrap() = Some(dataset_path.to_string());
+            self.graph_result.clone()
+        }
     }
     impl TrainingStarter for FakeStarter {
         async fn start_training(
@@ -312,6 +345,8 @@ mod tests {
                 result: start_result,
                 log: Arc::clone(&log),
                 sent_config: Mutex::new(None),
+                graph_result: Ok(vec![]),
+                graph_dataset_path: Mutex::new(None),
             },
             FakeRepository {
                 insert_model_result,
@@ -339,11 +374,13 @@ mod tests {
         let result = usecase.execute(&gen_normal_order()).await;
 
         assert_eq!(result, Ok(expected));
-        // データセットを最初に確認し、modelはtraining_runsから外部キーで参照されるため、その次にinsertされる
+        // データセットを最初に確認し、次にグラフを C++ で確かめる。
+        // modelはtraining_runsから外部キーで参照されるため、その次にinsertされる
         assert_eq!(
             *log.lock().unwrap(),
             vec![
                 "find_dataset",
+                "validate_model_graph",
                 "insert_model",
                 "start_training",
                 "insert_training_run"
@@ -411,7 +448,12 @@ mod tests {
         // 学習が始まっていないので、training_runsにはinsertしない
         assert_eq!(
             *log.lock().unwrap(),
-            vec!["find_dataset", "insert_model", "start_training"]
+            vec![
+                "find_dataset",
+                "validate_model_graph",
+                "insert_model",
+                "start_training"
+            ]
         );
     }
 
@@ -427,7 +469,10 @@ mod tests {
 
         assert!(matches!(result, Err(StartTrainingError::RecordFailed(_))));
         // 保存できない学習は始めない
-        assert_eq!(*log.lock().unwrap(), vec!["find_dataset", "insert_model"]);
+        assert_eq!(
+            *log.lock().unwrap(),
+            vec!["find_dataset", "validate_model_graph", "insert_model"]
+        );
     }
 
     #[tokio::test]
@@ -441,5 +486,109 @@ mod tests {
         let result = usecase.execute(&gen_normal_order()).await;
 
         assert!(matches!(result, Err(StartTrainingError::RecordFailed(_))));
+    }
+
+    fn graph_violation() -> ConfigViolation {
+        ConfigViolation {
+            field: "model_graph.nodes[2]".to_string(),
+            message: "ポート 'y': モデルの出力のチャンネル数(3)が、クラス数(21)と一致しません"
+                .to_string(),
+        }
+    }
+
+    fn violated_fields(result: &Result<JobId, StartTrainingError>) -> Vec<String> {
+        match result {
+            Err(StartTrainingError::InvalidConfig(violations)) => {
+                violations.iter().map(|v| v.field.clone()).collect()
+            }
+            other => panic!("InvalidConfig になるはず: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn graph_check_receives_dataset_path_found_by_id() {
+        let (usecase, _log) = gen_usecase(Ok(JobId::new("1").unwrap()), Ok(()), Ok(()));
+
+        usecase.execute(&gen_normal_order()).await.unwrap();
+
+        // C++ がクラス数を求めるのに使うパスも、DB に登録されたパス
+        assert_eq!(
+            *usecase.starter.graph_dataset_path.lock().unwrap(),
+            Some("/datasets/dataset-1".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn returns_graph_violations_without_inserting_model() {
+        let (mut usecase, log) = gen_usecase(Ok(JobId::new("1").unwrap()), Ok(()), Ok(()));
+        usecase.starter.graph_result = Ok(vec![graph_violation()]);
+
+        let result = usecase.execute(&gen_normal_order()).await;
+
+        assert_eq!(
+            result,
+            Err(StartTrainingError::InvalidConfig(vec![graph_violation()]))
+        );
+        // model の行は作らず、学習も始めない(値を直せば同じ名前で送り直せる)
+        assert_eq!(
+            *log.lock().unwrap(),
+            vec!["find_dataset", "validate_model_graph"]
+        );
+    }
+
+    #[tokio::test]
+    async fn returns_value_and_graph_violations_together() {
+        let (mut usecase, _log) = gen_usecase(Ok(JobId::new("1").unwrap()), Ok(()), Ok(()));
+        usecase.starter.graph_result = Ok(vec![graph_violation()]);
+        let mut order = gen_normal_order();
+        order.optimizer = Optimizer::Adam {
+            learning_rate: 0.0,
+            weight_decay: 0.0,
+            beta1: 0.9,
+            beta2: 0.999,
+            eps: 1e-8,
+        };
+
+        let result = usecase.execute(&order).await;
+
+        // グラフ以外の値の違反だけなら C++ も呼び、両方を 1 つの一覧で返す
+        assert_eq!(
+            violated_fields(&result),
+            vec!["optimizer.learning_rate", "model_graph.nodes[2]"]
+        );
+    }
+
+    #[tokio::test]
+    async fn does_not_call_graph_check_when_layer_params_are_invalid() {
+        let (mut usecase, log) = gen_usecase(Ok(JobId::new("1").unwrap()), Ok(()), Ok(()));
+        usecase.starter.graph_result = Ok(vec![graph_violation()]);
+        let mut order = gen_normal_order();
+        if let NodeSpec::Conv2D(conv) = &mut order.model_graph.nodes[0].spec {
+            conv.stride = 0;
+        }
+
+        let result = usecase.execute(&order).await;
+
+        // 層のパラメータが不正だと C++ はグラフを受け取れない(INVALID_ARGUMENT)ので呼ばない
+        assert_eq!(
+            violated_fields(&result),
+            vec!["model_graph.nodes[0].spec.stride"]
+        );
+        assert_eq!(*log.lock().unwrap(), vec!["find_dataset"]);
+    }
+
+    #[tokio::test]
+    async fn returns_graph_check_failed_when_validator_cannot_check() {
+        let (mut usecase, log) = gen_usecase(Ok(JobId::new("1").unwrap()), Ok(()), Ok(()));
+        let err = ModelGraphValidatorError::CallFailed("server down".to_string());
+        usecase.starter.graph_result = Err(err.clone());
+
+        let result = usecase.execute(&gen_normal_order()).await;
+
+        assert_eq!(result, Err(StartTrainingError::GraphCheckFailed(err)));
+        assert_eq!(
+            *log.lock().unwrap(),
+            vec!["find_dataset", "validate_model_graph"]
+        );
     }
 }

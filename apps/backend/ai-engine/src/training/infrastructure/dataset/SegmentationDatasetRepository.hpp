@@ -31,6 +31,7 @@ public:
     void reset() override;
     bool hasNext() const override;
     TrainingBatch getNextBatch() override;
+    std::size_t batchCount() const override;
 
     // 拡張に渡す乱数の seed。基準 seed・reset の回数・サンプル番号(読み出し順ではなくデータセット内の番号)だけで決まるので、
     // スレッド数やシャッフル順に関係なく、同じ dataSeed なら同じ値になる。

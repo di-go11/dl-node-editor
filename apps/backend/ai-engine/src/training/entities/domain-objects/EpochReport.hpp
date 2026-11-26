@@ -12,4 +12,5 @@ struct EpochReport
     EpochMetrics validation;     // 検証側の loss と TaskMetrics
     uint64_t epochElapsedMs = 0; // このエポックにかかった時間
     uint64_t totalElapsedMs = 0; // 学習開始からの累計時間
+    double learningRate = 0.0;   // このエポックの最後のバッチで使った学習率(Optimizer から読んだ値)
 };

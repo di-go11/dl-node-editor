@@ -62,6 +62,11 @@ export type TrainingProgress = {
   readonly totalElapsedMs: number
   /** 失敗の原因。失敗していなければ null */
   readonly errorMessage: string | null
+  /**
+   * このエポックの最後のバッチで使った学習率(学習エンジンが optimizer から読んだ値)。
+   * まだ 1 エポックも終わっていない・送らない古いサーバーのときは null
+   */
+  readonly learningRate: number | null
 }
 
 /** loss のグラフの 1 点 */
@@ -94,4 +99,27 @@ export function appendLossPoint(
   return [...points.filter((existing) => existing.epoch !== point.epoch), point].sort(
     (a, b) => a.epoch - b.epoch,
   )
+}
+
+/** 学習率のグラフの 1 点。学習率が分からないエポック(古いサーバー)は null で、線を切る */
+export type LearningRatePoint = {
+  readonly epoch: number
+  readonly learningRate: number | null
+}
+
+/** 進捗を学習率のグラフの点の列に加える。epoch 0・同じエポック・並び順の扱いは appendLossPoint と同じ */
+export function appendLearningRatePoint(
+  points: readonly LearningRatePoint[],
+  progress: TrainingProgress,
+): readonly LearningRatePoint[] {
+  if (progress.epoch === 0) return points
+  const point: LearningRatePoint = { epoch: progress.epoch, learningRate: progress.learningRate }
+  return [...points.filter((existing) => existing.epoch !== point.epoch), point].sort(
+    (a, b) => a.epoch - b.epoch,
+  )
+}
+
+/** 1 点でも学習率があるか。全エポックで分からない(古いサーバー・古い学習)ならグラフ自体を出さない */
+export function hasLearningRate(points: readonly LearningRatePoint[]): boolean {
+  return points.some((point) => point.learningRate !== null)
 }

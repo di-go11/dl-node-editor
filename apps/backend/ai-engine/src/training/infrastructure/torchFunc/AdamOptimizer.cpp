@@ -29,6 +29,14 @@ void AdamOptimizer::writeTo(ICheckpointWriter &archive) const
     _optim->save(toTorchArchive(archive));
 }
 
+void AdamOptimizer::updateLearningRate(double learningRate)
+{
+    for (auto &group : _optim->param_groups())
+    {
+        group.options().set_lr(learningRate);
+    }
+}
+
 void AdamOptimizer::readFrom(ICheckpointReader &archive)
 {
     // 状態(exp_avg / exp_avg_sq / step)は checkpoint から引き継ぎ、lr などは今回の指定値のまま残す
@@ -49,4 +57,10 @@ void AdamOptimizer::readFrom(ICheckpointReader &archive)
             if (s.max_exp_avg_sq().defined())
                 s.max_exp_avg_sq(s.max_exp_avg_sq().to(dev));
         });
+}
+
+double AdamOptimizer::learningRate() const
+{
+    // updateLearningRate は全 param group に同じ値を入れるので、先頭の group を読めば足りる
+    return _optim->param_groups().at(0).options().get_lr();
 }

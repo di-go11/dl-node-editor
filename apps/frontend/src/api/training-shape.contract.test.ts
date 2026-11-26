@@ -7,6 +7,7 @@ import type {
   IMAGE_TASK_TYPES,
 } from '../entity/training/data-spec'
 import type { LOSS_TYPES } from '../entity/training/loss'
+import { LR_SCHEDULER_TYPES } from '../entity/training/lr-scheduler'
 import { OPTIMIZER_TYPES } from '../entity/training/optimizer'
 import type { TrainingStatus } from '../entity/training/progress'
 import { variantKindsOf } from '../entity/training/variant'
@@ -14,6 +15,7 @@ import type { TrainingProcessJson } from '../infrastructure/http/http-training-p
 import type { TrainedModelSummary } from '../entity/trained-model/trained-model'
 import type {
   RustDataSpec,
+  RustLrScheduler,
   RustResumeTrainingRequest,
   RustStartTrainingRequest,
 } from '../infrastructure/http/rust-training-request'
@@ -154,10 +156,25 @@ describe('学習開始リクエスト', () => {
     expect(matches).toBe(true)
   })
 
-  it('省略できるキー(seed)が一致する', () => {
+  it('省略できるキー(seed、lr_scheduler)が一致する', () => {
     const matches: Equal<OptionalKeys<RustStartTrainingRequest>, OptionalKeys<Request>> = true
-    const expected: Equal<OptionalKeys<Request>, 'seed'> = true
+    const expected: Equal<OptionalKeys<Request>, 'seed' | 'lr_scheduler'> = true
     expect([matches, expected]).toEqual([true, true])
+  })
+})
+
+describe('学習率スケジューラ', () => {
+  type Scheduler = Schemas['LearningRateScheduler']
+
+  it('種類名が契約の LearningRateScheduler の type と一致する', () => {
+    const matches: Equal<keyof typeof LR_SCHEDULER_TYPES, Scheduler['type']> = true
+    expect(matches).toBe(true)
+    expect(variantKindsOf(LR_SCHEDULER_TYPES)).toHaveLength(4)
+  })
+
+  it('HTTP 用のスキーマの種類名が、契約と一致する', () => {
+    const matches: Equal<RustLrScheduler['type'], Scheduler['type']> = true
+    expect(matches).toBe(true)
   })
 })
 

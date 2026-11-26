@@ -68,6 +68,17 @@ bool SegmentationDatasetRepository::hasNext() const
     return _currentIndex < _source->size();
 }
 
+std::size_t SegmentationDatasetRepository::batchCount() const
+{
+    // getNextBatch() は _batchSize 件ずつ切り出し、最後の端数も 1 バッチとして返すので、切り上げの割り算になる。
+    if (_batchSize == 0)
+    {
+        return 0;
+    }
+    const std::size_t batchSize = static_cast<std::size_t>(_batchSize);
+    return (_source->size() + batchSize - 1) / batchSize;
+}
+
 TrainingBatch SegmentationDatasetRepository::getNextBatch()
 {
     const size_t start = _currentIndex;

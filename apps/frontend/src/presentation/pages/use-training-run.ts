@@ -43,6 +43,20 @@ export type TrainingRun = {
   readonly start: () => Promise<void>
 }
 
+/** ログに出す、問題の場所(ノード・ポート・パラメータ・設定項目)。場所がなければ空 */
+function issueLocationText(issue: Issue): string {
+  if (issue.nodeId !== undefined) {
+    // ポート単位の問題は、サーバーのメッセージの先頭にすでに「ポート 'x': 」がある
+    const port =
+      issue.port === undefined || issue.message.startsWith(`ポート '${issue.port}'`)
+        ? ''
+        : ` のポート ${issue.port}`
+    const param = issue.paramName === undefined ? '' : ` の ${issue.paramName}`
+    return `ノード ${issue.nodeId}${port}${param}: `
+  }
+  return issue.field === undefined ? '' : `${issue.field}: `
+}
+
 export function useTrainingRun(availableDevices: readonly string[] | undefined): TrainingRun {
   const store = useEditorStoreApi()
   const { trainingApi } = useDependencies()
@@ -95,8 +109,15 @@ export function useTrainingRun(availableDevices: readonly string[] | undefined):
     }
     after.setRunState(finishStart(after.runState, { ok: false }))
     if (result.reason === 'api') {
+      // 設定・モデル構造の誤り(422 の違反の一覧)なら、どこが悪いかを 1 件ずつ出す。
+      // 整合性チェックの後にデータセットが差し替えられた場合などに起こる
+      const issues = result.error.issues ?? []
       after.addMessages([
         { level: 'error', text: `学習を開始できませんでした: ${result.error.message}` },
+        ...issues.map((issue) => ({
+          level: 'error' as const,
+          text: `  ${issueLocationText(issue)}${issue.message}`,
+        })),
       ])
     }
   }, [store, trainingApi, navigate])

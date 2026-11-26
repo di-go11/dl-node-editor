@@ -1,16 +1,23 @@
 // 学習済みモデルの一覧・学習設定を DB から読み出す処理(学習再開の画面と API 用)
 use super::SqliteTrainingRepository;
 use crate::model;
-use entities::model::{LastRunSummary, ModelId, ModelSummary, ModelTaskType};
+use entities::model::{
+    EpochRecord, LastRunSummary, ModelHistory, ModelId, ModelSummary, ModelTaskType, RunRecord,
+};
+use entities::training::{ClassificationMetrics, JobId, Metrics, SegmentationMetrics};
+use std::collections::HashMap;
 use entities::training::config::{
-    DataSpec, ImageAnnotationConfig, ImageSpec, ImageTaskSpec, Loss, Optimizer, PascalVocConfig,
+    DataSpec, ImageAnnotationConfig, ImageSpec, ImageTaskSpec, LearningRateScheduler,
+    LearningRateSchedulerConfig, LearningRateUpdateInterval, Loss, Optimizer, PascalVocConfig,
     RgbColor, SegmentationSpec, TrainingConfig,
 };
 use entities::training::TrainingJobStatus;
 use sqlx::sqlite::SqliteRow;
 use sqlx::Row;
 use usecases::model::error::FetchModelError;
-use usecases::model::ports::{ModelSummaryProvider, ModelTrainingConfigProvider};
+use usecases::model::ports::{
+    ModelHistoryProvider, ModelSummaryProvider, ModelTrainingConfigProvider,
+};
 
 impl ModelSummaryProvider for SqliteTrainingRepository {
     async fn fetch(&self) -> Result<Vec<ModelSummary>, FetchModelError> {
@@ -103,7 +110,9 @@ impl ModelTrainingConfigProvider for SqliteTrainingRepository {
                     c.momentum, c.nesterov, c.loss_type, c.loss_gamma, c.loss_alpha, \
                     c.data_type, c.input_width, c.input_height, c.task_type, c.ignore_index, \
                     c.annotation_type, c.include_difficult, \
-                    c.ignore_color_r, c.ignore_color_g, c.ignore_color_b \
+                    c.ignore_color_r, c.ignore_color_g, c.ignore_color_b, \
+                    c.lr_scheduler_type, c.lr_power, c.lr_min_lr, c.lr_step_size, c.lr_gamma, \
+                    c.lr_update_interval, c.lr_warmup_epochs \
              FROM model m \
              JOIN training_runs r ON r.model_id = m.model_id \
              JOIN training_config c ON c.job_id = r.job_id \
@@ -123,6 +132,8 @@ impl ModelTrainingConfigProvider for SqliteTrainingRepository {
         let model_graph = model::from_json(&graph_json).map_err(invalid)?;
 
         Ok(TrainingConfig {
+            // 0005 より前の行は、列の既定値で none(warmup なし)として読める
+            lr_scheduler: read_lr_scheduler(&row)?,
             model_name: get(&row, "model_name")?,
             model_graph,
             epoch: get(&row, "epochs")?,
@@ -139,7 +150,187 @@ impl ModelTrainingConfigProvider for SqliteTrainingRepository {
     }
 }
 
+impl ModelHistoryProvider for SqliteTrainingRepository {
+    async fn fetch_history(&self, model_id: &ModelId) -> Result<ModelHistory, FetchModelError> {
+        let model_name: String = sqlx::query("SELECT model_name FROM model WHERE model_id = ?")
+            .bind(model_id.as_str())
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| FetchModelError::InvalidQuery(e.to_string()))?
+            .ok_or_else(|| FetchModelError::NotFound(model_id.as_str().to_string()))
+            .and_then(|row| get(&row, "model_name"))?;
+
+        // run は学習を始めた順。started_at が同じなら insert した順(ModelTrainingConfigProvider と同じ並べ方)
+        let run_rows = sqlx::query(
+            "SELECT job_id, status, failure_reason, started_at, finished_at \
+             FROM training_runs WHERE model_id = ? ORDER BY started_at, rowid",
+        )
+        .bind(model_id.as_str())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| FetchModelError::InvalidQuery(e.to_string()))?;
+        let runs = run_rows
+            .iter()
+            .map(|row| {
+                Ok(RunRecord {
+                    job_id: read_job_id(row)?,
+                    status: read_status(row)?,
+                    started_at: get(row, "started_at")?,
+                    finished_at: get(row, "finished_at")?,
+                })
+            })
+            .collect::<Result<Vec<_>, FetchModelError>>()?;
+
+        // クラスごとの値(IoU / accuracy)は別のテーブルにあるので、先に (job_id, epoch) ごとに集める
+        let per_class_iou = self
+            .fetch_per_class(model_id, "segmentation_class_metrics", "iou")
+            .await?;
+        let per_class_accuracy = self
+            .fetch_per_class(model_id, "classification_class_metrics", "accuracy")
+            .await?;
+
+        let epoch_rows = sqlx::query(
+            "SELECT e.job_id, e.epoch, e.train_loss, e.val_loss, e.learning_rate, e.epoch_elapsed_ms, \
+                    s.job_id AS seg_job_id, s.pixel_accuracy, s.miou, s.fw_iou, s.mean_class_accuracy, \
+                    c.job_id AS cls_job_id, c.accuracy, c.macro_f1 \
+             FROM training_epochs e \
+             JOIN training_runs r ON r.job_id = e.job_id \
+             LEFT JOIN segmentation_epoch_metrics s ON s.job_id = e.job_id AND s.epoch = e.epoch \
+             LEFT JOIN classification_epoch_metrics c ON c.job_id = e.job_id AND c.epoch = e.epoch \
+             WHERE r.model_id = ? \
+             ORDER BY r.started_at, r.rowid, e.epoch",
+        )
+        .bind(model_id.as_str())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| FetchModelError::InvalidQuery(e.to_string()))?;
+
+        let epochs = epoch_rows
+            .iter()
+            .map(|row| {
+                let job_id = read_job_id(row)?;
+                let epoch: u32 = get(row, "epoch")?;
+                let key = (job_id.as_str().to_string(), epoch);
+                // NULL(NaN を保存した値など)は NaN にする(JSON では null になる)
+                let value = |column: &str| -> Result<f64, FetchModelError> {
+                    Ok(get::<Option<f64>>(row, column)?.unwrap_or(f64::NAN))
+                };
+                let metrics = if get::<Option<String>>(row, "seg_job_id")?.is_some() {
+                    Some(Metrics::Segmentation(SegmentationMetrics {
+                        pixel_accuracy: value("pixel_accuracy")?,
+                        miou: value("miou")?,
+                        fw_iou: value("fw_iou")?,
+                        mean_class_accuracy: value("mean_class_accuracy")?,
+                        per_class_iou: per_class_iou.get(&key).cloned().unwrap_or_default(),
+                    }))
+                } else if get::<Option<String>>(row, "cls_job_id")?.is_some() {
+                    Some(Metrics::Classification(ClassificationMetrics {
+                        accuracy: value("accuracy")?,
+                        macro_f1: value("macro_f1")?,
+                        per_class_accuracy: per_class_accuracy.get(&key).cloned().unwrap_or_default(),
+                    }))
+                } else {
+                    None
+                };
+                let epoch_elapsed_ms: i64 = get(row, "epoch_elapsed_ms")?;
+                Ok(EpochRecord {
+                    job_id,
+                    epoch,
+                    train_loss: get(row, "train_loss")?,
+                    val_loss: get(row, "val_loss")?,
+                    learning_rate: get(row, "learning_rate")?,
+                    epoch_elapsed_ms: u64::try_from(epoch_elapsed_ms).map_err(invalid)?,
+                    metrics,
+                })
+            })
+            .collect::<Result<Vec<_>, FetchModelError>>()?;
+
+        Ok(ModelHistory {
+            model_id: model_id.clone(),
+            model_name,
+            runs,
+            epochs,
+        })
+    }
+}
+
+impl SqliteTrainingRepository {
+    // クラスごとの値を (job_id, epoch) → クラスの添字の順の値 にまとめる。
+    // table / column は呼び出し側の固定の名前だけを渡す(利用者の入力は入らない)
+    async fn fetch_per_class(
+        &self,
+        model_id: &ModelId,
+        table: &str,
+        column: &str,
+    ) -> Result<HashMap<(String, u32), Vec<f64>>, FetchModelError> {
+        let rows = sqlx::query(&format!(
+            "SELECT t.job_id, t.epoch, t.class_index, t.{column} AS value \
+             FROM {table} t JOIN training_runs r ON r.job_id = t.job_id \
+             WHERE r.model_id = ? ORDER BY t.job_id, t.epoch, t.class_index"
+        ))
+        .bind(model_id.as_str())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| FetchModelError::InvalidQuery(e.to_string()))?;
+
+        let mut values: HashMap<(String, u32), Vec<f64>> = HashMap::new();
+        for row in &rows {
+            let key = (get::<String>(row, "job_id")?, get::<u32>(row, "epoch")?);
+            let index = usize::try_from(get::<i64>(row, "class_index")?).map_err(invalid)?;
+            let value = get::<Option<f64>>(row, "value")?.unwrap_or(f64::NAN);
+            let per_class = values.entry(key).or_default();
+            // 添字が飛んでいれば NaN で埋める(記録していないクラス)
+            if per_class.len() <= index {
+                per_class.resize(index + 1, f64::NAN);
+            }
+            per_class[index] = value;
+        }
+        Ok(values)
+    }
+}
+
+fn read_job_id(row: &SqliteRow) -> Result<JobId, FetchModelError> {
+    JobId::new(get::<String>(row, "job_id")?).map_err(invalid)
+}
+
 // 以下の対応表は sql_recorder.rs の insert_training_run の逆。片方を変えたらもう片方も変える。
+
+fn read_lr_scheduler(row: &SqliteRow) -> Result<LearningRateScheduler, FetchModelError> {
+    let scheduler_type: String = get(row, "lr_scheduler_type")?;
+    let scheduler = match scheduler_type.as_str() {
+        "none" => LearningRateSchedulerConfig::None,
+        "poly" => LearningRateSchedulerConfig::Poly {
+            power: required(row, "lr_power")?,
+        },
+        "cosine" => LearningRateSchedulerConfig::Cosine {
+            min_lr: required(row, "lr_min_lr")?,
+        },
+        "step" => LearningRateSchedulerConfig::Step {
+            step_size: required(row, "lr_step_size")?,
+            gamma: required(row, "lr_gamma")?,
+        },
+        other => {
+            return Err(FetchModelError::InvalidData(format!(
+                "unknown lr_scheduler_type: {other}"
+            )))
+        }
+    };
+    let update_interval_name: String = get(row, "lr_update_interval")?;
+    let update_interval = match update_interval_name.as_str() {
+        "per_batch" => LearningRateUpdateInterval::PerBatch,
+        "per_epoch" => LearningRateUpdateInterval::PerEpoch,
+        other => {
+            return Err(FetchModelError::InvalidData(format!(
+                "unknown lr_update_interval: {other}"
+            )))
+        }
+    };
+    Ok(LearningRateScheduler {
+        scheduler,
+        update_interval,
+        warmup_epochs: get(row, "lr_warmup_epochs")?,
+    })
+}
 
 fn read_optimizer(row: &SqliteRow) -> Result<Optimizer, FetchModelError> {
     let learning_rate = get(row, "learning_rate")?;
@@ -335,6 +526,7 @@ mod tests {
 
     fn gen_config() -> TrainingConfig {
         TrainingConfig {
+            lr_scheduler: entities::training::config::LearningRateScheduler::none(),
             model_name: "test_model".to_string(),
             model_graph: gen_graph(),
             epoch: 5,
@@ -394,6 +586,51 @@ mod tests {
     }
 
     // 無視する色の指定なし(3 列とも NULL)も、そのまま読み戻せること
+    // 学習率スケジューラは種類ごとに使う列が違う(0005)。どの種類も保存した値で読み戻せること
+    #[tokio::test]
+    async fn reads_back_every_lr_scheduler_type() {
+        let schedulers = [
+            LearningRateScheduler::none(),
+            LearningRateScheduler {
+                scheduler: LearningRateSchedulerConfig::Poly { power: 0.9 },
+                update_interval: LearningRateUpdateInterval::PerBatch,
+                warmup_epochs: 1,
+            },
+            LearningRateScheduler {
+                scheduler: LearningRateSchedulerConfig::Cosine { min_lr: 1e-6 },
+                update_interval: LearningRateUpdateInterval::PerBatch,
+                warmup_epochs: 0,
+            },
+            LearningRateScheduler {
+                scheduler: LearningRateSchedulerConfig::Step {
+                    step_size: 30,
+                    gamma: 0.1,
+                },
+                update_interval: LearningRateUpdateInterval::PerEpoch,
+                warmup_epochs: 2,
+            },
+        ];
+        for (i, lr_scheduler) in schedulers.into_iter().enumerate() {
+            let repo = gen_repository().await;
+            let config = TrainingConfig {
+                lr_scheduler,
+                ..gen_config()
+            };
+            repo.insert_model(&model_id(), &config.model_name, &config.model_graph)
+                .await
+                .unwrap();
+            repo.insert_training_run(&JobId::new(format!("job-{i}")).unwrap(), &config, &model_id())
+                .await
+                .unwrap();
+
+            let fetched = ModelTrainingConfigProvider::fetch(&repo, &model_id())
+                .await
+                .unwrap();
+
+            assert_eq!(fetched, config);
+        }
+    }
+
     #[tokio::test]
     async fn reads_back_config_without_ignore_color() {
         let repo = gen_repository().await;
@@ -661,5 +898,81 @@ mod tests {
 
         let names: Vec<&str> = summaries.iter().map(|s| s.model_name()).collect();
         assert_eq!(names, vec!["old", "new"]);
+    }
+
+    fn epoch_process(epoch: u32, learning_rate: Option<f64>) -> entities::training::TrainingProcess {
+        entities::training::TrainingProcess {
+            epoch,
+            train_loss: 0.5,
+            val_loss: 0.4,
+            status: TrainingJobStatus::Running,
+            metrics: Some(Metrics::Segmentation(SegmentationMetrics {
+                pixel_accuracy: 0.9,
+                miou: 0.5,
+                fw_iou: 0.8,
+                mean_class_accuracy: 0.6,
+                per_class_iou: vec![0.9, 0.1],
+            })),
+            epoch_elapsed_time: std::time::Duration::from_millis(1200),
+            total_elapsed_time: std::time::Duration::from_millis(1200 * u64::from(epoch)),
+            learning_rate,
+        }
+    }
+
+    // 学習の記録: 全 run のエポックを、run の順・エポックの順に、メトリクス(クラスごとの値も)と学習率つきで返す
+    #[tokio::test]
+    async fn history_has_epochs_of_every_run_in_order() {
+        use usecases::training::TrainingProgressRecorder;
+
+        let repo = gen_repository().await;
+        let config = gen_config();
+        repo.insert_model(&model_id(), &config.model_name, &config.model_graph)
+            .await
+            .unwrap();
+        let first = JobId::new("job-1").unwrap();
+        let second = JobId::new("job-2").unwrap();
+        repo.insert_training_run(&first, &config, &model_id()).await.unwrap();
+        repo.insert_epoch(&first, 1, &epoch_process(1, Some(1e-3))).await.unwrap();
+        repo.insert_epoch(&first, 2, &epoch_process(2, None)).await.unwrap();
+        repo.insert_training_run(&second, &config, &model_id()).await.unwrap();
+        repo.insert_epoch(&second, 3, &epoch_process(3, Some(5e-4))).await.unwrap();
+
+        let history = repo.fetch_history(&model_id()).await.unwrap();
+
+        assert_eq!(history.model_name, "test_model");
+        assert_eq!(
+            history.runs.iter().map(|r| r.job_id.as_str()).collect::<Vec<_>>(),
+            vec!["job-1", "job-2"]
+        );
+        assert_eq!(
+            history
+                .epochs
+                .iter()
+                .map(|e| (e.job_id.as_str(), e.epoch, e.learning_rate))
+                .collect::<Vec<_>>(),
+            vec![("job-1", 1, Some(1e-3)), ("job-1", 2, None), ("job-2", 3, Some(5e-4))]
+        );
+        let first_epoch = &history.epochs[0];
+        assert_eq!(first_epoch.train_loss, Some(0.5));
+        assert_eq!(first_epoch.epoch_elapsed_ms, 1200);
+        assert_eq!(
+            first_epoch.metrics,
+            Some(Metrics::Segmentation(SegmentationMetrics {
+                pixel_accuracy: 0.9,
+                miou: 0.5,
+                fw_iou: 0.8,
+                mean_class_accuracy: 0.6,
+                per_class_iou: vec![0.9, 0.1],
+            }))
+        );
+    }
+
+    #[tokio::test]
+    async fn history_of_unknown_model_is_not_found() {
+        let repo = gen_repository().await;
+        assert!(matches!(
+            repo.fetch_history(&model_id()).await,
+            Err(FetchModelError::NotFound(_))
+        ));
     }
 }

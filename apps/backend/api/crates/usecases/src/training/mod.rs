@@ -1,4 +1,5 @@
 mod config;
+mod config_check;
 mod error;
 mod get_training_progress;
 mod model_id_generator;
@@ -13,12 +14,16 @@ mod validate_training_config;
 
 pub use config::{ResumeTrainingConfig, StartTrainingConfig};
 pub use error::{
-    RecordError, RepositoryError, ResumeTrainingError, StartTrainingError, StopTrainingError,
-    TrainingProgressProviderError, ValidateTrainingConfigError,
+    ModelGraphValidatorError, RecordError, RepositoryError, ResumeTrainingError,
+    StartTrainingError, StopTrainingError, TrainingProgressProviderError,
+    ValidateTrainingConfigError,
 };
 pub use get_training_progress::{GetTrainingProcess, TrainingProgressProvider};
 pub use model_id_generator::ModelIdGenerator;
-pub use ports::{ProgressRecordingScheduler, TrainingResumer, TrainingStarter, TrainingStopper};
+pub use ports::{
+    ModelGraphValidator, ProgressRecordingScheduler, TrainingResumer, TrainingStarter,
+    TrainingStopper,
+};
 pub use read_training_record::TrainingRecordReader;
 pub use record_training_process::{
     RecordTrainingProgress, TrainingProgressRecorder, TrainingRunRegistar,

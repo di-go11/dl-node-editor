@@ -81,6 +81,7 @@ public:
         _consumed = true;
         return _batch;
     }
+    std::size_t batchCount() const override { return 1; }
 
 private:
     TrainingBatch _batch;

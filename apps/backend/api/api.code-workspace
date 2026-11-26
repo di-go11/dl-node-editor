@@ -1,18 +1,22 @@
 {
-    "folders": [
-        {
-            "path": "."
-        },
-        {
-            "path": "../../../docs/issues",
-            "name": "issues"
-        },
-        {
-            "path": "../../../docs/notes",
-            "name": "notes"
-        }
-    ],
-    "settings": {
-        "remote.autoForwardPortsFallback": 0
-    }
+  "folders": [
+    {
+      "path": ".",
+    },
+    {
+      "path": "../../../docs/issues",
+      "name": "issues",
+    },
+    {
+      "path": "../../../docs/notes",
+      "name": "notes",
+    },
+    {
+      "path": "../proto",
+      "name": "proto",
+    },
+  ],
+  "settings": {
+    "remote.autoForwardPortsFallback": 0,
+  },
 }

@@ -2,8 +2,16 @@ import { useCallback, useEffect, useState } from 'react'
 
 import type { ProgressProblem } from '../../application/ports/training-api'
 import { finishRun } from '../../application/run-state/run-state'
-import type { LossPoint, TrainingProgress } from '../../entity/training/progress'
-import { appendLossPoint, isTerminalStatus } from '../../entity/training/progress'
+import type {
+  LearningRatePoint,
+  LossPoint,
+  TrainingProgress,
+} from '../../entity/training/progress'
+import {
+  appendLearningRatePoint,
+  appendLossPoint,
+  isTerminalStatus,
+} from '../../entity/training/progress'
 import { useDependencies } from '../app/dependencies'
 import { useEditorStoreApi } from '../stores/editor-store-context'
 
@@ -20,6 +28,8 @@ export type TrainingProgressView = {
   /** 最後に受け取った進捗(まだ何も届いていなければ null) */
   readonly latest: TrainingProgress | null
   readonly lossPoints: readonly LossPoint[]
+  /** エポックごとの学習率(学習エンジンから届いた値をそのまま描く) */
+  readonly learningRatePoints: readonly LearningRatePoint[]
   readonly problem: ProgressProblem | null
   /** 学習が終わったか、もう進捗が届かない。これ以上の変化を待たなくてよい */
   readonly ended: boolean
@@ -34,6 +44,7 @@ export function useTrainingProgress(jobId: string): TrainingProgressView {
   const store = useEditorStoreApi()
   const [latest, setLatest] = useState<TrainingProgress | null>(null)
   const [lossPoints, setLossPoints] = useState<readonly LossPoint[]>([])
+  const [learningRatePoints, setLearningRatePoints] = useState<readonly LearningRatePoint[]>([])
   const [problem, setProblem] = useState<ProgressProblem | null>(null)
   const [stopRequested, setStopRequested] = useState(false)
   const [stopError, setStopError] = useState<string | null>(null)
@@ -44,6 +55,7 @@ export function useTrainingProgress(jobId: string): TrainingProgressView {
         onProgress: (progress) => {
           setLatest(progress)
           setLossPoints((points) => appendLossPoint(points, progress))
+          setLearningRatePoints((points) => appendLearningRatePoint(points, progress))
           setProblem(null)
           if (isTerminalStatus(progress.status)) {
             const state = store.getState()
@@ -70,6 +82,7 @@ export function useTrainingProgress(jobId: string): TrainingProgressView {
   return {
     latest,
     lossPoints,
+    learningRatePoints,
     problem,
     ended: finished || problem?.retrying === false,
     stopping: stopRequested && !finished,

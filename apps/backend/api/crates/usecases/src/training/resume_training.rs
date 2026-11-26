@@ -68,6 +68,9 @@ where
             )));
         }
         let config = input.apply_to(saved);
+        config
+            .validate()
+            .map_err(ResumeTrainingError::InvalidConfig)?;
 
         let job_id = self.resumer.resume_training(&config, model_id).await?;
         // 再開では model の行は作らず、同じ model_id に新しい run を追加する
@@ -95,6 +98,7 @@ mod tests {
 
     fn gen_config() -> TrainingConfig {
         TrainingConfig {
+            lr_scheduler: entities::training::config::LearningRateScheduler::none(),
             model_name: "test_model".to_string(),
             model_graph: ModelGraph {
                 nodes: vec![Node {
@@ -285,6 +289,8 @@ mod tests {
 
         let saved = gen_config();
         let expected = TrainingConfig {
+            // 学習率スケジューラは再開で変えられない(前回の値)
+            lr_scheduler: saved.lr_scheduler,
             // 固定項目は前回の値
             model_name: saved.model_name,
             model_graph: saved.model_graph,

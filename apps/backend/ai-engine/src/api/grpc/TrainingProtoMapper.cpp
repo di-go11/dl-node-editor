@@ -301,51 +301,111 @@ namespace
         return ValidatedModelGraph::create(graph);
     }
 
-    // ---- optimizer / loss ----
+    // ---- optimizer / lr_scheduler /loss ----
 
     OptimizerConfig toOptimizer(const training::v1::OptimizerConfig &optimizer)
     {
+
+        OptimizerConfig result;
         switch (optimizer.config_case())
         {
         case training::v1::OptimizerConfig::kAdam:
         {
             const auto &p = optimizer.adam();
             AdamOptimizerConfig c;
-            c.learningRate = p.learning_rate();
             c.weightDecay = p.weight_decay();
             c.beta1 = p.beta1();
             c.beta2 = p.beta2();
             c.eps = p.eps();
-            requireGreaterThanZero(c.learningRate, "optimizer.adam.learning_rate");
             requireGreaterThanZero(c.eps, "optimizer.adam.eps");
-            return c;
+            result.kind = c;
+            break;
         }
         case training::v1::OptimizerConfig::kAdamW:
         {
             const auto &p = optimizer.adam_w();
             AdamWOptimizerConfig c;
-            c.learningRate = p.learning_rate();
             c.weightDecay = p.weight_decay();
             c.beta1 = p.beta1();
             c.beta2 = p.beta2();
-            requireGreaterThanZero(c.learningRate, "optimizer.adam_w.learning_rate");
-            return c;
+            result.kind = c;
+            break;
         }
         case training::v1::OptimizerConfig::kSgd:
         {
             const auto &p = optimizer.sgd();
             SGDOptimizerConfig c;
-            c.learningRate = p.learning_rate();
             c.weightDecay = p.weight_decay();
             c.momentum = p.momentum();
             c.nesterov = p.nesterov();
-            requireGreaterThanZero(c.learningRate, "optimizer.sgd.learning_rate");
-            return c;
-        }
-        case training::v1::OptimizerConfig::CONFIG_NOT_SET:
+            result.kind = c;
             break;
         }
-        invalid("optimizer の種類が指定されていません");
+        case training::v1::OptimizerConfig::CONFIG_NOT_SET:
+            invalid("optimizer の種類が指定されていません");
+            break;
+        }
+        result.learningRate = optimizer.learning_rate();
+        requireGreaterThanZero(result.learningRate, "optimizer.learning_rate");
+        return result;
+    }
+
+    LearningRateSchedulerConfig toLrScheduler(const training::v1::LearningRateSchedulerConfig &scheduler)
+    {
+        LearningRateSchedulerConfig result;
+        switch (scheduler.config_case())
+        {
+        case training::v1::LearningRateSchedulerConfig::kNone:
+        {
+            break;
+        }
+        case training::v1::LearningRateSchedulerConfig::kPoly:
+        {
+            const auto &s = scheduler.poly();
+            PolyLearningRateSchedulerConfig c;
+            c.power = s.power();
+            result.scheduler = c;
+            break;
+        }
+        case training::v1::LearningRateSchedulerConfig::kCosine:
+        {
+            const auto &s = scheduler.cosine();
+            CosineLearningRateSchedulerConfig c;
+            c.minLR = s.min_lr();
+            result.scheduler = c;
+            break;
+        }
+        case training::v1::LearningRateSchedulerConfig::kStep:
+        {
+            const auto &s = scheduler.step();
+            StepLearningRateSchedulerConfig c;
+            c.gamma = s.gamma();
+            c.stepSize = s.step_size();
+            result.scheduler = c;
+            break;
+        }
+        case training::v1::LearningRateSchedulerConfig::CONFIG_NOT_SET:
+        {
+            break;
+        }
+        }
+        switch (scheduler.update_interval())
+        {
+        case training::v1::LEARNING_RATE_UPDATE_INTERVAL_PER_BATCH:
+        {
+            result.updateInterval = LearningRateUpdateInterval::PerBatch;
+            break;
+        }
+        case training::v1::LEARNING_RATE_UPDATE_INTERVAL_PER_EPOCH:
+        {
+            result.updateInterval = LearningRateUpdateInterval::PerEpoch;
+            break;
+        }
+        default:
+            invalid("lr_scheduler.update_interval: unknown value");
+        }
+        result.warmupEpochs = scheduler.warmup_epochs();
+        return result;
     }
 
     LossConfig toLoss(const training::v1::LossConfig &loss)
@@ -509,18 +569,13 @@ StartTrainingCommand toStartTrainingCommand(const training::v1::StartTrainingReq
     command.epochSize = request.epoch();
     command.batchSize = request.batch();
     command.saveLastEvery = request.save_last_every();
+    command.lrScheduler = toLrScheduler(request.lr_scheduler());
 
     if (request.dataset_path().empty())
     {
         invalid("dataset_path が空です");
     }
     command.datasetPath = request.dataset_path();
-    // 再開は resume と model_id で決める。任意のパスから再開する経路は廃止したので、
-    // 値が入っていたら黙って無視せずに拒否する。
-    if (!request.resume_from().empty())
-    {
-        invalid("resume_from は使えません。再開するには resume = true を指定してください(再開元は <model_id>_last.pt)");
-    }
     if (request.has_seed())
     {
         command.seed = request.seed().value();
@@ -542,6 +597,52 @@ StartTrainingCommand toStartTrainingCommand(const training::v1::StartTrainingReq
     command.dataSpec = toDataSpec(request.data_spec());
 
     return command;
+}
+
+ModelGraphCheckRequest toModelGraphCheckRequest(const training::v1::ValidateModelGraphRequest &request)
+{
+    ModelGraphCheckRequest result;
+    result.graph = toModelGraph(request.model_graph());
+    if (!request.has_data_spec())
+    {
+        invalid("data_spec が指定されていません");
+    }
+    result.dataSpec = toDataSpec(request.data_spec());
+    result.datasetPath = request.dataset_path();
+    return result;
+}
+
+void fillValidateModelGraphResponse(const std::vector<GraphValidationError> &errors,
+                                    training::v1::ValidateModelGraphResponse &response)
+{
+    for (const GraphValidationError &error : errors)
+    {
+        training::v1::GraphViolation *violation = response.add_violations();
+        if (error.nodeIndex.has_value())
+        {
+            violation->mutable_node_index()->set_value(static_cast<uint32_t>(*error.nodeIndex));
+        }
+        if (error.inputIndex.has_value())
+        {
+            violation->mutable_input_index()->set_value(static_cast<uint32_t>(*error.inputIndex));
+        }
+        if (error.outputIndex.has_value())
+        {
+            violation->mutable_output_index()->set_value(static_cast<uint32_t>(*error.outputIndex));
+        }
+        // ノードのポート単位の問題は、添字だけではどのポートか分からないので名前を前に付ける。
+        // 例: 必須の入力ポートが未接続(port = 入力ポート)、モデルの出力の形が合わない(port = 出力ポート)。
+        // 入力の接続(inputIndex あり)と outputs の問題は、添字で場所が決まり、メッセージにもポート名が入っている。
+        if (!error.port.empty() && !error.inputIndex.has_value() && !error.outputIndex.has_value() &&
+            error.nodeIndex.has_value())
+        {
+            violation->set_message("ポート '" + error.port + "': " + error.message);
+        }
+        else
+        {
+            violation->set_message(error.message);
+        }
+    }
 }
 
 training::v1::TrainingStatus toProtoTrainingStatus(TrainingStatus status)
@@ -579,5 +680,6 @@ void fillStreamProgressResponse(const TrainingProcessSnapshot &snapshot, trainin
     response.set_val_loss(report.validation.loss);
     response.set_epoch_elapsed_ms(report.epochElapsedMs);
     response.set_total_elapsed_ms(report.totalElapsedMs);
+    response.set_learning_rate(report.learningRate);
     fillMetrics(report.validation.taskMetrics, response);
 }

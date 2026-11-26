@@ -1,5 +1,6 @@
 use super::handler::{
-    get_capabilities, get_model_config, get_model_lists, get_training_process, get_training_status,
+    get_capabilities, get_model_config, get_model_history, get_model_lists, get_training_process,
+    get_training_status,
     read_summary_datasets, resume_training, start_training, stop_training, stream_training_process,
     upload_dataset, validate_training,
 };
@@ -19,11 +20,11 @@ use usecases::{
             DatasetFinder, DatasetLayoutChecker, DatasetReader, DatasetRegister, DatasetSaver,
         },
     },
-    model::ports::{ModelSummaryProvider, ModelTrainingConfigProvider},
+    model::ports::{ModelHistoryProvider, ModelSummaryProvider, ModelTrainingConfigProvider},
     training::{
-        ModelIdGenerator, ProgressRecordingScheduler, TrainingProgressProvider,
-        TrainingProgressRecorder, TrainingRecordReader, TrainingResumer, TrainingRunRegistar,
-        TrainingStarter, TrainingStopper,
+        ModelGraphValidator, ModelIdGenerator, ProgressRecordingScheduler,
+        TrainingProgressProvider, TrainingProgressRecorder, TrainingRecordReader, TrainingResumer,
+        TrainingRunRegistar, TrainingStarter, TrainingStopper,
     },
 };
 
@@ -34,7 +35,8 @@ pub fn router<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>(
 where
     C: CapabilityProvider + Send + Sync + 'static,
     // S は新規学習(StartTraining)と学習再開(ResumeTraining)で共有する
-    S: TrainingStarter + TrainingResumer + Send + Sync + 'static,
+    // 学習開始前のグラフの検証(ModelGraphValidator)にも使う(StartTraining と ValidateTrainingConfig)
+    S: TrainingStarter + TrainingResumer + ModelGraphValidator + Send + Sync + 'static,
     R: TrainingRunRegistar + Send + Sync + 'static,
     G: ModelIdGenerator + Send + Sync + 'static,
     K: ProgressRecordingScheduler + Send + Sync + 'static,
@@ -47,7 +49,8 @@ where
         + Send
         + Sync
         + 'static,
-    MSummary: ModelSummaryProvider + Send + Sync + 'static,
+    // 一覧と学習の記録(履歴)の読み出し
+    MSummary: ModelSummaryProvider + ModelHistoryProvider + Send + Sync + 'static,
     MConfig: ModelTrainingConfigProvider + Send + Sync + 'static,
     // データセットのアップロード(UploadDataset)用
     DG: DatasetIdGenerator + Send + Sync + 'static,
@@ -61,7 +64,8 @@ where
         Router::new()
             .route("/capabilities", get(get_capabilities::<C>))
             .route("/trainings", post(start_training::<S, R, G, K, DRD>)) // 学習開始
-            .route("/trainings/validate", post(validate_training::<V>))
+            // 整合性チェックも、グラフの検証(S)とデータセットの検索(DRD)を学習開始と共有する
+            .route("/trainings/validate", post(validate_training::<V, S, DRD>))
             .route("/trainings/{job_id}", get(get_training_process::<P>))
             .route(
                 "/trainings/{job_id}/progress",
@@ -79,6 +83,11 @@ where
             .route(
                 "/models/{model_id}/resume",
                 post(resume_training::<MConfig, S, R, K>),
+            )
+            // 学習の記録(loss・学習率のグラフとメトリクスの表。フロントが SVG・CSV にする)
+            .route(
+                "/models/{model_id}/history",
+                get(get_model_history::<MSummary>),
             )
             // データセット呼び出しAPI
             .route("/datasets", get(read_summary_datasets::<DRD>))
