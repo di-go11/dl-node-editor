@@ -2,7 +2,7 @@ use entities::validation::ConfigViolation;
 use serde::Serialize;
 
 // 学習設定に誤りがあったときの 422 の本文。違反はすべて入れる
-// (docs/issues/学習設定の検証をRustに集める.md の「応答の形」)。
+// (docs/issues/2026-11-26/学習設定の検証をRustに集める.md の「応答の形」)。
 #[derive(Debug, Serialize)]
 pub struct InvalidConfigDto {
     // エラーの種類。409 などのエラーコード(backend-db-remaining.md 作業 9)と同じ書き方にする

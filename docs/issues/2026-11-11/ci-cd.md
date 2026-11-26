@@ -1,7 +1,7 @@
 # feat: CI/CD の本格化(マルチブランチ・機能別 agent・SSH 経由の自動デプロイ)
 
 C++ だけを CI している今の Jenkins を、全コンポーネントの CI と、本番への自動デプロイ(CD)まで広げる計画。
-Jenkins 基盤そのものの経緯は [ci-jenkins.md](../../apps/backend/ai-engine/docs/issues/ci-jenkins.md) を参照。
+Jenkins 基盤そのものの経緯は [ci-jenkins.md](../../../apps/backend/ai-engine/docs/issues/ci-jenkins.md) を参照。
 
 実装はユーザーが行う。この文書は計画と確認手順だけを持つ。
 
@@ -16,7 +16,7 @@ Jenkins 基盤そのものの経緯は [ci-jenkins.md](../../apps/backend/ai-eng
 
 | 項目 | 決定 | 理由 |
 |---|---|---|
-| CD の方式 | **SSH の強制コマンド**。agent はホストへ SSH し、`/opt/deploy/deploy.sh` しか実行できない鍵でデプロイを依頼する | `docker.sock` を agent に渡さない方針([ci-jenkins.md](../../apps/backend/ai-engine/docs/issues/ci-jenkins.md))を守るため。agent が乗っ取られても「origin/release で再デプロイ」しかできない |
+| CD の方式 | **SSH の強制コマンド**。agent はホストへ SSH し、`/opt/deploy/deploy.sh` しか実行できない鍵でデプロイを依頼する | `docker.sock` を agent に渡さない方針([ci-jenkins.md](../../../apps/backend/ai-engine/docs/issues/ci-jenkins.md))を守るため。agent が乗っ取られても「origin/release で再デプロイ」しかできない |
 | CI の範囲 | C++ に加えて Rust と フロントも CI する。**機能(コンポーネント)ごとに agent を分ける**(ラベル `ai-engine` / `api` / `web`) | 既存の方針「agent は開発用 Dockerfile を土台にして、開発環境と CI 環境を一致させる」を各コンポーネントに広げる。ラベル名は Dockerfile(`Dockerfile.ai-engine` / `.api` / `.web`)と揃える(2026-11-11、言語名から変更) |
 | ジョブ定義 | **casc.yaml の Job DSL**(`jobs:`)で Multibranch ジョブを定義する | GUI で作らず、controller を作り直しても再現できるようにする |
 | ブランチ | **Multibranch Pipeline に移行**し、`main` / `release` / `feat/*` を見る。`feat/*` と `main` は CI だけ、**`release` は CI の後にデプロイ** | `feat/*` も検証することにした(2026-11-11)。単一ジョブの Branch Specifier に `*/feat/*` を足す方法もあるが、ブランチごとに履歴が分かれず、「特定ブランチのときだけデプロイ」の条件も自前で書く必要があるため Multibranch にする |
@@ -51,7 +51,7 @@ GitHub ──(定期スキャン、main / release / feat/*)──→ Jenkins con
 | 1 | Multibranch へ移行(C++ だけのまま) | `feat/*` / `main` / `release` がそれぞれ別のジョブとしてビルドされる |
 | 2 | CD(deploy ユーザー・deploy.sh・SSH・Deploy ステージ) | `release` にマージすると本番が更新され、`main` と `feat/*` ではデプロイされない |
 | 3 | api / web agent を追加し、Jenkinsfile を機能別ステージにする | 3 コンポーネントの CI が並列で回る |
-| 4 | 通知([ci-jenkins.md](../../apps/backend/ai-engine/docs/issues/ci-jenkins.md) の Phase 3) | 失敗と復旧のときだけ通知が届く |
+| 4 | 通知([ci-jenkins.md](../../../apps/backend/ai-engine/docs/issues/ci-jenkins.md) の Phase 3) | 失敗と復旧のときだけ通知が届く |
 
 CD(作業 2)を agent の追加(作業 3)より先にするのは、早く「push → 本番」の一周を通すため。
 作業 3 までの間に Rust やフロントが壊れていても、`compose up --build` のイメージビルドで失敗するので
@@ -228,7 +228,7 @@ command="/opt/deploy/deploy.sh",restrict,from="<Jenkins ネットワークのサ
 
 ## 作業 4: 通知
 
-[ci-jenkins.md](../../apps/backend/ai-engine/docs/issues/ci-jenkins.md) の Phase 3 のとおり。CD が入ったので、**デプロイの成功・失敗も通知の対象**にする(特に「学習中のため中止」は人が見に行く必要がある)。
+[ci-jenkins.md](../../../apps/backend/ai-engine/docs/issues/ci-jenkins.md) の Phase 3 のとおり。CD が入ったので、**デプロイの成功・失敗も通知の対象**にする(特に「学習中のため中止」は人が見に行く必要がある)。
 
 ## 未決事項
 

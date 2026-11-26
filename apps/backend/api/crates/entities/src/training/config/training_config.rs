@@ -5,7 +5,7 @@ use super::data_spec::DataSpec;
 
 // training_config
 // 値の範囲は validate() で確認する。設定の誤りは C++ に送る前にここで見つけ、すべてまとめて返す
-// (docs/issues/学習設定の検証をRustに集める.md)。
+// (docs/issues/2026-11-26/学習設定の検証をRustに集める.md)。
 #[derive(Debug, PartialEq, Clone)]
 pub struct TrainingConfig {
     pub model_name: String,

@@ -314,6 +314,10 @@ int main()
             {
                 return "precondition";
             }
+            catch (const ModelGraphMismatchError &)
+            {
+                return "mismatch";
+            }
             catch (const std::invalid_argument &)
             {
                 return "invalid";
@@ -329,6 +333,11 @@ int main()
             c.modelId = modelId;
             c.resume = resume;
             c.epochSize = epochSize;
+            // checkpoint のグラフ(Conv2D 3→2)は、クラス数と比べない分類タスクとして確かめる
+            // (既定のセグメンテーション + Pascal VOC だと 21 クラスと比べて ModelGraphMismatchError になる)
+            ImageSpec image;
+            image.taskSpecs = ClassificationSpec{};
+            c.dataSpec = image;
             return c;
         };
 
@@ -341,6 +350,13 @@ int main()
               "事前確認: resume = true で _last.pt がなければ TrainingPreconditionError");
         check(outcome(makeCommand("roundtrip", true, 22)) == "ok",
               "事前確認: resume = true で残りエポックがあれば通る(21 エポック済み / 合計 22)");
+        {
+            // 再開する checkpoint のグラフの出力(2 チャンネル)が、データセットのクラス数(VOC = 21)と合わない
+            StartTrainingCommand mismatched = makeCommand("roundtrip", true, 22);
+            mismatched.dataSpec = ImageSpec{}; // 既定 = セグメンテーション + Pascal VOC(21 クラス)
+            check(outcome(mismatched) == "mismatch",
+                  "事前確認: 再開する checkpoint のグラフがクラス数と合わなければ ModelGraphMismatchError");
+        }
         check(outcome(makeCommand("roundtrip", true, 21)) == "precondition",
               "事前確認: 学習済みエポック数 == 合計エポック数なら TrainingPreconditionError(0 エポックで Completed にしない)");
         check(outcome(makeCommand("roundtrip", true, 5)) == "precondition",

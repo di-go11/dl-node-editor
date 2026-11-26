@@ -206,7 +206,7 @@ enum TrainingStatus {
     TRAINING_STATUS_IDLE = 5;
 }
 // ---ValidateModelGraph---
-// 学習開始前の整合性チェックで、Rust から呼ぶ(docs/issues/学習設定の検証をRustに集める.md の段階 2)。
+// 学習開始前の整合性チェックで、Rust から呼ぶ(docs/issues/2026-11-26/学習設定の検証をRustに集める.md の段階 2)。
 // 確認するのはグラフの構造(つなぎ方・閉路)と形(チャンネル数・H / W・出力チャンネル数 = クラス数)。
 // 層のパラメータの値の範囲は Rust が先に確かめる。不正な値が届いたときは INVALID_ARGUMENT を返す。
 

@@ -9,7 +9,7 @@ use entities::{
 use super::error::{ModelGraphValidatorError, StartTrainingError, StopTrainingError};
 
 // 学習を始めずに、モデルのグラフの構造と形を学習エンジン(C++)で確かめるポート。
-// グラフの規則は C++ にだけ持つ(docs/issues/学習設定の検証をRustに集める.md の方針)。
+// グラフの規則は C++ にだけ持つ(docs/issues/2026-11-26/学習設定の検証をRustに集める.md の方針)。
 // 問題があれば違反の一覧を Ok で返す(field は "model_graph.nodes[3].inputs[0]" などリクエストの JSON の位置)。
 // 問題がなければ空の Vec。検証そのものができなかったときだけ Err。
 pub trait ModelGraphValidator {

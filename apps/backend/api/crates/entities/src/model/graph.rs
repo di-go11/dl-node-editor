@@ -29,7 +29,7 @@ pub struct ModelGraph {
 
 impl ModelGraph {
     // 各層のパラメータの範囲を確認する。グラフの構造(ポートの接続・閉路など)はまだ確認しない
-    // (docs/issues/学習設定の検証をRustに集める.md の段階 2)。
+    // (docs/issues/2026-11-26/学習設定の検証をRustに集める.md の段階 2)。
     pub(crate) fn validate_params(&self, v: &mut Violations) {
         for (i, node) in self.nodes.iter().enumerate() {
             node.spec

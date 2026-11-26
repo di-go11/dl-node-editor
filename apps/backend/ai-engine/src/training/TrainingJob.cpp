@@ -115,7 +115,7 @@ namespace
     // 出力チャンネル数がクラス数と違うまま学習すると、CUDA の device-side assert でプロセスごと使えなくなるため、
     // 学習を始める前に止める。新規学習は Rust が ValidateModelGraph で先に確かめるので通常は起きない。
     // CLI からの学習、再開(Rust は確かめない)、確認の後にデータセットが差し替えられた場合のための確認
-    // (docs/issues/学習設定の検証をRustに集める.md の段階 4)。
+    // (docs/issues/2026-11-26/学習設定の検証をRustに集める.md の段階 4)。
     void requireTrainableGraph(const ModelGraph &graph, const StartTrainingCommand &command)
     {
         const std::vector<GraphValidationError> errors = checkModelGraph(graph, command.dataSpec, command.datasetPath);

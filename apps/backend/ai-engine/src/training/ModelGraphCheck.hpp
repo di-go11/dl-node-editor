@@ -9,7 +9,7 @@
 
 // 学習を始めずに、モデルのグラフがこのデータで学習できる形かを確かめる。
 // gRPC の ValidateModelGraph(学習開始前の整合性チェック)から呼ぶ。torch・GPU は使わない。
-// (docs/issues/学習設定の検証をRustに集める.md の段階 2)
+// (docs/issues/2026-11-26/学習設定の検証をRustに集める.md の段階 2)
 //
 // 確認の順番:
 //   1. 構造(validateGraphStructure): つなぎ方・ID・outputs・閉路

@@ -25,7 +25,7 @@ function sentDataSpec(request: SentRequest): RustStartTrainingRequest['data_spec
  * 学習設定の誤りの 422 の本文(契約の InvalidConfig)を、画面の Issue にする。
  *
  * サーバーは値の範囲(Rust)とモデルのグラフの構造・形(学習エンジン)を確かめ、違反をすべて返す
- * (docs/issues/学習設定の検証をRustに集める.md)。違反の位置(field)は Rust の HTTP の JSON の書き方
+ * (docs/issues/2026-11-26/学習設定の検証をRustに集める.md)。違反の位置(field)は Rust の HTTP の JSON の書き方
  * なので、送ったリクエストを使って、画面が使う位置(ノード ID・ポート・パラメータ名、proto-json の項目名)に直す。
  *
  * 位置を直すのは infrastructure の仕事である。Rust の JSON の形を知っているのはこの層だけで

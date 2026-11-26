@@ -7,7 +7,7 @@ use super::ports::ModelGraphValidator;
 // 学習開始前の設定の確認(新規学習と整合性チェックで共通)。
 //   1. 値の範囲(entities の TrainingConfig::validate)
 //   2. グラフの構造と形(C++ の ValidateModelGraph)
-// の違反を 1 つの一覧にまとめる(docs/issues/学習設定の検証をRustに集める.md の段階 3)。
+// の違反を 1 つの一覧にまとめる(docs/issues/2026-11-26/学習設定の検証をRustに集める.md の段階 3)。
 #[derive(Debug, PartialEq)]
 pub(crate) enum ConfigCheckError {
     // 違反があった(値とグラフの両方を含む)
