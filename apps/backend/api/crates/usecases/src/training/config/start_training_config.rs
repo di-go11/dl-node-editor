@@ -1,6 +1,7 @@
 use entities::dataset::DatasetId;
 use entities::model::ModelGraph;
 use entities::training::config::{DataSpec, Loss, Optimizer, TrainingConfig};
+use entities::validation::ConfigViolation;
 
 // 新規学習の入力。クライアントはデータセットを ID で指定し、パスは持たない。
 // パスは StartTraining が DatasetFinder で ID から引き、TrainingConfig に入れて C++ に送る。
@@ -23,6 +24,12 @@ pub struct StartTrainingConfig {
 }
 
 impl StartTrainingConfig {
+    // 設定の値を検証する(規則は entities の TrainingConfig::validate)。
+    // dataset_path は検証の対象ではないので、データセットを引く前でも呼べるよう空で変換する。
+    pub(crate) fn validate(&self) -> Result<(), Vec<ConfigViolation>> {
+        self.to_training_config(String::new()).validate()
+    }
+
     // ID から引いたデータセットのパスを足して、C++ に送る学習設定にする
     pub(crate) fn to_training_config(&self, dataset_path: String) -> TrainingConfig {
         TrainingConfig {

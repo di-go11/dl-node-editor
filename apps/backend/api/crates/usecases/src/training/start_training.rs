@@ -48,7 +48,10 @@ impl<
                 StartTrainingError::DatasetNotFound(input.dataset_id.as_str().to_string())
             })?;
         let config = &input.to_training_config(dataset.dataset_path);
-
+        // 設定にミスが無いか確認。ある場合すべてのエラーをGUIに送る。
+        config
+            .validate()
+            .map_err(StartTrainingError::InvalidConfig)?;
         let model_id: ModelId = self.id_generator.generate();
         self.repository
             .insert_model(&model_id, &config.model_name, &config.model_graph)

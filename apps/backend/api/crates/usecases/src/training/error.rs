@@ -2,6 +2,8 @@ use thiserror::Error;
 
 use crate::capabilities::ProviderError;
 
+use entities::validation::ConfigViolation;
+
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum StartTrainingError {
     // C++サーバーに対して学習プロセスを開始するための命令を送る関数が失敗した場合のエラー
@@ -13,9 +15,10 @@ pub enum StartTrainingError {
     // すでに実行中のジョブがある
     #[error("Training job is already running: {0}")]
     AlreadyRunning(String),
-    // 学習設定が不正でC++サーバーからの拒否
+    // C++ が設定を INVALID_ARGUMENT で拒否した。設定の誤りは Rust の検証で先に返すので、
+    // これが起きるのは Rust の検証漏れ(バグ)。クライアントの誤りではない
     #[error("Training config was rejected: {0}")]
-    InvalidConfig(String),
+    EngineRejectedConfig(String),
     #[error("Failed to record training run: {0}")]
     RecordFailed(String),
     // エポック数が達していたり、checkpointが存在しないなどで学習を実行できない
@@ -27,6 +30,9 @@ pub enum StartTrainingError {
     // データセットの情報を DB から読めなかった
     #[error("Failed to read dataset: {0}")]
     DatasetReadFailed(String),
+    // 学習設定が不正
+    #[error("invalid config: {} violation(s)", .0.len())]
+    InvalidConfig(Vec<ConfigViolation>),
 }
 
 // 学習再開(ResumeTraining)のエラー
@@ -47,6 +53,9 @@ pub enum ResumeTrainingError {
     // C++ での学習開始・記録の失敗。AlreadyRunning / ResumePreconditionFailed などは新規学習と同じ扱い
     #[error(transparent)]
     Start(#[from] StartTrainingError),
+    // 学習設定が不正
+    #[error("invalid config: {} violation(s)", .0.len())]
+    InvalidConfig(Vec<ConfigViolation>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -126,4 +135,7 @@ pub enum ValidateTrainingConfigError {
     ModelNameAlreadyUsed(String),
     #[error("failed to read training record: {0}")]
     ReadFailed(String),
+    // 設定の値が不正(違反をすべて持つ)
+    #[error("invalid config: {} violation(s)", .0.len())]
+    InvalidConfig(Vec<ConfigViolation>),
 }

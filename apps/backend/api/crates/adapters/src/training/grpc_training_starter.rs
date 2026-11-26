@@ -69,7 +69,7 @@ fn start_error_from_status(status: Status) -> StartTrainingError {
             StartTrainingError::ResumePreconditionFailed(status.to_string())
         } // checkpointなし・エポック数が達している
         Code::Aborted => StartTrainingError::AlreadyRunning(status.to_string()), // 別のjobがすでに動いている
-        Code::InvalidArgument => StartTrainingError::InvalidConfig(status.to_string()),
+        Code::InvalidArgument => StartTrainingError::EngineRejectedConfig(status.to_string()),
         _ => StartTrainingError::StartOrderFailed(status.to_string()),
     }
 }
@@ -95,7 +95,7 @@ mod tests {
     #[test]
     fn invalid_argument_status_converts_to_invalid_config_error() {
         let error = start_error_from_status(Status::invalid_argument("bad graph"));
-        assert!(matches!(error, StartTrainingError::InvalidConfig(_)));
+        assert!(matches!(error, StartTrainingError::EngineRejectedConfig(_)));
     }
 
     #[test]

@@ -10,12 +10,16 @@ impl<R: TrainingRecordReader> ValidateTrainingConfig<R> {
     pub fn new(reader: R) -> Self {
         Self { reader }
     }
-    // 新規学習の整合性チェック: 同じmodel_nameのモデルがすでにあればNG
+    // 新規学習の整合性チェック: 設定の値に誤りがあればNG、同じmodel_nameのモデルがすでにあればNG
     // (学習再開は別のユースケースで、再開APIの中でmodel_idを検証する)
     pub async fn execute(
         &self,
         config: &StartTrainingConfig,
     ) -> Result<(), ValidateTrainingConfigError> {
+        // 値の誤りは DB を見なくても分かるので先に確かめる
+        config
+            .validate()
+            .map_err(ValidateTrainingConfigError::InvalidConfig)?;
         let found = self
             .reader
             .find_model_id_by_name(&config.model_name)

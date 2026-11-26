@@ -1,4 +1,5 @@
 mod capability;
+mod config_violation;
 mod data_spec;
 mod datasets;
 mod layer;
@@ -8,6 +9,7 @@ mod training_process;
 mod training_stop;
 
 pub use capability::CapabilitiesDto;
+pub use config_violation::InvalidConfigDto;
 pub use datasets::{DatasetLayoutMismatchDto, DatasetSummariesDto};
 pub use model::ModelSummariesDto;
 pub use training_config::{

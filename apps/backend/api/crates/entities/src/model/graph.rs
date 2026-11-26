@@ -1,4 +1,5 @@
 use super::layer::NodeSpec;
+use crate::validation::Violations;
 
 // Node
 #[derive(Debug, Clone, PartialEq)]
@@ -24,4 +25,15 @@ pub struct NodeInput {
 pub struct ModelGraph {
     pub nodes: Vec<Node>,
     pub outputs: Vec<PortRef>,
+}
+
+impl ModelGraph {
+    // 各層のパラメータの範囲を確認する。グラフの構造(ポートの接続・閉路など)はまだ確認しない
+    // (docs/issues/学習設定の検証をRustに集める.md の段階 2)。
+    pub(crate) fn validate_params(&self, v: &mut Violations) {
+        for (i, node) in self.nodes.iter().enumerate() {
+            node.spec
+                .validate(&format!("model_graph.nodes[{i}].spec"), v);
+        }
+    }
 }

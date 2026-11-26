@@ -68,6 +68,9 @@ where
             )));
         }
         let config = input.apply_to(saved);
+        config
+            .validate()
+            .map_err(ResumeTrainingError::InvalidConfig)?;
 
         let job_id = self.resumer.resume_training(&config, model_id).await?;
         // 再開では model の行は作らず、同じ model_id に新しい run を追加する
