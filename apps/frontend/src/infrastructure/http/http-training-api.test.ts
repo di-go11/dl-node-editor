@@ -68,6 +68,32 @@ describe('createHttpTrainingApi', () => {
     expect(result).toMatchObject({ ok: false, error: { kind: 'invalid-request' } })
     expect(called).toBe(false)
   })
+
+  it('設定の誤りの 422 は、違反の一覧を位置付きの issues にしてエラーに付ける', async () => {
+    server.use(
+      http.post(`${TEST_BASE_URL}/trainings`, () =>
+        HttpResponse.json(
+          {
+            error: 'invalid_config',
+            violations: [
+              { field: 'optimizer.learning_rate', message: '0 より大きくしてください(0)' },
+              { field: 'model_graph.nodes[0].spec.stride', message: '1 以上にしてください(0)' },
+            ],
+          },
+          { status: 422 },
+        ),
+      ),
+    )
+    const result = await createHttpTrainingApi(client()).start(validSegnetGraph(), settings)
+    expect(result).toMatchObject({ ok: false, error: { kind: 'http', status: 422 } })
+    if (result.ok) return
+    expect(
+      result.error.issues?.map((i) => [i.code, i.field ?? null, i.paramName ?? null]),
+    ).toEqual([
+      ['training/server-rejected', `optimizer.${settings.optimizer.kind}.learning_rate`, null],
+      ['training/server-rejected', null, 'stride'],
+    ])
+  })
 })
 
 describe('createHttpTrainingApi の整合性チェック(POST /trainings/validate)', () => {
@@ -101,6 +127,54 @@ describe('createHttpTrainingApi の整合性チェック(POST /trainings/validat
       named('validate_500'),
     )
     expect(result).toMatchObject({ ok: false, error: { kind: 'http', status: 500 } })
+  })
+
+  it('設定・モデル構造の誤りの 422 は、通信の失敗ではなく違反の一覧という結果になる', async () => {
+    server.use(
+      http.post(`${TEST_BASE_URL}/trainings/validate`, () =>
+        HttpResponse.json(
+          {
+            error: 'invalid_config',
+            violations: [
+              {
+                field: 'model_graph.nodes[0]',
+                message: "ポート 'y': モデルの出力のチャンネル数(3)が、クラス数(21)と一致しません",
+              },
+            ],
+          },
+          { status: 422 },
+        ),
+      ),
+    )
+    const graph = validSegnetGraph()
+    const input = named('validate_422')
+    // サーバーの添字は、送ったリクエストの nodes の添字
+    const sent = toRustStartTrainingRequest(toStartTrainingRequestJson(graph, input))
+    const firstNodeId = sent.ok ? sent.value.model_graph.nodes[0]?.id : undefined
+
+    const result = await createHttpTrainingApi(client()).validate(graph, input)
+    expect(result).toMatchObject({
+      ok: true,
+      value: {
+        kind: 'invalid-config',
+        issues: [{ code: 'training/server-rejected', nodeId: firstNodeId, port: 'y' }],
+      },
+    })
+  })
+
+  it('本文のない 422(データセットがないなど)は http のエラーになる', async () => {
+    server.use(
+      http.post(
+        `${TEST_BASE_URL}/trainings/validate`,
+        () => new HttpResponse(null, { status: 422 }),
+      ),
+    )
+    const result = await createHttpTrainingApi(client()).validate(
+      validSegnetGraph(),
+      named('validate_422_empty'),
+    )
+    expect(result).toMatchObject({ ok: false, error: { kind: 'http', status: 422 } })
+    if (!result.ok) expect(result.error.issues).toBeUndefined()
   })
 })
 

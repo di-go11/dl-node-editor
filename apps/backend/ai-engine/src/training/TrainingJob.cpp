@@ -1,4 +1,5 @@
 #include "training/TrainingJob.hpp"
+#include "training/ModelGraphCheck.hpp"
 
 #include <memory>
 #include <torch/torch.h>
@@ -109,6 +110,37 @@ namespace
         return path;
     }
 
+    // モデルのグラフがこのデータセットで学習できる形か(構造・各層の形・出力チャンネル数 = クラス数)を確かめ、
+    // 問題があれば ModelGraphMismatchError(色表が読めなければ checkModelGraph が DatasetUnreadableError)。
+    // 出力チャンネル数がクラス数と違うまま学習すると、CUDA の device-side assert でプロセスごと使えなくなるため、
+    // 学習を始める前に止める。新規学習は Rust が ValidateModelGraph で先に確かめるので通常は起きない。
+    // CLI からの学習、再開(Rust は確かめない)、確認の後にデータセットが差し替えられた場合のための確認
+    // (docs/issues/学習設定の検証をRustに集める.md の段階 4)。
+    void requireTrainableGraph(const ModelGraph &graph, const StartTrainingCommand &command)
+    {
+        const std::vector<GraphValidationError> errors = checkModelGraph(graph, command.dataSpec, command.datasetPath);
+        if (errors.empty())
+        {
+            return;
+        }
+        std::string message = "モデルのグラフがこのデータセットでは学習できません:";
+        for (const GraphValidationError &error : errors)
+        {
+            message += "\n  - ";
+            if (!error.nodeId.empty())
+            {
+                message += "ノード '" + error.nodeId + "'";
+                if (!error.port.empty())
+                {
+                    message += " のポート '" + error.port + "'";
+                }
+                message += ": ";
+            }
+            message += error.message;
+        }
+        throw ModelGraphMismatchError(message);
+    }
+
     // checkpoint がすでに指定エポック数まで学習済みなら TrainingPreconditionError。
     // そのまま進めると 1 エポックも回さずに Completed を返し、「学習した」と誤解されるため。
     // meta.epoch は「最後に完了したエポック」(0 始まり)なので、学習済みのエポック数は meta.epoch + 1。
@@ -130,23 +162,32 @@ void checkTrainingJobPreconditions(const TrainingRuntimeConfig &runtime, const S
     requireModelId(command);
     if (!command.resume)
     {
+        // 新規学習: 依頼された構造で学習する
+        if (command.modelGraph.has_value())
+        {
+            requireTrainableGraph(command.modelGraph->getGraph(), command);
+        }
         return;
     }
 
     const std::string path = requireResumeCheckpointPath(runtime, command);
     CheckpointMeta meta;
+    ModelGraph restoredGraph;
     try
     {
-        // ここでは epoch を見るだけなので、モデルは作らずにメタ情報だけ読む。
+        // ここでは epoch と構造を見るだけなので、モデルは作らずにメタ情報とグラフだけ読む。
         torch::serialize::InputArchive archive;
         archive.load_from(path);
         meta = readCheckpointMeta(archive);
+        restoredGraph = readModelGraphFromCheckpoint(archive);
     }
     catch (const std::exception &e)
     {
         throw TrainingPreconditionError("再開用の checkpoint を読めません: " + path + " (" + e.what() + ")");
     }
     requireEpochsRemaining(meta, command.epochSize, path);
+    // 再開: 構造は checkpoint から復元するので、復元するグラフに対して確かめる
+    requireTrainableGraph(restoredGraph, command);
 }
 
 TrainingStatus runTrainingJob(const TrainingRuntimeConfig &runtime,
@@ -257,6 +298,11 @@ TrainingStatus runTrainingJob(const TrainingRuntimeConfig &runtime,
         params = model->parameters();
         optimizer = optimizerFactory->create(params, command.optimizer);
     }
+
+    // 実際に学習する構造(再開なら checkpoint から復元したもの)を、損失の計算(CUDA でラベルを使う処理)より前に確かめる。
+    // gRPC では checkTrainingJobPreconditions で確認済みだが、CLI からの呼び出しや、確認後にデータセットが
+    // 差し替えられた場合に備えて、ここでも同じ確認をする。
+    requireTrainableGraph(graph, command);
 
     // ignoreIndex はマスクの Letterbox 余白を埋める値。損失(MseLoss を除く)と評価(mIoU/accuracy)の
     // 双方でこの値のピクセルを無視する。評価器と DatasetRepositoryFactory も同じ SegmentationSpec から読む。

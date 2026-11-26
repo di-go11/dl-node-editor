@@ -5,6 +5,7 @@ import { z } from 'zod'
 import type { ApiError, ApiResult } from '../../application/ports/api-result'
 import { apiError, apiOk } from '../../application/ports/api-result'
 import type { paths } from '../../api/schema'
+import type { Issue } from '../../entity/validation/issue'
 
 /**
  * HTTP クライアント(契約 openapi.yaml に従う)。
@@ -36,11 +37,20 @@ const japaneseErrors = z.locales.ja().localeError
 
 type FetchResult = {
   readonly data?: unknown
+  /** エラーの状態コードのときの本文(openapi-fetch が JSON として読む。本文がなければ空) */
+  readonly error?: unknown
   readonly response: Response
 }
 
 /**
- * 状態コードごとの説明。契約のエラー応答には本文がないので、状態コードから文言を決める。
+ * エラーの応答の本文を見て、何かに読み替える関数(読み替えられなければ undefined)。
+ * 学習設定の誤りの 422 は本文に違反の一覧があるので、状態コードだけでは足りない。
+ */
+export type ErrorBodyReader<T> = (status: number, body: unknown) => T | undefined
+
+/**
+ * 状態コードごとの説明。契約のエラー応答の多くには本文がないので、状態コードから文言を決める
+ * (学習設定の誤りの 422 だけは違反の一覧の本文があり、ErrorBodyReader で別に読む)。
  * 409 と 422 は学習開始の意味で書いている(整合性チェックの 409 は callApiByStatus で先に結果にする)。
  * 意味が違う API(学習再開など)は、callApi の messages で上書きする。
  */
@@ -72,20 +82,28 @@ function httpError(response: Response, messages: HttpErrorMessages = {}): ApiErr
  * 学習開始の 409 は「実行中の学習がある」)。そこで、結果として受け取る状態コードと
  * その値の対応(byStatus)は呼び出し側が渡す。対応にないエラーの状態コードは kind: 'http' にする。
  * messages を渡すと、そのエラーの説明をその API の意味で上書きできる(callApi と同じ)。
+ * fromErrorBody を渡すと、エラーの本文から結果を作れる(整合性チェックの 422 の違反の一覧など)。
+ * 読み替えられなかったエラーは、これまでどおり状態コードで扱う。
  */
 export async function callApiByStatus<T>(
   call: () => Promise<FetchResult>,
   byStatus: Readonly<Record<number, T>>,
   messages?: HttpErrorMessages,
+  fromErrorBody?: ErrorBodyReader<T>,
 ): Promise<ApiResult<T>> {
-  let response: Response
+  let result: FetchResult
   try {
-    response = (await call()).response
+    result = await call()
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     return apiError({ kind: 'network', message: `サーバーに接続できません: ${detail}` })
   }
+  const { response } = result
 
+  if (!response.ok && fromErrorBody !== undefined) {
+    const fromBody = fromErrorBody(response.status, result.error)
+    if (fromBody !== undefined) return apiOk(fromBody)
+  }
   const value = byStatus[response.status]
   if (value !== undefined) return apiOk(value)
   if (!response.ok) return apiError(httpError(response, messages))
@@ -108,12 +126,16 @@ export async function callApiByStatus<T>(
  *
  * messages を渡すと、エラーの状態コードの説明をその API の意味で上書きできる
  * (学習再開の 404 は「モデルが見つからない」で、学習開始の 404 とは違う)。
+ *
+ * issuesFromErrorBody を渡すと、エラーの本文にある違反の一覧(学習開始の 422 など)を
+ * ApiError の issues に入れる。本文がない・形が違うときは issues を付けない。
  */
 export async function callApi<Json, T>(
   call: () => Promise<FetchResult>,
   schema: z.ZodType<Json>,
   convert: (json: Json) => T,
   messages?: HttpErrorMessages,
+  issuesFromErrorBody?: ErrorBodyReader<readonly Issue[]>,
 ): Promise<ApiResult<T>> {
   let result: FetchResult
   try {
@@ -123,7 +145,11 @@ export async function callApi<Json, T>(
     return apiError({ kind: 'network', message: `サーバーに接続できません: ${detail}` })
   }
 
-  if (!result.response.ok) return apiError(httpError(result.response, messages))
+  if (!result.response.ok) {
+    const error = httpError(result.response, messages)
+    const issues = issuesFromErrorBody?.(result.response.status, result.error)
+    return apiError(issues === undefined ? error : { ...error, issues })
+  }
 
   const parsed = schema.safeParse(result.data, { error: japaneseErrors })
   if (!parsed.success) {

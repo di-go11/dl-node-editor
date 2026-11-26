@@ -88,8 +88,11 @@ paths:
         "422":
           description: |
             リクエストの形が合わない(dataset_id が空を含む)、dataset_id のデータセットが登録されていない、
-            または設定の値に誤りがある。設定の値の誤りのときだけ本文(InvalidConfig)があり、違反をすべて返す。
-            このときモデルは登録されないので、値を直せば同じ model_name で送り直せる
+            データセットの色表(labelmap.txt)が読めない、または設定に誤りがある。
+            設定の誤りのときだけ本文(InvalidConfig)があり、値の違反とモデルのグラフの違反(構造・形。学習エンジンが確かめる)を
+            すべて返す。このときモデルは登録されないので、直せば同じ model_name で送り直せる。
+            確認の後にデータセットが差し替えられ、学習を始める時点で学習エンジンがグラフの問題を見つけた場合も同じ本文
+            (field は model_graph の違反 1 件。message に問題のあるノードと内容)
           content:
             application/json:
               schema:
@@ -106,9 +109,11 @@ paths:
       operationId: validateTraining
       summary: 学習開始前の整合性チェック
       description: |
-        学習開始と同じリクエストを受け取り、設定の値に誤りがないか、DB の状態と矛盾しないかを確認する(C++ には送らない)。
-        - 設定の値に誤りがあれば 422 と違反の一覧を返す(/trainings と同じ規則・同じ本文)
-        - 同じ model_name のモデルがすでにあれば 409 を返す(値の確認を先に行う)
+        学習開始と同じリクエストを受け取り、学習を始めずに /trainings と同じ確認を行う。学習中でも使える。
+        1. dataset_id のデータセットが登録されているか(なければ 422)
+        2. 設定の値(サーバー)と、モデルのグラフの構造・形(学習エンジン。クラス数との比較を含む)。
+           誤りがあれば 422 と違反の一覧を返す(/trainings と同じ規則・同じ本文)
+        3. 同じ model_name のモデルがすでにないか(あれば 409)
       requestBody:
         required: true
         content:
@@ -122,14 +127,16 @@ paths:
           description: model_name がすでに使用されている
         "422":
           description: |
-            リクエストの形が合わない(dataset_id が空を含む)、または設定の値に誤りがある(このときだけ本文あり)。
-            データセットが登録されているかはここでは確かめない
+            リクエストの形が合わない(dataset_id が空を含む)、dataset_id のデータセットが登録されていない、
+            データセットの色表(labelmap.txt)が読めない、または設定に誤りがある(このときだけ本文あり)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/InvalidConfig"
         "500":
-          description: DB の読み取りに失敗した
+          description: DB の読み取りに失敗した。または学習エンジンが依頼を拒否した(サーバーの検証漏れ)
+        "502":
+          $ref: "#/components/responses/UpstreamError"
 
   /trainings/{job_id}:
     get:
@@ -308,9 +315,11 @@ paths:
             モデル構造が保存されていない、のいずれか
         "422":
           description: |
-            リクエストの形が合わない、optimizer の type が前回と違う、または設定の値に誤りがある。
-            設定の値の誤りのときだけ本文(InvalidConfig)がある。前回の設定に送った値を上書きした結果を検証するので、
-            送っていない項目(model_graph など)の違反が入ることもある
+            リクエストの形が合わない、optimizer の type が前回と違う、設定の値に誤りがある、
+            保存したモデル構造がいまのデータセットでは学習できない(学習エンジンが確かめる。field は model_graph、
+            message に問題のあるノードと内容)、またはデータセットの色表(labelmap.txt)が読めない。
+            設定の値の誤りとモデル構造の問題のときだけ本文(InvalidConfig)がある。前回の設定に送った値を上書きした結果を
+            検証するので、送っていない項目(model_graph など)の違反が入ることもある
           content:
             application/json:
               schema:
@@ -1282,12 +1291,18 @@ components:
         field:
           type: string
           description: |
-            違反のある項目の位置。リクエストの JSON と同じ項目名をドットでつなぐ。配列は [添字] で示す
+            違反のある項目の位置。リクエストの JSON と同じ項目名をドットでつなぐ。配列は [添字] で示す。
+            モデルのグラフの違反(学習エンジンが確かめる構造・形)は、次のいずれか:
+            model_graph.nodes[i].inputs[j](入力の接続)/ model_graph.nodes[i](ノード。ポート単位の問題は
+            message の先頭に「ポート 'x': 」が付く)/ model_graph.outputs[k] / model_graph(グラフ全体。閉路など)
           examples:
             - optimizer.learning_rate
             - lr_scheduler.warmup_epochs
             - model_graph.nodes[3].spec.stride
             - data_spec.image_task_spec.ignore_index
+            - model_graph.nodes[3].inputs[0]
+            - model_graph.nodes[7]
+            - model_graph
         message:
           type: string
           description: 利用者に見せる説明(日本語)

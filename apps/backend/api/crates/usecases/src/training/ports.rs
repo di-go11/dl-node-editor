@@ -1,10 +1,26 @@
-use entities::training::config::TrainingConfig;
+use entities::model::ModelGraph;
+use entities::training::config::{DataSpec, TrainingConfig};
+use entities::validation::ConfigViolation;
 use entities::{
     model::ModelId,
     training::{JobId, TrainingJobStatus},
 };
 
-use super::error::{StartTrainingError, StopTrainingError};
+use super::error::{ModelGraphValidatorError, StartTrainingError, StopTrainingError};
+
+// 学習を始めずに、モデルのグラフの構造と形を学習エンジン(C++)で確かめるポート。
+// グラフの規則は C++ にだけ持つ(docs/issues/学習設定の検証をRustに集める.md の方針)。
+// 問題があれば違反の一覧を Ok で返す(field は "model_graph.nodes[3].inputs[0]" などリクエストの JSON の位置)。
+// 問題がなければ空の Vec。検証そのものができなかったときだけ Err。
+pub trait ModelGraphValidator {
+    fn validate_model_graph(
+        &self,
+        model_graph: &ModelGraph,
+        data_spec: &DataSpec,
+        // クラス数を求めるため(Original 形式なら labelmap.txt を読む)
+        dataset_path: &str,
+    ) -> impl Future<Output = Result<Vec<ConfigViolation>, ModelGraphValidatorError>> + Send;
+}
 
 pub trait TrainingStarter {
     // model_graph は TrainingConfig のフィールドとして渡す

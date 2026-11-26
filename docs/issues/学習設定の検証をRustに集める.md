@@ -144,7 +144,7 @@ message ValidateModelGraphResponse {
 
 | 場所 | 変更 |
 |---|---|
-| `src/training/ModelGraphCheck.{hpp,cpp}`(新規) | `checkModelGraph(graph, dataSpec, datasetPath)`。1. `validateGraphStructure()`。問題があればそれだけを返す(閉路などがあると形を計算できないため)<br>2. segmentation なら `validateGraphShapes(graph, {3, input_height, input_width}, クラス数)`、それ以外は `inferGraphShapes()` の問題だけ<br>3. クラス数は `loadDatasetLabelMap(annotation, dataset_path).entryCount()`。読めなければ `TrainingPreconditionError`<br>`loadDatasetLabelMap`(infrastructure)を使うので、`TrainingJob` と同じ合成の層に置いた。段階 4 でも使う |
+| `src/training/ModelGraphCheck.{hpp,cpp}`(新規) | `checkModelGraph(graph, dataSpec, datasetPath)`。1. `validateGraphStructure()`。問題があればそれだけを返す(閉路などがあると形を計算できないため)<br>2. segmentation なら `validateGraphShapes(graph, {3, input_height, input_width}, クラス数)`、それ以外は `inferGraphShapes()` の問題だけ<br>3. クラス数は `loadDatasetLabelMap(annotation, dataset_path).entryCount()`。読めなければ `DatasetUnreadableError`<br>`loadDatasetLabelMap`(infrastructure)を使うので、`TrainingJob` と同じ合成の層に置いた。段階 4 でも使う |
 | `api/grpc/TrainingProtoMapper.{hpp,cpp}` | `toModelGraphCheckRequest()`(層のパラメータの確認は StartTraining と同じ。構造は確かめない)、`fillValidateModelGraphResponse()` |
 | `api/grpc/TrainingServiceImpl.{hpp,cpp}` | `ValidateModelGraph`。`_jobManager` には触らない(学習中でも動く) |
 | `entities/.../DAG/GraphShapeInference.cpp` | 形の問題にノードの添字(`nodeIndex`)を入れる。これまではノード ID だけで、Rust が `model_graph.nodes[i]` にできなかった。最終出力の問題(チャンネル数 ≠ クラス数など)は、その出力を出しているノードの添字にする |
@@ -167,12 +167,19 @@ message ValidateModelGraphResponse {
 
 ## 段階 3. Rust から呼ぶ
 
+### 状況(2026-11-26)
+
+コードは書いた。**まだビルドもテストもしていない**(`lr_scheduler` まわりの API と proto の `learning_rate` の移動がつながってから `cargo test --workspace` で確認する)。openapi も更新済み。
+
 | 場所 | 変更 |
 |---|---|
-| usecases `training/ports.rs` | ポート `ModelGraphValidator`: `validate(&ModelGraph, &DataSpec, dataset_path) -> Result<Vec<ConfigViolation>, ModelGraphValidatorError>` |
-| adapters `training/grpc_model_graph_validator.rs` | gRPC で `ValidateModelGraph` を呼び、`GraphViolation` を `ConfigViolation` にする。`field` は添字から組み立てる(下の表) |
-| usecases `start_training.rs` | 値の検証の後、`insert_model` の前に呼ぶ。値の違反とグラフの違反を 1 つの `InvalidConfig` にまとめて返す |
-| usecases `validate_training_config.rs` | 同じく値の検証の後に呼ぶ。グラフの形の検証にデータセットのパスが要るので、`DatasetFinder` でデータセット ID からパスを引く(見つからなければ 422 `DatasetNotFound`) |
+| usecases `training/ports.rs` | ポート `ModelGraphValidator::validate_model_graph(&ModelGraph, &DataSpec, dataset_path) -> Result<Vec<ConfigViolation>, ModelGraphValidatorError>` |
+| usecases `training/error.rs` | `ModelGraphValidatorError`(`CallFailed` / `DatasetUnreadable` / `Rejected`)。`StartTrainingError` と `ValidateTrainingConfigError` に `GraphCheckFailed`、`ValidateTrainingConfigError` に `DatasetNotFound` / `DatasetReadFailed` |
+| usecases `training/config_check.rs`(新規) | `check_training_config()`: 値の検証 → C++ のグラフの検証 → 違反を 1 つにまとめる。新規学習と整合性チェックで共通 |
+| adapters `training/grpc_training_starter.rs` | `GrpcTrainingStarter` に `ModelGraphValidator` を実装する(学習の開始と同じ C++ への依頼なので、別のアダプターにしない)。添字から `field` を組み立てる(下の表) |
+| usecases `start_training.rs` | `starter` の型に `TrainingStarter + ModelGraphValidator` を求め、`insert_model` の前に `check_training_config()` を呼ぶ。型パラメータは増やさない |
+| usecases `validate_training_config.rs` | `ValidateTrainingConfig<R, M, F>`(`M`: `ModelGraphValidator`、`F`: `DatasetFinder`)。データセットを引く → `check_training_config()` → 名前の重複 |
+| adapters `http/` | `AppState` の `validate_training` を `ValidateTrainingConfig<V, S, DRD>` にする(S・DRD は学習開始と共有)。ハンドラー・ルーター・`server/main.rs` も合わせる |
 | usecases `resume_training.rs` | 呼ばない。`model_graph` と `data_spec` は前回の値に固定されていて、前回の学習開始で確認済みのため |
 
 `field` の組み立て:
@@ -186,18 +193,27 @@ message ValidateModelGraphResponse {
 
 呼ぶ条件:
 
-- 値の違反のうち `model_graph.` で始まるもの(層のパラメータの誤り)があれば、C++ は呼ばない。不正なパラメータのままでは C++ が形を計算できないため。それ以外の値の違反(`optimizer.` など)だけなら呼び、グラフの違反と合わせて返す
-- C++ と通信できないときは 502(`StartOrderFailed` と同じ扱い)。`FAILED_PRECONDITION`(`labelmap.txt` が読めない)は 422 にし、データセットの問題として返す
+- 値の違反のうち `model_graph.`(層のパラメータ)か `data_spec.` で始まるものがあれば、C++ は呼ばない。C++ はこれらの値が不正だと依頼ごと拒否する(違反の一覧ではなく `INVALID_ARGUMENT`)ため。それ以外の値の違反(`optimizer.` など)だけなら呼び、グラフの違反と合わせて返す
+- C++ からの応答の変換: 通信できない → 502、`FAILED_PRECONDITION`(`labelmap.txt` が読めない)→ 422(データセットの問題)、`INVALID_ARGUMENT` / `INTERNAL` → 500(Rust の検証漏れ・C++ の内部の失敗)
 
 テスト(Rust):
 
-- usecases: グラフの違反があると `insert_model` も `start_training` も呼ばれない。値の違反とグラフの違反が 1 つの一覧で返る。層のパラメータの違反があると `ModelGraphValidator` が呼ばれない
-- adapters: 添字から `field` への変換(上の表の 4 通り)
+- usecases(実装済み・未実行): グラフの違反があると `insert_model` も `start_training` も呼ばれない。値の違反とグラフの違反が 1 つの一覧で返る。層のパラメータの違反があると `ModelGraphValidator` が呼ばれない。検証できなかったときは `GraphCheckFailed`。グラフの検証に DB のデータセットのパスが渡る。整合性チェックでデータセットがない・読めない
+- adapters(実装済み・未実行): 添字から `field` への変換(上の表の 4 通りと添字 0)、gRPC の status の変換、ハンドラーのステータスコード
+- 既存の `StartTraining` のテストは、呼び出し順に `validate_model_graph` が入るので期待値を直した
 
 ### openapi / フロント(Claude 担当)
 
-- `openapi.yaml`: 422 の説明にグラフの違反も入ることを書く(本文の形は段階 1 と同じ)。`/trainings/validate` の説明を「C++ には送らない」から「グラフの検証のために C++ を呼ぶ」に直す
-- フロント: `model_graph.nodes[i]` / `inputs[j]` / `outputs[k]` の違反を、そのブロック・接続線に表示する。フロントにあるグラフの検証(`entity/validation/validate-model-graph.ts`)は、エディタ上ですぐに知らせるために残す。最終的な判定はサーバーの結果とする
+- `openapi.yaml`(更新済み): 422 の説明にグラフの違反と `labelmap.txt` が読めない場合を追加。`/trainings/validate` は確認の順番・データセットの確認・502 を追加。`ConfigViolation.field` にグラフの位置の書き方を追加
+- フロント(実装済み・未実行。`npm run gen:api` と `vitest` で確認する):
+    - `infrastructure/http/config-violations.ts`(新規): 422 の本文の違反を `Issue`(code `training/server-rejected`)にする。位置は送ったリクエストを使って画面の書き方に直す
+        - `model_graph.nodes[i]` → `nodeId`(メッセージが「ポート 'x': 」で始まれば `port` も)、`.inputs[j]` → `nodeId` + その入力の `port`、`.spec.<name>` → `nodeId` + `paramName`
+        - `model_graph.outputs[k]` / `model_graph` → `field: 'model_graph'`(特定のノードではない)
+        - `optimizer.<name>` → `optimizer.<種類>.<name>`、`loss.<name>` → `loss.<種類>.<name>`、`data_spec.<name>` → `data_spec.image.<name>`、`data_spec.image_task_spec.<name>` → `data_spec.image.task_specs.<種類>.<name>`(proto-json の項目名。`validate-training.ts` と同じ)
+    - 整合性チェック: `ServerCheck` に `invalid-config`(違反の一覧)を足した。チェックの結果に入るので、ログパネル・ノード(`issuesOfNode`)・プロパティパネル(`paramName`)・学習設定の欄(`field`)に、手元のチェックの結果と同じように出る
+    - 学習開始: 422 の違反は `ApiError.issues` に入れ、ログに 1 件ずつ場所付きで出す(整合性チェックの後にデータセットが差し替えられた場合など)
+    - `api-client.ts`: エラーの本文を読めるようにした(`callApiByStatus` の `fromErrorBody`、`callApi` の `issuesFromErrorBody`)
+    - フロントにあるグラフの検証(`entity/validation/validate-model-graph.ts`)は、エディタ上ですぐに知らせるために残す。最終的な判定はサーバーの結果とする
 
 ---
 
@@ -205,8 +221,28 @@ message ValidateModelGraphResponse {
 
 「学習開始前のモデル出力とクラス数の確認.md」の 1. を、段階 2 と同じ関数で行う。Rust が先に確かめるので gRPC の経路では通常起きないが、CLI からの学習と、確認の後にデータセットが差し替えられた場合を防ぐ(device-side assert で ai-engine が使えなくなるのを確実に避けるため)。
 
-- `checkTrainingJobPreconditions()` と `runTrainingJob()` で、段階 2 の関数を呼ぶ。問題があれば `TrainingPreconditionError`(学習スレッドを起動しない)
+- `checkTrainingJobPreconditions()` と `runTrainingJob()` で、段階 2 の関数を呼ぶ。問題があれば `ModelGraphMismatchError`(学習スレッドを起動しない)
 - 再開のときは、checkpoint から復元したグラフに対して確かめる
+
+### 状況(2026-11-26)
+
+コードは書いた。**まだビルドもテストもしていない**。
+
+- `TrainingJob.cpp` に `requireTrainableGraph()` を追加。問題をノード ID・ポート付きで 1 つのメッセージにまとめて `TrainingPreconditionError` を投げる
+    - `checkTrainingJobPreconditions()`: 新規学習は `command.modelGraph`、再開は `readModelGraphFromCheckpoint()` で読んだグラフを確かめる(モデルは作らない)
+    - `runTrainingJob()`: 実際に学習する構造(再開なら復元したもの)を、損失の計算より前に確かめる
+- エラーの種類を分けた(2026-11-26)。C++ の例外を 3 つにし、gRPC はどれも `FAILED_PRECONDITION` のまま、トレーラーの `error-reason` で理由を伝える(`training.proto` の TrainingService の説明に一覧)
+
+    | C++ の例外 | `error-reason` | Rust(`StartTrainingError`) | HTTP |
+    |---|---|---|---|
+    | `TrainingPreconditionError`(checkpoint がない・学習済み) | `resume_precondition` | `ResumePreconditionFailed` | 409 |
+    | `ModelGraphMismatchError`(グラフがデータセットに合わない。`requireTrainableGraph`) | `model_graph_mismatch` | `ModelGraphMismatch`(C++ のメッセージ) | 422 + `InvalidConfig`(`model_graph` の違反 1 件) |
+    | `DatasetUnreadableError`(色表が読めない。`checkModelGraph`) | `dataset_unreadable` | `DatasetUnreadable` | 422 |
+
+    - `error-reason` がなければ `ResumePreconditionFailed`(古い ai-engine との互換)
+    - グラフの不一致が起きやすいのは再開(グラフは checkpoint から復元し、Rust は確かめない)。フロントの再開画面は、422 の違反の一覧を 1 件ずつ出す
+    - 読み取りは tonic の `Status::metadata()`(エラーのときはトレーラー、trailers-only ならヘッダーの残りが入る。tonic 0.14.6 の `Status::from_header_map` で確認)
+- 確認するテスト: 既存の `training_job_manager_test` / `training_smoke_test`(プリセットのグラフがクラス数と合っていて通ること)
 
 ## 決めたこと(2026-11-26)
 

@@ -6,6 +6,7 @@ import type { TrainedModelSummary } from '../../entity/trained-model/trained-mod
 
 import type { ApiClient, HttpErrorMessages } from './api-client'
 import { callApi } from './api-client'
+import { configViolationIssues } from './config-violations'
 import { trainingStatusJsonSchema } from './http-training-progress'
 import {
   fromRustModelConfig,
@@ -66,6 +67,7 @@ const CONFIG_MESSAGES: HttpErrorMessages = {
 const RESUME_MESSAGES: HttpErrorMessages = {
   404: '指定されたモデルが見つかりません。',
   409: '学習を再開できませんでした。実行中の学習がある、checkpoint がない、エポック数が完了済みの数以下、のいずれかです。',
+  // 違反の一覧がある 422(設定の値、保存したモデル構造がデータセットに合わない)は、issues に内容が入る
   422: '再開の設定が受け付けられませんでした(optimizer の種類は前回から変えられません)。',
   502: '学習サーバーに接続できません。',
 }
@@ -107,6 +109,7 @@ export function createHttpTrainedModelApi(client: ApiClient): TrainedModelApi {
         // 応答に状態は含まれない。受理された時点で学習は実行中である
         (json) => ({ jobId: json.job_id, status: 'running' as const }),
         RESUME_MESSAGES,
+        (status, body) => (status === 422 ? configViolationIssues(body, request.value) : undefined),
       )
     },
   }

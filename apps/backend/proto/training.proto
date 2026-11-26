@@ -3,6 +3,12 @@ package training.v1;
 
 import "model_graph.proto";
 
+// FAILED_PRECONDITION の理由は、トレーラーのメタデータ error-reason で区別する(StartTraining / ValidateModelGraph):
+//   resume_precondition  … 再開の条件を満たさない(checkpoint がない・読めない、指定のエポック数まで学習済み)
+//   model_graph_mismatch … モデルのグラフがこのデータセットでは学習できない(構造・形・出力チャンネル数 ≠ クラス数)。
+//                          メッセージに、問題のあるノードと内容が入る
+//   dataset_unreadable   … データセットの色表(labelmap.txt)が読めず、クラス数が分からない
+// error-reason がなければ resume_precondition として扱う(古い ai-engine との互換)。
 service TrainingService {
     rpc StartTraining(StartTrainingRequest) returns (StartTrainingResponse); // 単項
     rpc StreamProgress(StreamProgressRequest) returns (stream StreamProgressResponse); // サーバーストリーミング

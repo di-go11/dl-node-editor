@@ -109,7 +109,15 @@ function ResumeSettingsLoader({ modelId }: { readonly modelId: string }) {
 type SubmitState =
   | { readonly status: 'editing' }
   | { readonly status: 'submitting' }
-  | { readonly status: 'failed'; readonly message: string }
+  | {
+      readonly status: 'failed'
+      readonly message: string
+      /**
+       * サーバーが見つけた設定・モデル構造の誤り(422 の違反の一覧)。保存したモデル構造が
+       * データセットに合わない、など、手元の検証では分からないものを 1 件ずつ出す
+       */
+      readonly details: readonly string[]
+    }
 
 function ResumeSettingsContent({
   summary,
@@ -163,6 +171,14 @@ function ResumeSettingsContent({
         result.reason === 'api'
           ? `学習を再開できませんでした: ${result.error.message}`
           : '設定に問題があります。欄の横の表示を確認してください。',
+      details:
+        result.reason === 'api'
+          ? (result.error.issues ?? []).map((issue) =>
+              issue.field === undefined || issue.field === 'model_graph'
+                ? issue.message
+                : `${issue.field}: ${issue.message}`,
+            )
+          : [],
     })
   }
 
@@ -196,9 +212,19 @@ function ResumeSettingsContent({
 
       <main className={styles.main}>
         {submit.status === 'failed' && (
-          <p role="alert" className={styles.error}>
-            {submit.message}
-          </p>
+          <div role="alert" className={styles.error}>
+            <p>{submit.message}</p>
+            {submit.details.length > 0 && (
+              <ul>
+                {submit.details.map((detail) => (
+                  // C++ のメッセージは改行で問題を並べるので、改行をそのまま見せる
+                  <li key={detail} style={{ whiteSpace: 'pre-wrap' }}>
+                    {detail}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         )}
         <dl className={styles.summary} aria-label="再開するモデル">
           <dt>モデル名</dt>

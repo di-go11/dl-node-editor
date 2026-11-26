@@ -15,9 +15,26 @@ public:
     using std::runtime_error::runtime_error;
 };
 
-// 依頼の内容が今の状態と合わないため、学習を開始できない。
+// 依頼の内容が今の checkpoint の状態と合わないため、学習を開始できない(再開の条件)。
 // 例: resume = true なのに checkpoint がない / checkpoint がすでに指定エポック数まで学習済み。
 class TrainingPreconditionError : public std::runtime_error
+{
+public:
+    using std::runtime_error::runtime_error;
+};
+
+// 学習するモデルのグラフが、このデータセットでは学習できない
+// (つなぎ方・各層の形・出力チャンネル数 ≠ クラス数・出力の H / W ≠ 入力)。
+// gRPC では Rust が ValidateModelGraph で先に確かめるので、ここで起きるのは確認の後にデータセットが
+// 差し替えられた場合や、再開(グラフは checkpoint から復元し、Rust は確かめない)の場合。
+class ModelGraphMismatchError : public std::runtime_error
+{
+public:
+    using std::runtime_error::runtime_error;
+};
+
+// データセットを読めない(クラス数を決める色表 labelmap.txt がない・壊れている など)。設定ではなくデータセットの問題。
+class DatasetUnreadableError : public std::runtime_error
 {
 public:
     using std::runtime_error::runtime_error;

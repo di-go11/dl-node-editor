@@ -105,9 +105,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             channel.clone(),
         ))),
         stop_training: Arc::new(StopTraining::new(GrpcTrainingStopper::new(channel.clone()))),
-        validate_training: Arc::new(ValidateTrainingConfig::new(SqliteTrainingRepository::new(
-            pool.clone(),
-        ))),
+        // 整合性チェックも学習開始と同じく、グラフを C++ で確かめ、dataset_id からパスを引く
+        validate_training: Arc::new(ValidateTrainingConfig::new(
+            SqliteTrainingRepository::new(pool.clone()),
+            GrpcTrainingStarter::new(channel.clone()),
+            SqliteDatasetRepository::new(pool.clone()),
+        )),
         record_training: training_progress_recorder.clone(),
         get_model_summary: Arc::new(GetModelSummary::new(SqliteTrainingRepository::new(
             pool.clone(),

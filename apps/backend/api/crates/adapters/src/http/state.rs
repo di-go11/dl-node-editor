@@ -32,7 +32,8 @@ where
     pub start_training: Arc<StartTraining<S, R, G, K, DRD>>,
     pub get_process: Arc<GetTrainingProcess<P>>,
     pub stop_training: Arc<StopTraining<T>>,
-    pub validate_training: Arc<ValidateTrainingConfig<V>>,
+    // 整合性チェック。グラフの検証は S(GrpcTrainingStarter)、データセットの検索は DRD を学習開始と共有する
+    pub validate_training: Arc<ValidateTrainingConfig<V, S, DRD>>,
     // TODO(設計改善): AppStateはHTTPハンドラが使うユースケースだけを持つべき。
     // 記録の起動をProgressRecordingSchedulerポート経由にしたら、このフィールドと型パラメータDを削除する。
     // 詳細は handler.rs の start_training のコメントを参照。
@@ -145,7 +146,7 @@ where
 
 impl<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>
     FromRef<AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>>
-    for Arc<ValidateTrainingConfig<V>>
+    for Arc<ValidateTrainingConfig<V, S, DRD>>
 where
     C: CapabilityProvider,
     V: TrainingRecordReader,

@@ -59,6 +59,9 @@ export type IssueCode =
   // サーバーでの整合性チェック(POST /trainings/validate)
   | 'training/model-name-used'
   | 'training/server-check-failed'
+  // サーバーが設定・モデル構造の誤りを見つけた(422 の違反の一覧。値の範囲と、学習エンジンが
+  // 確かめるグラフの構造・形。出力チャンネル数とクラス数の比較など、手元では分からないものを含む)
+  | 'training/server-rejected'
   // 保存ファイル(指示書 7 章)
   | 'document/invalid-json'
   | 'document/not-a-document'

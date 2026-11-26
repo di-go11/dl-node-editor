@@ -20,7 +20,7 @@
 //
 // 見つかった問題をすべて返す(問題がなければ空)。添字(nodeIndex など)は graph の中の位置。
 // クラス数を求めるためにデータセットの色表(Original なら datasetPath/labelmap.txt)を読む。
-// 読めなければ TrainingPreconditionError を投げる(設定の誤りではなく、データセットの問題のため)。
+// 読めなければ DatasetUnreadableError を投げる(設定の誤りではなく、データセットの問題のため)。
 std::vector<GraphValidationError> checkModelGraph(const ModelGraph &graph,
                                                   const DataSpec &dataSpec,
                                                   const std::string &datasetPath);

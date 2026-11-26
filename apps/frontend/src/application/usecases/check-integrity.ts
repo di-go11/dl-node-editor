@@ -16,10 +16,13 @@ import type { ServerCheck, TrainingApi } from '../ports/training-api'
  *   (1) モデル構造のチェック   … entity の validateModelGraph(1c)
  *   (2) 学習設定のチェック     … entity の validateTrainingSettings(1d + 5a の規則)と、
  *                               モデルと学習設定の組み合わせ(Output の直前の活性化と loss)
- *   (3) DB の状態とのチェック  … サーバー(POST /trainings/validate)。同じ model_name が使われていないか
+ *   (3) サーバーでのチェック  … POST /trainings/validate。学習を始めずに、学習開始と同じ確認をする。
+ *                               データセットの有無、設定の値、学習エンジンでのグラフの構造と形
+ *                               (出力チャンネル数とクラス数の比較など、手元では分からないもの)、
+ *                               同じ model_name が使われていないか
  *
  * (1)(2) は手元で行う純粋な関数 checkIntegrity、(3) まで含めたものが checkIntegrityWithServer である。
- * C++ だけが検出できる問題は、学習開始の 422 で初めて分かる。
+ * (1)(2) と (3) の一部は同じ規則だが、(1)(2) は編集中にすぐ知らせるため、(3) は最終的な判定のために持つ。
  */
 
 export type IntegrityCheckInput = {
@@ -100,5 +103,8 @@ function serverIssues(
           { field: 'model_name' },
         ),
       ]
+    case 'invalid-config':
+      // 位置(ノード・ポート・パラメータ・項目)は infrastructure で画面の書き方に直してある
+      return server.value.issues
   }
 }

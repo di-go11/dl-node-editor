@@ -31,11 +31,12 @@ use usecases::{
         GetModelSummary, GetModelTrainingConfig,
     },
     training::{
-        GetTrainingProcess, ModelIdGenerator, ProgressRecordingScheduler, ResumeTraining,
-        ResumeTrainingConfig, ResumeTrainingError, StartTraining, StartTrainingConfig,
-        StartTrainingError, StopTraining, TrainingProgressProvider, TrainingProgressProviderError,
-        TrainingRecordReader, TrainingResumer, TrainingRunRegistar, TrainingStarter,
-        TrainingStopper, ValidateTrainingConfig, ValidateTrainingConfigError,
+        GetTrainingProcess, ModelGraphValidator, ModelGraphValidatorError, ModelIdGenerator,
+        ProgressRecordingScheduler, ResumeTraining, ResumeTrainingConfig, ResumeTrainingError,
+        StartTraining, StartTrainingConfig, StartTrainingError, StopTraining,
+        TrainingProgressProvider, TrainingProgressProviderError, TrainingRecordReader,
+        TrainingResumer, TrainingRunRegistar, TrainingStarter, TrainingStopper,
+        ValidateTrainingConfig, ValidateTrainingConfigError,
     },
 };
 
@@ -59,7 +60,8 @@ pub async fn start_training<S, R, G, K, F>(
     Json(dto): Json<TrainingConfigDto>,
 ) -> Result<Json<StartTrainingResponseDto>, Response>
 where
-    S: TrainingStarter + Send + Sync + 'static,
+    // 学習の開始と、開始前のグラフの検証の両方に使う
+    S: TrainingStarter + ModelGraphValidator + Send + Sync + 'static,
     R: TrainingRunRegistar + Send + Sync + 'static,
     G: ModelIdGenerator + Send + Sync + 'static,
     K: ProgressRecordingScheduler + Send + Sync + 'static,
@@ -88,6 +90,14 @@ fn invalid_config_response(violations: Vec<ConfigViolation>) -> Response {
 fn response_from_start_error(error: StartTrainingError) -> Response {
     match error {
         StartTrainingError::InvalidConfig(violations) => invalid_config_response(violations),
+        // 学習開始の時点で C++ が見つけたグラフの問題も、設定の違反と同じ本文で返す。
+        // C++ のメッセージにノードと内容が並んでいるので、グラフ全体(model_graph)の違反 1 件にする
+        StartTrainingError::ModelGraphMismatch(message) => {
+            invalid_config_response(vec![ConfigViolation {
+                field: "model_graph".to_string(),
+                message,
+            }])
+        }
         other => status_code_from_start_error(other).into_response(),
     }
 }
@@ -104,34 +114,64 @@ fn status_code_from_start_error(error: StartTrainingError) -> StatusCode {
         | StartTrainingError::EngineRejectedConfig(_)
         | StartTrainingError::RecordFailed(_)
         | StartTrainingError::DatasetReadFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
-        // 本体で指定されたデータセットがない(URL のリソースがないわけではないので 404 ではなく 422)
-        StartTrainingError::DatasetNotFound(_) | StartTrainingError::InvalidConfig(_) => {
-            StatusCode::UNPROCESSABLE_ENTITY
-        }
+        // 本体で指定されたデータセットがない(URL のリソースがないわけではないので 404 ではなく 422)。
+        // グラフがデータセットに合わない・データセットが読めないのも、選んだ設定・データセットの問題なので 422
+        StartTrainingError::DatasetNotFound(_)
+        | StartTrainingError::InvalidConfig(_)
+        | StartTrainingError::ModelGraphMismatch(_)
+        | StartTrainingError::DatasetUnreadable(_) => StatusCode::UNPROCESSABLE_ENTITY,
+        StartTrainingError::GraphCheckFailed(e) => status_code_from_graph_check_error(&e),
+    }
+}
+
+// C++ でのグラフの検証ができなかったときの変換(学習開始と整合性チェックで共通)
+fn status_code_from_graph_check_error(error: &ModelGraphValidatorError) -> StatusCode {
+    match error {
+        ModelGraphValidatorError::CallFailed(_) => StatusCode::BAD_GATEWAY,
+        // データセットの色表(labelmap.txt)が読めない。クライアントが選んだデータセットの問題なので 422
+        ModelGraphValidatorError::DatasetUnreadable(_) => StatusCode::UNPROCESSABLE_ENTITY,
+        // C++ が依頼を拒否した(Rust の検証漏れ)、または C++ の内部の失敗
+        ModelGraphValidatorError::Rejected(_) => StatusCode::INTERNAL_SERVER_ERROR,
     }
 }
 
 // 新規学習の整合性チェックPOSTリクエストハンドラ(学習開始と同じJSONを受け取る)
-pub async fn validate_training<V>(
-    State(usecase): State<Arc<ValidateTrainingConfig<V>>>,
+pub async fn validate_training<V, M, F>(
+    State(usecase): State<Arc<ValidateTrainingConfig<V, M, F>>>,
     Json(dto): Json<TrainingConfigDto>,
 ) -> Response
 where
     V: TrainingRecordReader + Send + Sync + 'static,
+    M: ModelGraphValidator + Send + Sync + 'static,
+    F: DatasetFinder + Send + Sync + 'static,
 {
     let Ok(config) = StartTrainingConfig::try_from(dto) else {
         return StatusCode::UNPROCESSABLE_ENTITY.into_response(); // 空の dataset_id
     };
     match usecase.execute(&config).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
-        Err(ValidateTrainingConfigError::InvalidConfig(violations)) => {
+        Err(error) => response_from_validate_error(error),
+    }
+}
+
+fn response_from_validate_error(error: ValidateTrainingConfigError) -> Response {
+    match error {
+        ValidateTrainingConfigError::InvalidConfig(violations) => {
             invalid_config_response(violations)
         }
-        Err(ValidateTrainingConfigError::ModelNameAlreadyUsed(_)) => {
+        ValidateTrainingConfigError::ModelNameAlreadyUsed(_) => {
             StatusCode::CONFLICT.into_response()
         }
-        Err(ValidateTrainingConfigError::ReadFailed(_)) => {
+        // 本体で指定されたデータセットがない(学習開始と同じく 422)
+        ValidateTrainingConfigError::DatasetNotFound(_) => {
+            StatusCode::UNPROCESSABLE_ENTITY.into_response()
+        }
+        ValidateTrainingConfigError::ReadFailed(_)
+        | ValidateTrainingConfigError::DatasetReadFailed(_) => {
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+        ValidateTrainingConfigError::GraphCheckFailed(e) => {
+            status_code_from_graph_check_error(&e).into_response()
         }
     }
 }
@@ -554,6 +594,98 @@ mod tests {
                 StatusCode::INTERNAL_SERVER_ERROR
             );
         }
+    }
+
+    // C++ でのグラフの検証ができなかったとき: 通信できない 502、データセットが読めない 422、拒否 500
+    #[test]
+    fn graph_check_failure_converts_by_cause() {
+        let cases = [
+            (
+                ModelGraphValidatorError::CallFailed("down".to_string()),
+                StatusCode::BAD_GATEWAY,
+            ),
+            (
+                ModelGraphValidatorError::DatasetUnreadable("labelmap.txt".to_string()),
+                StatusCode::UNPROCESSABLE_ENTITY,
+            ),
+            (
+                ModelGraphValidatorError::Rejected("stride".to_string()),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+        ];
+        for (error, expected) in cases {
+            assert_eq!(
+                response_from_start_error(StartTrainingError::GraphCheckFailed(error.clone()))
+                    .status(),
+                expected
+            );
+            assert_eq!(
+                response_from_validate_error(ValidateTrainingConfigError::GraphCheckFailed(error))
+                    .status(),
+                expected
+            );
+        }
+    }
+
+    // 学習開始の時点で C++ が見つけたグラフの問題は、model_graph の違反 1 件の本文にする。
+    // 再開の条件(409)・データセットが読めない(422、本文なし)とは区別する
+    #[tokio::test]
+    async fn start_errors_from_engine_are_split_by_cause() {
+        let response = response_from_start_error(StartTrainingError::ModelGraphMismatch(
+            "ノード 'head': クラス数と一致しません".to_string(),
+        ));
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(
+            body_json(response).await,
+            serde_json::json!({
+                "error": "invalid_config",
+                "violations": [
+                    { "field": "model_graph", "message": "ノード 'head': クラス数と一致しません" }
+                ]
+            })
+        );
+
+        assert_eq!(
+            response_from_start_error(StartTrainingError::DatasetUnreadable(
+                "labelmap.txt".to_string()
+            ))
+            .status(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+        assert_eq!(
+            response_from_start_error(StartTrainingError::ResumePreconditionFailed(
+                "checkpoint".to_string()
+            ))
+            .status(),
+            StatusCode::CONFLICT
+        );
+    }
+
+    // 整合性チェックの違反も、学習開始と同じ 422 と本文
+    #[tokio::test]
+    async fn invalid_config_on_validate_converts_to_422_with_violations() {
+        let response =
+            response_from_validate_error(ValidateTrainingConfigError::InvalidConfig(violations()));
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(body_json(response).await, expected_invalid_config_body());
+    }
+
+    #[test]
+    fn dataset_errors_on_validate_convert_like_start() {
+        assert_eq!(
+            response_from_validate_error(ValidateTrainingConfigError::DatasetNotFound(
+                "dataset-1".to_string()
+            ))
+            .status(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+        assert_eq!(
+            response_from_validate_error(ValidateTrainingConfigError::DatasetReadFailed(
+                "db locked".to_string()
+            ))
+            .status(),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
     }
 
     #[test]

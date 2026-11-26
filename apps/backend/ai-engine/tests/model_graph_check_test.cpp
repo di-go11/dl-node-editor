@@ -3,7 +3,7 @@
 //   - 構造の問題があれば、それだけを返す(形は計算しない)
 //   - 途中の層のチャンネル数のずれ、出力チャンネル数とクラス数のずれを、ノードの添字付きで返す
 //   - クラス数はデータセットの形式から決まる(PascalVoc は 21 固定、Original は labelmap.txt)
-//   - labelmap.txt が読めなければ TrainingPreconditionError
+//   - labelmap.txt が読めなければ DatasetUnreadableError
 //   - segmentation 以外ではクラス数と比べない
 // torch・GPU は使わない(リンクだけ ai_engine_lib に合わせる)。
 
@@ -139,16 +139,16 @@ int main()
 
     // ---------- labelmap.txt が読めない ----------
     {
-        bool precondition = false;
+        bool unreadable = false;
         try
         {
             checkModelGraph(twoConvGraph(8, 8, 3), imageSpec(OriginalConfig{}, SegmentationSpec{}), noDataset);
         }
-        catch (const TrainingPreconditionError &)
+        catch (const DatasetUnreadableError &)
         {
-            precondition = true;
+            unreadable = true;
         }
-        check(precondition, "labelmap.txt が読めない: TrainingPreconditionError");
+        check(unreadable, "labelmap.txt が読めない: DatasetUnreadableError");
     }
 
     // ---------- segmentation 以外はクラス数と比べない ----------

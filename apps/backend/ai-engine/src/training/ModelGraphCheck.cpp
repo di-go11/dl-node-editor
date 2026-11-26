@@ -22,8 +22,8 @@ namespace
         }
         catch (const std::exception &e)
         {
-            throw TrainingPreconditionError("データセットの色表を読めないため、クラス数が分かりません: " +
-                                            datasetPath + " (" + e.what() + ")");
+            throw DatasetUnreadableError("データセットの色表を読めないため、クラス数が分かりません: " +
+                                         datasetPath + " (" + e.what() + ")");
         }
     }
 }
