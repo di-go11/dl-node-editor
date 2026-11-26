@@ -369,6 +369,10 @@ export function createHandlers(options: MockOptions = {}) {
     http.post(`${base}/trainings/validate`, async ({ request }) => {
       const parsed = rustStartTrainingRequestSchema.safeParse(await request.json())
       if (!parsed.success) return new HttpResponse(null, { status: 422 })
+      // 本物と同じく、整合性チェックでも登録されていないデータセットは原因のコード付きの 422 にする
+      if (!datasets.some((dataset) => dataset.dataset_id === parsed.data.dataset_id)) {
+        return HttpResponse.json({ error: 'dataset_not_found' }, { status: 422 })
+      }
       if (usedModelNames.has(parsed.data.model_name)) return new HttpResponse(null, { status: 409 })
       return new HttpResponse(null, { status: 204 })
     }),
@@ -377,9 +381,9 @@ export function createHandlers(options: MockOptions = {}) {
       if (options.alreadyRunning === true) return new HttpResponse(null, { status: 409 })
       const parsed = rustStartTrainingRequestSchema.safeParse(await request.json())
       if (!parsed.success) return new HttpResponse(null, { status: 422 })
-      // 本物と同じく、登録されていないデータセットは受け付けない
+      // 本物と同じく、登録されていないデータセットは原因のコード付きの 422 にする
       if (!datasets.some((dataset) => dataset.dataset_id === parsed.data.dataset_id)) {
-        return new HttpResponse(null, { status: 422 })
+        return HttpResponse.json({ error: 'dataset_not_found' }, { status: 422 })
       }
       usedModelNames.add(parsed.data.model_name)
       const response: Schemas['StartTrainingResponse'] = {

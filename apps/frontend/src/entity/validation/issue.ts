@@ -62,6 +62,9 @@ export type IssueCode =
   // サーバーが設定・モデル構造の誤りを見つけた(422 の違反の一覧。値の範囲と、学習エンジンが
   // 確かめるグラフの構造・形。出力チャンネル数とクラス数の比較など、手元では分からないものを含む)
   | 'training/server-rejected'
+  // サーバーで分かったデータセットの問題(登録されていない / 色表が読めない)
+  | 'training/dataset-not-found'
+  | 'training/dataset-unreadable'
   // 保存ファイル(指示書 7 章)
   | 'document/invalid-json'
   | 'document/not-a-document'

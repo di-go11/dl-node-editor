@@ -38,7 +38,20 @@
 
 - `.deploy`(`compose.prod.yml`)の構成で、整合性チェックが正しく動くことを確認した(コミット `8741a5b` / `fcdcc3e`。学習率スケジューラは none 固定)
 - dev コンテナ(`.devcontainer/docker-compose.yml`)では、データセットを登録していなかったため、整合性チェックが「データセットが見つからないか、読めません」(422)になった。設定の検証の不具合ではない
-    - この 422 は、データセットがない・色表が読めない・リクエストの JSON の形が合わない、の 3 つが同じ文言になり、原因を探しにくい。本文にエラーコードを入れて文言を分けるのが残りの改善(作業 9 と同じ考え方)
+    - この 422 は、データセットがない・色表が読めない・リクエストの JSON の形が合わない、の 3 つが同じ文言になり、原因を探しにくかった
+    - 対応(2026-11-26、未ビルド・未テスト): 違反の一覧のない 422 の本文に原因のコード(`ErrorCode`)を入れ、フロントで文言を分けた(作業 9 と同じ考え方)
+
+        | 原因 | 本文 | フロント(整合性チェック) | フロント(学習開始・再開) |
+        |---|---|---|---|
+        | データセットが登録されていない | `{"error": "dataset_not_found"}` | 「データセット」欄に error(`training/dataset-not-found`) | その原因の説明 |
+        | 色表(labelmap.txt)が読めない | `{"error": "dataset_unreadable"}` | 「データセット」欄に error(`training/dataset-unreadable`) | その原因の説明 |
+        | リクエストの中身(空の dataset_id など) | `{"error": "invalid_request"}` | その原因の説明のエラー | その原因の説明 |
+        | JSON として読めない・フィールドが足りない | axum の text/plain の説明 | 「リクエストの形が合わない」エラー | 同じ |
+
+        - Rust: `http/dto/error_code.rs`(`ErrorCodeDto` / `ErrorCode`)、`handler.rs` の `error_code_response()`
+        - フロント: `infrastructure/http/server-error-code.ts`(コードの読み取りと文言、`trainingRejectionDetails()`)、`api-client.ts` の `ErrorDetails`(本文から説明と違反の一覧を上書きする)
+        - openapi: 3 つのエンドポイントの 422 を `oneOf: [InvalidConfig, ErrorCode]` にし、`ErrorCode` のスキーマを追加
+        - 再開で optimizer の種類を変えたときの 422 は、いまも本文なし(状態コードの説明のまま)
 
 ---
 

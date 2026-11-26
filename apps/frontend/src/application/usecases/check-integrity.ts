@@ -106,5 +106,22 @@ function serverIssues(
     case 'invalid-config':
       // 位置(ノード・ポート・パラメータ・項目)は infrastructure で画面の書き方に直してある
       return server.value.issues
+    // データセットの問題は、学習設定の「データセット」欄に出す
+    case 'dataset-not-found':
+      return [
+        issueError(
+          'training/dataset-not-found',
+          '選んだデータセットが見つかりません(削除された可能性があります)。データセットを選び直してください。',
+          { field: 'dataset_id' },
+        ),
+      ]
+    case 'dataset-unreadable':
+      return [
+        issueError(
+          'training/dataset-unreadable',
+          '選んだデータセットの色表(labelmap.txt)を読めないため、クラス数が分かりません。データセットの中身を確認してください。',
+          { field: 'dataset_id' },
+        ),
+      ]
   }
 }

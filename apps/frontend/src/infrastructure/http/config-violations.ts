@@ -11,7 +11,7 @@ import type { RustResumeTrainingRequest, RustStartTrainingRequest } from './rust
  * 再開のリクエストにはモデルのグラフとデータの仕様がない(サーバーが前回の値を使う)ので、
  * そこを指す違反は、ノードや種類を特定せずに返す。
  */
-type SentRequest = RustStartTrainingRequest | RustResumeTrainingRequest
+export type SentRequest = RustStartTrainingRequest | RustResumeTrainingRequest
 
 function sentGraph(request: SentRequest): RustStartTrainingRequest['model_graph'] | undefined {
   return 'model_graph' in request ? request.model_graph : undefined

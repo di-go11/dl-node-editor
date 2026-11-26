@@ -48,6 +48,12 @@ type FetchResult = {
  */
 export type ErrorBodyReader<T> = (status: number, body: unknown) => T | undefined
 
+/** エラーの本文から分かった詳しい内容。message は状態コードの説明を上書きする */
+export type ErrorDetails = {
+  readonly message?: string
+  readonly issues?: readonly Issue[]
+}
+
 /**
  * 状態コードごとの説明。契約のエラー応答の多くには本文がないので、状態コードから文言を決める
  * (学習設定の誤りの 422 だけは違反の一覧の本文があり、ErrorBodyReader で別に読む)。
@@ -63,6 +69,15 @@ const HTTP_ERROR_MESSAGES: Readonly<Record<number, string>> = {
 
 /** 状態コード → 利用者に見せる説明(API ごとに既定の説明を上書きする) */
 export type HttpErrorMessages = Readonly<Record<number, string>>
+
+/** 本文から分かった内容で、状態コードから作ったエラーを上書きする */
+function withDetails(error: ApiError, details: ErrorDetails | undefined): ApiError {
+  return {
+    ...error,
+    ...(details?.message === undefined ? {} : { message: details.message }),
+    ...(details?.issues === undefined ? {} : { issues: details.issues }),
+  }
+}
 
 function httpError(response: Response, messages: HttpErrorMessages = {}): ApiError {
   return {
@@ -83,13 +98,14 @@ function httpError(response: Response, messages: HttpErrorMessages = {}): ApiErr
  * その値の対応(byStatus)は呼び出し側が渡す。対応にないエラーの状態コードは kind: 'http' にする。
  * messages を渡すと、そのエラーの説明をその API の意味で上書きできる(callApi と同じ)。
  * fromErrorBody を渡すと、エラーの本文から結果を作れる(整合性チェックの 422 の違反の一覧など)。
- * 読み替えられなかったエラーは、これまでどおり状態コードで扱う。
+ * 結果にならなかったエラーは状態コードで扱い、detailsFromErrorBody があれば説明を本文から決める(callApi と同じ)。
  */
 export async function callApiByStatus<T>(
   call: () => Promise<FetchResult>,
   byStatus: Readonly<Record<number, T>>,
   messages?: HttpErrorMessages,
   fromErrorBody?: ErrorBodyReader<T>,
+  detailsFromErrorBody?: ErrorBodyReader<ErrorDetails>,
 ): Promise<ApiResult<T>> {
   let result: FetchResult
   try {
@@ -106,7 +122,14 @@ export async function callApiByStatus<T>(
   }
   const value = byStatus[response.status]
   if (value !== undefined) return apiOk(value)
-  if (!response.ok) return apiError(httpError(response, messages))
+  if (!response.ok) {
+    return apiError(
+      withDetails(
+        httpError(response, messages),
+        detailsFromErrorBody?.(response.status, result.error),
+      ),
+    )
+  }
   return apiError({
     kind: 'invalid-response',
     message: `サーバーが契約にない状態コードを返しました(HTTP ${response.status})。`,
@@ -127,15 +150,15 @@ export async function callApiByStatus<T>(
  * messages を渡すと、エラーの状態コードの説明をその API の意味で上書きできる
  * (学習再開の 404 は「モデルが見つからない」で、学習開始の 404 とは違う)。
  *
- * issuesFromErrorBody を渡すと、エラーの本文にある違反の一覧(学習開始の 422 など)を
- * ApiError の issues に入れる。本文がない・形が違うときは issues を付けない。
+ * detailsFromErrorBody を渡すと、エラーの本文から分かった内容を ApiError に入れる
+ * (学習開始の 422 の違反の一覧は issues、原因のコードは message)。読み替えられなければ状態コードの説明のまま。
  */
 export async function callApi<Json, T>(
   call: () => Promise<FetchResult>,
   schema: z.ZodType<Json>,
   convert: (json: Json) => T,
   messages?: HttpErrorMessages,
-  issuesFromErrorBody?: ErrorBodyReader<readonly Issue[]>,
+  detailsFromErrorBody?: ErrorBodyReader<ErrorDetails>,
 ): Promise<ApiResult<T>> {
   let result: FetchResult
   try {
@@ -146,9 +169,12 @@ export async function callApi<Json, T>(
   }
 
   if (!result.response.ok) {
-    const error = httpError(result.response, messages)
-    const issues = issuesFromErrorBody?.(result.response.status, result.error)
-    return apiError(issues === undefined ? error : { ...error, issues })
+    return apiError(
+      withDetails(
+        httpError(result.response, messages),
+        detailsFromErrorBody?.(result.response.status, result.error),
+      ),
+    )
   }
 
   const parsed = schema.safeParse(result.data, { error: japaneseErrors })

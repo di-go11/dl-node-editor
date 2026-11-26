@@ -1,7 +1,7 @@
 use super::dto::{
-    CapabilitiesDto, DatasetLayoutMismatchDto, DatasetSummariesDto, InvalidConfigDto,
-    ModelSummariesDto, ModelTrainingConfigDto, ResumeTrainingConfigDto, StartTrainingResponseDto,
-    TrainingConfigDto, TrainingJobStatusDto, TrainingProcessDto,
+    CapabilitiesDto, DatasetLayoutMismatchDto, DatasetSummariesDto, ErrorCode, ErrorCodeDto,
+    InvalidConfigDto, ModelSummariesDto, ModelTrainingConfigDto, ResumeTrainingConfigDto,
+    StartTrainingResponseDto, TrainingConfigDto, TrainingJobStatusDto, TrainingProcessDto,
 };
 use axum::{
     extract::{Path, State},
@@ -68,8 +68,7 @@ where
     F: DatasetFinder + Send + Sync + 'static,
 {
     // 空の dataset_id はクライアントの誤り
-    let config = StartTrainingConfig::try_from(dto)
-        .map_err(|_| StatusCode::UNPROCESSABLE_ENTITY.into_response())?;
+    let config = StartTrainingConfig::try_from(dto).map_err(|_| invalid_request_response())?;
     let job_id = start
         .execute(&config)
         .await
@@ -86,10 +85,30 @@ fn invalid_config_response(violations: Vec<ConfigViolation>) -> Response {
         .into_response()
 }
 
-// 新規学習と学習再開で共通の、学習開始・記録の失敗の変換。設定の違反のときだけ本文を付ける
+// 違反の一覧のない 422 などに、原因のコードを本文で付ける。同じ状態コードでも原因が違うものを、
+// フロントが文言で区別できるようにする(データセットがない / 色表が読めない / リクエストの中身)
+fn error_code_response(status: StatusCode, code: ErrorCode) -> Response {
+    (status, Json(ErrorCodeDto { error: code })).into_response()
+}
+
+// リクエストの中身が受け付けられない(空の dataset_id など)
+fn invalid_request_response() -> Response {
+    error_code_response(StatusCode::UNPROCESSABLE_ENTITY, ErrorCode::InvalidRequest)
+}
+
+// 新規学習と学習再開で共通の、学習開始・記録の失敗の変換。
+// 設定の違反は違反の一覧、データセットの問題は原因のコードを本文に付ける
 fn response_from_start_error(error: StartTrainingError) -> Response {
     match error {
         StartTrainingError::InvalidConfig(violations) => invalid_config_response(violations),
+        StartTrainingError::DatasetNotFound(_) => {
+            error_code_response(StatusCode::UNPROCESSABLE_ENTITY, ErrorCode::DatasetNotFound)
+        }
+        // 学習開始前のグラフの検証(ValidateModelGraph)と、学習開始の時点(StartTraining)の両方
+        StartTrainingError::DatasetUnreadable(_)
+        | StartTrainingError::GraphCheckFailed(ModelGraphValidatorError::DatasetUnreadable(_)) => {
+            error_code_response(StatusCode::UNPROCESSABLE_ENTITY, ErrorCode::DatasetUnreadable)
+        }
         // 学習開始の時点で C++ が見つけたグラフの問題も、設定の違反と同じ本文で返す。
         // C++ のメッセージにノードと内容が並んでいるので、グラフ全体(model_graph)の違反 1 件にする
         StartTrainingError::ModelGraphMismatch(message) => {
@@ -146,7 +165,7 @@ where
     F: DatasetFinder + Send + Sync + 'static,
 {
     let Ok(config) = StartTrainingConfig::try_from(dto) else {
-        return StatusCode::UNPROCESSABLE_ENTITY.into_response(); // 空の dataset_id
+        return invalid_request_response(); // 空の dataset_id
     };
     match usecase.execute(&config).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
@@ -162,10 +181,13 @@ fn response_from_validate_error(error: ValidateTrainingConfigError) -> Response 
         ValidateTrainingConfigError::ModelNameAlreadyUsed(_) => {
             StatusCode::CONFLICT.into_response()
         }
-        // 本体で指定されたデータセットがない(学習開始と同じく 422)
+        // データセットの問題は、学習開始と同じく 422 と原因のコード
         ValidateTrainingConfigError::DatasetNotFound(_) => {
-            StatusCode::UNPROCESSABLE_ENTITY.into_response()
+            error_code_response(StatusCode::UNPROCESSABLE_ENTITY, ErrorCode::DatasetNotFound)
         }
+        ValidateTrainingConfigError::GraphCheckFailed(
+            ModelGraphValidatorError::DatasetUnreadable(_),
+        ) => error_code_response(StatusCode::UNPROCESSABLE_ENTITY, ErrorCode::DatasetUnreadable),
         ValidateTrainingConfigError::ReadFailed(_)
         | ValidateTrainingConfigError::DatasetReadFailed(_) => {
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
@@ -686,6 +708,46 @@ mod tests {
             .status(),
             StatusCode::INTERNAL_SERVER_ERROR
         );
+    }
+
+    // 違反の一覧のない 422 は、原因のコードを本文に付ける(フロントが文言を分けるため)
+    #[tokio::test]
+    async fn dataset_and_request_problems_return_error_codes() {
+        let unreadable = || ModelGraphValidatorError::DatasetUnreadable("labelmap.txt".to_string());
+        let cases = [
+            (
+                response_from_start_error(StartTrainingError::DatasetNotFound("d".to_string())),
+                "dataset_not_found",
+            ),
+            (
+                response_from_start_error(StartTrainingError::DatasetUnreadable("l".to_string())),
+                "dataset_unreadable",
+            ),
+            (
+                response_from_start_error(StartTrainingError::GraphCheckFailed(unreadable())),
+                "dataset_unreadable",
+            ),
+            (
+                response_from_validate_error(ValidateTrainingConfigError::DatasetNotFound(
+                    "d".to_string(),
+                )),
+                "dataset_not_found",
+            ),
+            (
+                response_from_validate_error(ValidateTrainingConfigError::GraphCheckFailed(
+                    unreadable(),
+                )),
+                "dataset_unreadable",
+            ),
+            (invalid_request_response(), "invalid_request"),
+        ];
+        for (response, code) in cases {
+            assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY, "{code}");
+            assert_eq!(
+                body_json(response).await,
+                serde_json::json!({ "error": code })
+            );
+        }
     }
 
     #[test]

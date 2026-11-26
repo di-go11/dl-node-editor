@@ -6,7 +6,7 @@ import type { TrainedModelSummary } from '../../entity/trained-model/trained-mod
 
 import type { ApiClient, HttpErrorMessages } from './api-client'
 import { callApi } from './api-client'
-import { configViolationIssues } from './config-violations'
+import { trainingRejectionDetails } from './server-error-code'
 import { trainingStatusJsonSchema } from './http-training-progress'
 import {
   fromRustModelConfig,
@@ -109,7 +109,8 @@ export function createHttpTrainedModelApi(client: ApiClient): TrainedModelApi {
         // 応答に状態は含まれない。受理された時点で学習は実行中である
         (json) => ({ jobId: json.job_id, status: 'running' as const }),
         RESUME_MESSAGES,
-        (status, body) => (status === 422 ? configViolationIssues(body, request.value) : undefined),
+        // 違反の一覧・原因のコード(色表が読めない)を本文から読む。本文がなければ RESUME_MESSAGES の説明
+        trainingRejectionDetails(request.value),
       )
     },
   }

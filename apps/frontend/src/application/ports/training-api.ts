@@ -43,6 +43,10 @@ export type ServerCheck =
    * (出力チャンネル数とクラス数の比較など、手元では分からないものを含む)の違反をすべて持つ
    */
   | { readonly kind: 'invalid-config'; readonly issues: readonly Issue[] }
+  /** 選んだデータセットが登録されていない(削除された、など) */
+  | { readonly kind: 'dataset-not-found' }
+  /** 選んだデータセットの色表(labelmap.txt)が読めず、クラス数が分からない */
+  | { readonly kind: 'dataset-unreadable' }
 
 export type TrainingApi = {
   /**

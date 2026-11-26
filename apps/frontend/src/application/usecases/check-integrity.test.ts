@@ -104,6 +104,19 @@ describe('checkIntegrityWithServer', () => {
     expect(result.issues).toEqual([serverIssue])
   })
 
+  it.each([
+    ['dataset-not-found', 'training/dataset-not-found'],
+    ['dataset-unreadable', 'training/dataset-unreadable'],
+  ] as const)(
+    'データセットの問題(%s)は、データセットの欄(dataset_id)を指す error にする',
+    async (kind, code) => {
+      const { deps } = fakeValidate(apiOk({ kind }))
+      const result = await checkIntegrityWithServer(deps, validInput())
+      expect(result.ok).toBe(false)
+      expect(result.issues).toMatchObject([{ severity: 'error', code, field: 'dataset_id' }])
+    },
+  )
+
   it('サーバーで確かめられなければ error にする(確かめていない内容では実行させない)', async () => {
     const { deps } = fakeValidate(
       apiError({ kind: 'network', message: 'サーバーに接続できません: down' }),

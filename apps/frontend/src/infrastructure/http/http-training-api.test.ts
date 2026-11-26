@@ -15,6 +15,7 @@ import { TEST_BASE_URL, createMockServer } from '../mock/server'
 import { createApiClient } from './api-client'
 import { createHttpTrainingApi } from './http-training-api'
 import { toRustStartTrainingRequest } from './rust-training-request'
+import { ERROR_CODE_MESSAGES, REQUEST_SHAPE_MESSAGE } from './server-error-code'
 
 /**
  * 学習開始(POST /trainings)の HTTP 実装を、MSW のモック API に対して動かして確かめる。
@@ -67,6 +68,29 @@ describe('createHttpTrainingApi', () => {
     })
     expect(result).toMatchObject({ ok: false, error: { kind: 'invalid-request' } })
     expect(called).toBe(false)
+  })
+
+  it('原因のコードのある 422 は、その原因の説明にする', async () => {
+    // モックは本物と同じく、登録されていないデータセットに dataset_not_found を返す
+    const notFound = await createHttpTrainingApi(client()).start(validSegnetGraph(), {
+      ...settings,
+      datasetId: 'deleted-dataset',
+    })
+    expect(notFound).toEqual({
+      ok: false,
+      error: { kind: 'http', status: 422, message: ERROR_CODE_MESSAGES.dataset_not_found },
+    })
+
+    server.use(
+      http.post(`${TEST_BASE_URL}/trainings`, () =>
+        HttpResponse.json({ error: 'dataset_unreadable' }, { status: 422 }),
+      ),
+    )
+    const unreadable = await createHttpTrainingApi(client()).start(validSegnetGraph(), settings)
+    expect(unreadable).toEqual({
+      ok: false,
+      error: { kind: 'http', status: 422, message: ERROR_CODE_MESSAGES.dataset_unreadable },
+    })
   })
 
   it('設定の誤りの 422 は、違反の一覧を位置付きの issues にしてエラーに付ける', async () => {
@@ -162,7 +186,49 @@ describe('createHttpTrainingApi の整合性チェック(POST /trainings/validat
     })
   })
 
-  it('本文のない 422(データセットがないなど)は http のエラーになる', async () => {
+  it('登録されていないデータセットは、通信の失敗ではなく dataset-not-found という結果になる', async () => {
+    const result = await createHttpTrainingApi(client()).validate(validSegnetGraph(), {
+      ...named('validate_no_dataset'),
+      datasetId: 'deleted-dataset',
+    })
+    expect(result).toEqual({ ok: true, value: { kind: 'dataset-not-found' } })
+  })
+
+  it('色表が読めないデータセットは dataset-unreadable という結果になる', async () => {
+    server.use(
+      http.post(`${TEST_BASE_URL}/trainings/validate`, () =>
+        HttpResponse.json({ error: 'dataset_unreadable' }, { status: 422 }),
+      ),
+    )
+    const result = await createHttpTrainingApi(client()).validate(
+      validSegnetGraph(),
+      named('validate_unreadable'),
+    )
+    expect(result).toEqual({ ok: true, value: { kind: 'dataset-unreadable' } })
+  })
+
+  it('JSON でない本文の 422 は、リクエストの形が合わないという説明のエラーになる', async () => {
+    server.use(
+      http.post(
+        `${TEST_BASE_URL}/trainings/validate`,
+        () =>
+          new HttpResponse('Failed to deserialize the JSON body into the target type', {
+            status: 422,
+            headers: { 'Content-Type': 'text/plain' },
+          }),
+      ),
+    )
+    const result = await createHttpTrainingApi(client()).validate(
+      validSegnetGraph(),
+      named('validate_text'),
+    )
+    expect(result).toEqual({
+      ok: false,
+      error: { kind: 'http', status: 422, message: REQUEST_SHAPE_MESSAGE },
+    })
+  })
+
+  it('原因の分からない本文のない 422 は、http のエラーになる(古いサーバーなど)', async () => {
     server.use(
       http.post(
         `${TEST_BASE_URL}/trainings/validate`,

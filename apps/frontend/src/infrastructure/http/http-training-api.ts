@@ -11,6 +11,7 @@ import { toStartTrainingRequestJson } from '../../entity/training/proto-json/con
 import type { ApiClient, HttpErrorMessages } from './api-client'
 import { API_BASE_PATH, callApi, callApiByStatus } from './api-client'
 import { configViolationIssues } from './config-violations'
+import { serverErrorCode, trainingRejectionDetails } from './server-error-code'
 import type { ProgressEventSource } from './http-training-progress'
 import { listenTrainingProgress, trainingStatusResponseSchema } from './http-training-progress'
 import { toRustStartTrainingRequest } from './rust-training-request'
@@ -29,11 +30,12 @@ const START_MESSAGES: HttpErrorMessages = {
 }
 
 /**
- * 整合性チェックの、違反の一覧のない 422(データセットがない、色表が読めない)と 502(学習エンジンに届かない)。
+ * 整合性チェックの 422 で、本文から原因が分からないもの(古いサーバーなど)と、502(学習エンジンに届かない)。
+ * データセットの問題・設定の誤りは本文から結果にするので、ここには来ない。
  * 整合性チェックもグラフの確認のために学習エンジンを呼ぶ
  */
 const VALIDATE_MESSAGES: HttpErrorMessages = {
-  422: '選んだデータセットが見つからないか、読めません。データセットを選び直してください。',
+  422: '整合性チェックのリクエストが受け付けられませんでした。',
   502: '学習サーバーに接続できないため、モデル構造を確認できません。',
 }
 
@@ -67,12 +69,22 @@ export function createHttpTrainingApi(
           409: { kind: 'model-name-used' },
         },
         VALIDATE_MESSAGES,
-        // 設定の誤りの 422 は、違反の一覧という「結果」にする(通信の失敗ではない)
+        // 設定の誤りとデータセットの問題の 422 は「結果」にする(通信の失敗ではない。画面は欄に出す)
         (status, body) => {
           if (status !== 422) return undefined
           const issues = configViolationIssues(body, request.value)
-          return issues === undefined ? undefined : { kind: 'invalid-config', issues }
+          if (issues !== undefined) return { kind: 'invalid-config', issues }
+          switch (serverErrorCode(body)) {
+            case 'dataset_not_found':
+              return { kind: 'dataset-not-found' }
+            case 'dataset_unreadable':
+              return { kind: 'dataset-unreadable' }
+            default:
+              return undefined
+          }
         },
+        // 結果にならなかった 422(invalid_request、JSON でない本文)は、原因に合った説明のエラーにする
+        trainingRejectionDetails(request.value),
       )
     },
 
@@ -84,7 +96,7 @@ export function createHttpTrainingApi(
         startResponseSchema,
         toStartedTraining,
         START_MESSAGES,
-        (status, body) => (status === 422 ? configViolationIssues(body, request.value) : undefined),
+        trainingRejectionDetails(request.value),
       )
     },
 

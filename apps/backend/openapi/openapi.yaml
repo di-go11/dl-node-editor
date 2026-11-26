@@ -89,14 +89,18 @@ paths:
           description: |
             リクエストの形が合わない(dataset_id が空を含む)、dataset_id のデータセットが登録されていない、
             データセットの色表(labelmap.txt)が読めない、または設定に誤りがある。
-            設定の誤りのときだけ本文(InvalidConfig)があり、値の違反とモデルのグラフの違反(構造・形。学習エンジンが確かめる)を
+            設定の誤りのときは本文が InvalidConfig で、値の違反とモデルのグラフの違反(構造・形。学習エンジンが確かめる)を
             すべて返す。このときモデルは登録されないので、直せば同じ model_name で送り直せる。
             確認の後にデータセットが差し替えられ、学習を始める時点で学習エンジンがグラフの問題を見つけた場合も同じ本文
-            (field は model_graph の違反 1 件。message に問題のあるノードと内容)
+            (field は model_graph の違反 1 件。message に問題のあるノードと内容)。
+            それ以外は本文が ErrorCode で、原因を区別する(dataset_not_found / dataset_unreadable / invalid_request)。
+            JSON として読めない・フィールドが足りないときは、サーバーのフレームワークが text/plain の説明を返す
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/InvalidConfig"
+                oneOf:
+                  - $ref: "#/components/schemas/InvalidConfig"
+                  - $ref: "#/components/schemas/ErrorCode"
         "500":
           description: |
             DB の読み書きに失敗した。または学習エンジンが設定を拒否した(サーバーの検証漏れで、クライアントの誤りではない)
@@ -128,11 +132,14 @@ paths:
         "422":
           description: |
             リクエストの形が合わない(dataset_id が空を含む)、dataset_id のデータセットが登録されていない、
-            データセットの色表(labelmap.txt)が読めない、または設定に誤りがある(このときだけ本文あり)
+            データセットの色表(labelmap.txt)が読めない、または設定に誤りがある。
+            本文は /trainings と同じ(設定の誤りは InvalidConfig、それ以外は ErrorCode)
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/InvalidConfig"
+                oneOf:
+                  - $ref: "#/components/schemas/InvalidConfig"
+                  - $ref: "#/components/schemas/ErrorCode"
         "500":
           description: DB の読み取りに失敗した。または学習エンジンが依頼を拒否した(サーバーの検証漏れ)
         "502":
@@ -318,12 +325,15 @@ paths:
             リクエストの形が合わない、optimizer の type が前回と違う、設定の値に誤りがある、
             保存したモデル構造がいまのデータセットでは学習できない(学習エンジンが確かめる。field は model_graph、
             message に問題のあるノードと内容)、またはデータセットの色表(labelmap.txt)が読めない。
-            設定の値の誤りとモデル構造の問題のときだけ本文(InvalidConfig)がある。前回の設定に送った値を上書きした結果を
-            検証するので、送っていない項目(model_graph など)の違反が入ることもある
+            設定の値の誤りとモデル構造の問題は本文が InvalidConfig。前回の設定に送った値を上書きした結果を
+            検証するので、送っていない項目(model_graph など)の違反が入ることもある。
+            色表が読めないときは本文が ErrorCode(dataset_unreadable)。optimizer の type が前回と違うときは本文なし
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/InvalidConfig"
+                oneOf:
+                  - $ref: "#/components/schemas/InvalidConfig"
+                  - $ref: "#/components/schemas/ErrorCode"
         "500":
           description: |
             DB の読み書きに失敗した。または学習エンジンが設定を拒否した(サーバーの検証漏れで、クライアントの誤りではない)
@@ -1269,6 +1279,20 @@ components:
           items:
             type: string
           description: 足りないファイル・ディレクトリ(データセットのルートからの相対パス。ディレクトリは末尾に /)
+
+    ErrorCode:
+      type: object
+      description: |
+        違反の一覧のない 422 の本文。同じ状態コードで原因が違うものを区別する(作業 9 のエラーコードと同じ書き方)
+      required: [error]
+      properties:
+        error:
+          type: string
+          enum: [dataset_not_found, dataset_unreadable, invalid_request]
+          description: |
+            dataset_not_found … dataset_id のデータセットが登録されていない(削除された、など)
+            dataset_unreadable … データセットの色表(labelmap.txt)が読めず、クラス数が分からない
+            invalid_request … リクエストの中身が受け付けられない(空の dataset_id など)
 
     InvalidConfig:
       type: object
