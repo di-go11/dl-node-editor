@@ -27,4 +27,5 @@ public:
     ~TorchModelTrainer() override;
 
     EpochMetrics trainOneEpoch(IDatasetRepository &trainData, unsigned int nowEpoch) override;
+    double learningRate() const override;
 };

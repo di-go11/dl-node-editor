@@ -17,7 +17,7 @@ use tonic::transport::Channel;
 use usecases::capabilities::GetCapabilities;
 use usecases::dataset::read_datasets_summary::ReadDatasetsSummary;
 use usecases::dataset::upload_dataset::UploadDataset;
-use usecases::model::{GetModelSummary, GetModelTrainingConfig};
+use usecases::model::{GetModelHistory, GetModelSummary, GetModelTrainingConfig};
 use usecases::training::{
     GetTrainingProcess, RecordTrainingProgress, ResumeProgressRecordings, ResumeTraining,
     StartTraining, StopTraining, ValidateTrainingConfig,
@@ -116,6 +116,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             pool.clone(),
         ))),
         get_model_config: Arc::new(GetModelTrainingConfig::new(SqliteTrainingRepository::new(
+            pool.clone(),
+        ))),
+        // 学習の記録(全 run のエポックごとの loss・学習率・メトリクス)
+        get_model_history: Arc::new(GetModelHistory::new(SqliteTrainingRepository::new(
             pool.clone(),
         ))),
         // 再開も新規学習と同じ GrpcTrainingStarter(resume = true で送る)と scheduler を使う

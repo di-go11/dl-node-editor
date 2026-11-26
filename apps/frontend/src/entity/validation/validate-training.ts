@@ -3,6 +3,7 @@ import type { ParamDef } from '../param/param-def'
 import { paramErrorOf } from '../param/param-def'
 import { ANNOTATION_TYPES, IMAGE_SIZE_DEFS, IMAGE_TASK_TYPES } from '../training/data-spec'
 import { LOSS_TYPES } from '../training/loss'
+import { LR_SCHEDULER_TYPES, WARMUP_EPOCHS_DEF } from '../training/lr-scheduler'
 import { OPTIMIZER_TYPES } from '../training/optimizer'
 import type { TrainingSettings } from '../training/training-settings'
 import {
@@ -214,6 +215,62 @@ export const validateOptimizer: TrainingValidationRule = ({ settings }) =>
 export const validateLoss: TrainingValidationRule = ({ settings }) =>
   checkVariant(LOSS_TYPES, settings.loss, 'loss', 'loss')
 
+/**
+ * 学習率スケジューラ。パラメータの範囲はカタログから、ほかの項目にまたがる規則はここで確かめる
+ * (サーバーの entities の LearningRateScheduler::validate と同じ規則。サーバーが最終的に判定する)。
+ *   - warmup のエポック数は 0 以上。none のときは 0、それ以外は epoch より小さい
+ *   - cosine の最小の学習率は optimizer の学習率以下
+ */
+export const validateLrScheduler: TrainingValidationRule = ({ settings }) => {
+  const { scheduler, warmupEpochs } = settings.lrScheduler
+  const issues: Issue[] = [
+    ...checkVariant(LR_SCHEDULER_TYPES, scheduler, '学習率スケジューラ', 'lr_scheduler'),
+  ]
+
+  const warmupField = 'lr_scheduler.warmup_epochs'
+  const warmupRange = checkValue(
+    warmupEpochs,
+    WARMUP_EPOCHS_DEF,
+    WARMUP_EPOCHS_DEF.label,
+    warmupField,
+    'training/out-of-range',
+  )
+  if (warmupRange !== null) {
+    issues.push(warmupRange)
+  } else if (scheduler.kind === 'none' && warmupEpochs !== 0) {
+    issues.push(
+      issueError(
+        'training/lr-scheduler-conflict',
+        '学習率スケジューラが「なし」のときは、warmup のエポック数を 0 にしてください。',
+        { field: warmupField },
+      ),
+    )
+  } else if (scheduler.kind !== 'none' && warmupEpochs >= settings.epoch) {
+    issues.push(
+      issueError(
+        'training/lr-scheduler-conflict',
+        `warmup のエポック数(${warmupEpochs})は、エポック数(${settings.epoch})より小さくしてください。`,
+        { field: warmupField },
+      ),
+    )
+  }
+
+  if (scheduler.kind === 'cosine') {
+    const minLr = scheduler.params['min_lr']
+    const learningRate = settings.optimizer.params['learning_rate']
+    if (typeof minLr === 'number' && typeof learningRate === 'number' && minLr > learningRate) {
+      issues.push(
+        issueError(
+          'training/lr-scheduler-conflict',
+          `学習率スケジューラ(Cosine)の最小の学習率(${minLr})は、optimizer の学習率(${learningRate})以下にしてください。`,
+          { field: 'lr_scheduler.cosine.min_lr' },
+        ),
+      )
+    }
+  }
+  return issues
+}
+
 export const validateDataSpec: TrainingValidationRule = ({ settings }) => {
   const spec = settings.dataSpec
   // データの種類が増えたら、ここの switch が網羅性の検査で知らせてくれる
@@ -293,6 +350,7 @@ export const validateLossTask: TrainingValidationRule = ({ settings }) => {
 export const TRAINING_RULES: readonly TrainingValidationRule[] = [
   validateModelName,
   validateOptimizer,
+  validateLrScheduler,
   validateLoss,
   validateTrainingNumbers,
   validateDataset,

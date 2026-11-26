@@ -72,6 +72,8 @@ impl TryFrom<pb::StreamProgressResponse> for TrainingProcess {
             metrics: value.metrics.map(Metrics::from),
             epoch_elapsed_time: Duration::from_millis(value.epoch_elapsed_ms),
             total_elapsed_time: Duration::from_millis(value.total_elapsed_ms),
+            // epoch = 0 は「まだ 1 エポックも終わっていない」で、学習率は送られない(0 が入る)
+            learning_rate: (value.epoch > 0).then_some(value.learning_rate),
         })
     }
 }
@@ -89,6 +91,7 @@ fn valid_response() -> pb::StreamProgressResponse {
         epoch_elapsed_ms: 1000,
         total_elapsed_ms: 2000,
         error_message: String::new(),
+        learning_rate: 0.001,
     }
 }
 
@@ -184,7 +187,22 @@ mod training_process_tests {
                 metrics: None,
                 epoch_elapsed_time: Duration::from_millis(1000),
                 total_elapsed_time: Duration::from_millis(2000),
+                learning_rate: Some(0.001),
             })
+        );
+    }
+
+    // epoch = 0(まだ 1 エポックも終わっていない)のときは、学習率は送られていないので None
+    #[test]
+    fn learning_rate_is_none_before_first_epoch() {
+        let response = pb::StreamProgressResponse {
+            epoch: 0,
+            learning_rate: 0.0,
+            ..valid_response()
+        };
+        assert_eq!(
+            TrainingProcess::try_from(response).unwrap().learning_rate,
+            None
         );
     }
 

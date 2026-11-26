@@ -13,6 +13,7 @@ function fakeTrainedModelApi(result: ReturnType<TrainedModelApi['resume']>) {
   const api: TrainedModelApi = {
     list: () => Promise.resolve(apiOk([])),
     getConfig: () => Promise.resolve(apiOk(defaultTrainingSettings())),
+    getHistory: (modelId) => Promise.resolve(apiOk({ modelId, modelName: 'model', runs: [], epochs: [] })),
     resume,
   }
   return { api, resume }

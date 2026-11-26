@@ -97,6 +97,7 @@ mod tests {
             })),
             epoch_elapsed_time: Duration::from_secs(10),
             total_elapsed_time: Duration::from_secs(10),
+            learning_rate: None,
         }
     }
 
@@ -120,6 +121,7 @@ mod tests {
             })),
             epoch_elapsed_time: Duration::from_secs(10),
             total_elapsed_time: Duration::from_secs(10),
+            learning_rate: None,
         }
     }
     #[tokio::test] //tokioが1つのランタイムを作り,中の.awaitを実行する。

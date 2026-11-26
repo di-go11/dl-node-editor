@@ -3,6 +3,8 @@ import type { IntParamDef } from '../param/param-def'
 import type { DataSpec } from './data-spec'
 import { defaultImageDataSpec } from './data-spec'
 import type { LossConfig } from './loss'
+import type { LrSchedulerSettings } from './lr-scheduler'
+import { defaultLrScheduler } from './lr-scheduler'
 import { DEFAULT_LOSS_KIND, LOSS_TYPES } from './loss'
 import type { OptimizerConfig } from './optimizer'
 import { DEFAULT_OPTIMIZER_KIND, OPTIMIZER_TYPES } from './optimizer'
@@ -46,6 +48,11 @@ export type TrainingSettings = {
    * ここでは number | null で同じ区別を表す(JSON では null のとき seed のキーごと省く)。
    */
   readonly seed: number | null
+  /**
+   * 学習率スケジューラ。基準の学習率は optimizer の学習率。再開では変えられない(保存した設定で再開する)。
+   * 保存ファイルに項目がなければ none として読む
+   */
+  readonly lrScheduler: LrSchedulerSettings
 }
 
 /**
@@ -125,5 +132,6 @@ export function defaultTrainingSettings(): TrainingSettings {
     dataSpec: defaultImageDataSpec(),
     saveLastEvery: TRAINING_NUMBER_DEFS.save_last_every.default,
     seed: null,
+    lrScheduler: defaultLrScheduler(),
   }
 }

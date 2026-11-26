@@ -141,6 +141,7 @@ mod tests {
             metrics: None,
             epoch_elapsed_time: Duration::from_secs(1),
             total_elapsed_time: Duration::from_secs(u64::from(epoch)),
+            learning_rate: None,
         }
     }
 
@@ -154,6 +155,7 @@ mod tests {
             metrics: None,
             epoch_elapsed_time: Duration::ZERO,
             total_elapsed_time: Duration::ZERO,
+            learning_rate: None,
         }
     }
 

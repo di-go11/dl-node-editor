@@ -20,6 +20,8 @@ pub struct StartTrainingConfig {
     pub seed: Option<u64>,
     pub data_spec: DataSpec,
     pub save_last_every: u32,
+    // 省略されたら none(HTTP の DTO が埋める)。再開では変えられない(ResumeTrainingConfig には持たせない)
+    pub lr_scheduler: LearningRateScheduler,
 }
 
 impl StartTrainingConfig {
@@ -37,8 +39,7 @@ impl StartTrainingConfig {
             seed: self.seed,
             data_spec: self.data_spec.clone(),
             save_last_every: self.save_last_every,
-            // 学習率スケジューラは HTTP の DTO で受け取るまで none 固定(issue 段階 3b)
-            lr_scheduler: LearningRateScheduler::none(),
+            lr_scheduler: self.lr_scheduler.clone(),
         }
     }
 }

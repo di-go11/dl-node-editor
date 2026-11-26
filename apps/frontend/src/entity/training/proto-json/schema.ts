@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { modelGraphJsonSchema, paramValueJsonSchema } from '../../model-graph/proto-json/schema'
 import { ANNOTATION_TYPES, IMAGE_TASK_TYPES } from '../data-spec'
 import { LOSS_TYPES } from '../loss'
+import { LR_SCHEDULER_TYPES } from '../lr-scheduler'
 import { OPTIMIZER_TYPES } from '../optimizer'
 import type { VariantCatalog } from '../variant'
 import { isVariantKind, variantKindsOf } from '../variant'
@@ -77,6 +78,24 @@ export const seedJsonSchema = z.object({
   value: z.number(),
 })
 
+/** 学習率スケジューラの更新の単位。enum は proto の名前で書く(ACTIVATION_TYPE_RELU と同じ) */
+export const lrUpdateIntervalJsonSchema = z.enum([
+  'LEARNING_RATE_UPDATE_INTERVAL_PER_BATCH',
+  'LEARNING_RATE_UPDATE_INTERVAL_PER_EPOCH',
+])
+
+/**
+ * 学習率スケジューラ(proto の LearningRateSchedulerConfig)。
+ * proto では種類(oneof)と update_interval・warmup_epochs が同じ階層に並ぶが、ここでは種類を
+ * scheduler の下に入れる。種類を「ちょうど 1 つ」で検証する仕組み(variantJsonSchemaOf)をそのまま使うため。
+ * 例: { "scheduler": { "poly": { "power": 0.9 } }, "update_interval": "LEARNING_RATE_UPDATE_INTERVAL_PER_BATCH", "warmup_epochs": 1 }
+ */
+export const lrSchedulerJsonSchema = z.object({
+  scheduler: variantJsonSchemaOf(LR_SCHEDULER_TYPES, 'lr_scheduler.scheduler'),
+  update_interval: lrUpdateIntervalJsonSchema,
+  warmup_epochs: z.number(),
+})
+
 /**
  * 学習設定(StartTrainingRequest から model_graph を除いたもの)。
  * seed は省略できる(省略 = 乱数を固定しない)。
@@ -98,6 +117,8 @@ export const trainingSettingsJsonSchema = z.object({
   save_last_every: z.number(),
   resume_from: z.string(),
   seed: seedJsonSchema.optional(),
+  // この機能より前の保存ファイル・C++ の設定ファイルにはないので省略できる(省略 = none)
+  lr_scheduler: lrSchedulerJsonSchema.optional(),
 })
 
 /** 学習開始のリクエスト全体。test_segnet_dag.json そのものの形 */
@@ -108,5 +129,7 @@ export const startTrainingRequestJsonSchema = trainingSettingsJsonSchema.extend(
 export type ImageSpecJson = z.infer<typeof imageSpecJsonSchema>
 export type DataSpecJson = z.infer<typeof dataSpecJsonSchema>
 export type SeedJson = z.infer<typeof seedJsonSchema>
+export type LrSchedulerJson = z.infer<typeof lrSchedulerJsonSchema>
+export type LrUpdateIntervalJson = z.infer<typeof lrUpdateIntervalJsonSchema>
 export type TrainingSettingsJson = z.infer<typeof trainingSettingsJsonSchema>
 export type StartTrainingRequestJson = z.infer<typeof startTrainingRequestJsonSchema>

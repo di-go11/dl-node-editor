@@ -104,6 +104,8 @@ describe('進捗の受信', () => {
       epochElapsedMs: 6806,
       totalElapsedMs: 20378,
       errorMessage: null,
+      // 学習率を送らない古いサーバーの JSON(キーなし)は null
+      learningRate: null,
     })
     expect(source.closed).toBe(false)
   })

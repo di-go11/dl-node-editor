@@ -1,7 +1,8 @@
 use super::dto::{
     CapabilitiesDto, DatasetLayoutMismatchDto, DatasetSummariesDto, ErrorCode, ErrorCodeDto,
-    InvalidConfigDto, ModelSummariesDto, ModelTrainingConfigDto, ResumeTrainingConfigDto,
-    StartTrainingResponseDto, TrainingConfigDto, TrainingJobStatusDto, TrainingProcessDto,
+    InvalidConfigDto, ModelHistoryDto, ModelSummariesDto, ModelTrainingConfigDto,
+    ResumeTrainingConfigDto, StartTrainingResponseDto, TrainingConfigDto, TrainingJobStatusDto,
+    TrainingProcessDto,
 };
 use axum::{
     extract::{Path, State},
@@ -27,8 +28,8 @@ use usecases::{
     },
     model::{
         error::{FetchModelError, ModelRepositoryError},
-        ports::{ModelSummaryProvider, ModelTrainingConfigProvider},
-        GetModelSummary, GetModelTrainingConfig,
+        ports::{ModelHistoryProvider, ModelSummaryProvider, ModelTrainingConfigProvider},
+        GetModelHistory, GetModelSummary, GetModelTrainingConfig,
     },
     training::{
         GetTrainingProcess, ModelGraphValidator, ModelGraphValidatorError, ModelIdGenerator,
@@ -347,6 +348,23 @@ where
         model_id: model_id.as_str().to_string(),
         config: config.into(),
     }))
+}
+
+// 学習済みモデルの学習の記録GETリクエストハンドラ(全 run のエポックごとの loss・学習率・メトリクス)。
+// フロントがこれから loss・学習率のグラフ(SVG)とメトリクスの表(CSV)を作る
+pub async fn get_model_history<H>(
+    State(usecase): State<Arc<GetModelHistory<H>>>,
+    Path(model_id): Path<String>,
+) -> Result<Json<ModelHistoryDto>, StatusCode>
+where
+    H: ModelHistoryProvider + Send + Sync + 'static,
+{
+    let model_id = ModelId::new(model_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let history = usecase
+        .get_history(&model_id)
+        .await
+        .map_err(status_code_from_model_error)?;
+    Ok(Json(history.into()))
 }
 
 fn status_code_from_model_error(error: ModelRepositoryError) -> StatusCode {

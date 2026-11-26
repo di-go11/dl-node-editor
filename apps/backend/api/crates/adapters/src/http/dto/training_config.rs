@@ -2,6 +2,9 @@ use entities::dataset::{DatasetId, DatasetIdError};
 use entities::training::config::Loss as LossConfig;
 use entities::training::config::Optimizer as OptimizerConfig;
 use entities::training::config::TrainingConfig;
+use entities::training::config::{
+    LearningRateScheduler, LearningRateSchedulerConfig, LearningRateUpdateInterval,
+};
 use entities::training::JobId;
 use serde::{Deserialize, Serialize};
 use usecases::training::{ResumeTrainingConfig, StartTrainingConfig};
@@ -24,6 +27,8 @@ pub struct TrainingConfigDto {
     pub seed: Option<u64>,
     pub data_spec: DataSpecDto,
     pub save_last_every: u32,
+    // 任意。省略したら none(スケジューラなし。学習率は optimizer の値のまま。古いクライアントもそのまま動く)
+    pub lr_scheduler: Option<LearningRateSchedulerDto>,
 }
 
 // Dto->ユースケースの入力。dataset_id が空ならエラー(ハンドラが 422 にする)
@@ -43,6 +48,9 @@ impl TryFrom<TrainingConfigDto> for StartTrainingConfig {
             seed: value.seed,
             data_spec: value.data_spec.into(),
             save_last_every: value.save_last_every,
+            lr_scheduler: value
+                .lr_scheduler
+                .map_or_else(LearningRateScheduler::none, Into::into),
         })
     }
 }
@@ -61,6 +69,8 @@ pub struct SavedTrainingConfigDto {
     pub seed: Option<u64>,
     pub data_spec: DataSpecDto,
     pub save_last_every: u32,
+    // 再開では変えられない(保存した設定で再開する)。画面に表示するために返す
+    pub lr_scheduler: LearningRateSchedulerDto,
 }
 
 // entity->Dto(dataset_path はここで落とす)
@@ -77,6 +87,7 @@ impl From<TrainingConfig> for SavedTrainingConfigDto {
             seed: value.seed,
             data_spec: value.data_spec.into(),
             save_last_every: value.save_last_every,
+            lr_scheduler: value.lr_scheduler.into(),
         }
     }
 }
@@ -279,6 +290,83 @@ impl From<OptimizerConfig> for OptimizerConfigDto {
     }
 }
 
+// 学習率スケジューラ。種類を "type" に入れ、パラメータを直下に並べる(optimizer と同じ書き方)。
+// 例: { "type": "poly", "power": 0.9, "update_interval": "per_batch", "warmup_epochs": 1 }
+// 基準の学習率は optimizer の learning_rate(スケジューラ側には持たない)。
+// 違反の位置(lr_scheduler.power など)は、この JSON の項目名と同じ。
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct LearningRateSchedulerDto {
+    #[serde(flatten)]
+    pub scheduler: LearningRateSchedulerConfigDto,
+    pub update_interval: LearningRateUpdateIntervalDto,
+    pub warmup_epochs: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum LearningRateSchedulerConfigDto {
+    None,
+    Poly { power: f64 },
+    Cosine { min_lr: f64 },
+    // step_size はエポック数
+    Step { step_size: u32, gamma: f64 },
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum LearningRateUpdateIntervalDto {
+    PerBatch,
+    PerEpoch,
+}
+
+impl From<LearningRateSchedulerDto> for LearningRateScheduler {
+    fn from(value: LearningRateSchedulerDto) -> Self {
+        LearningRateScheduler {
+            scheduler: match value.scheduler {
+                LearningRateSchedulerConfigDto::None => LearningRateSchedulerConfig::None,
+                LearningRateSchedulerConfigDto::Poly { power } => {
+                    LearningRateSchedulerConfig::Poly { power }
+                }
+                LearningRateSchedulerConfigDto::Cosine { min_lr } => {
+                    LearningRateSchedulerConfig::Cosine { min_lr }
+                }
+                LearningRateSchedulerConfigDto::Step { step_size, gamma } => {
+                    LearningRateSchedulerConfig::Step { step_size, gamma }
+                }
+            },
+            update_interval: match value.update_interval {
+                LearningRateUpdateIntervalDto::PerBatch => LearningRateUpdateInterval::PerBatch,
+                LearningRateUpdateIntervalDto::PerEpoch => LearningRateUpdateInterval::PerEpoch,
+            },
+            warmup_epochs: value.warmup_epochs,
+        }
+    }
+}
+
+impl From<LearningRateScheduler> for LearningRateSchedulerDto {
+    fn from(value: LearningRateScheduler) -> Self {
+        LearningRateSchedulerDto {
+            scheduler: match value.scheduler {
+                LearningRateSchedulerConfig::None => LearningRateSchedulerConfigDto::None,
+                LearningRateSchedulerConfig::Poly { power } => {
+                    LearningRateSchedulerConfigDto::Poly { power }
+                }
+                LearningRateSchedulerConfig::Cosine { min_lr } => {
+                    LearningRateSchedulerConfigDto::Cosine { min_lr }
+                }
+                LearningRateSchedulerConfig::Step { step_size, gamma } => {
+                    LearningRateSchedulerConfigDto::Step { step_size, gamma }
+                }
+            },
+            update_interval: match value.update_interval {
+                LearningRateUpdateInterval::PerBatch => LearningRateUpdateIntervalDto::PerBatch,
+                LearningRateUpdateInterval::PerEpoch => LearningRateUpdateIntervalDto::PerEpoch,
+            },
+            warmup_epochs: value.warmup_epochs,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::data_spec::{ImageAnnotationConfigDto, ImageTaskSpecDto};
@@ -379,9 +467,69 @@ mod tests {
                     "image_task_spec": { "type": "classification" },
                     "image_annotation_config": { "type": "pascal_voc", "include_difficult": false }
                 },
-                "save_last_every": 1
+                "save_last_every": 1,
+                "lr_scheduler": { "type": "none", "update_interval": "per_batch", "warmup_epochs": 0 }
             })
         );
+    }
+
+    // lr_scheduler を省略したリクエスト(古いクライアント)は none になる
+    #[test]
+    fn start_request_without_lr_scheduler_is_none() {
+        let json = gen_start_request(serde_json::json!({ "dataset_id": "dataset-1" }));
+        let dto: TrainingConfigDto = serde_json::from_value(json).unwrap();
+        let config = StartTrainingConfig::try_from(dto).unwrap();
+        assert_eq!(config.lr_scheduler, LearningRateScheduler::none());
+    }
+
+    // 種類ごとのパラメータは "type" と同じ階層に並ぶ
+    #[test]
+    fn lr_scheduler_json_converts_to_domain_and_back() {
+        let cases = [
+            (
+                serde_json::json!({ "type": "poly", "power": 0.9, "update_interval": "per_batch", "warmup_epochs": 1 }),
+                LearningRateScheduler {
+                    scheduler: LearningRateSchedulerConfig::Poly { power: 0.9 },
+                    update_interval: LearningRateUpdateInterval::PerBatch,
+                    warmup_epochs: 1,
+                },
+            ),
+            (
+                serde_json::json!({ "type": "cosine", "min_lr": 1e-6, "update_interval": "per_batch", "warmup_epochs": 0 }),
+                LearningRateScheduler {
+                    scheduler: LearningRateSchedulerConfig::Cosine { min_lr: 1e-6 },
+                    update_interval: LearningRateUpdateInterval::PerBatch,
+                    warmup_epochs: 0,
+                },
+            ),
+            (
+                serde_json::json!({ "type": "step", "step_size": 30, "gamma": 0.1, "update_interval": "per_epoch", "warmup_epochs": 2 }),
+                LearningRateScheduler {
+                    scheduler: LearningRateSchedulerConfig::Step {
+                        step_size: 30,
+                        gamma: 0.1,
+                    },
+                    update_interval: LearningRateUpdateInterval::PerEpoch,
+                    warmup_epochs: 2,
+                },
+            ),
+        ];
+        for (json, expected) in cases {
+            let dto: LearningRateSchedulerDto = serde_json::from_value(json.clone()).unwrap();
+            let domain = LearningRateScheduler::from(dto);
+            assert_eq!(domain, expected);
+            // 保存済みの設定(GET /models/{id}/config)で返す形も同じ
+            assert_eq!(
+                serde_json::to_value(LearningRateSchedulerDto::from(domain)).unwrap(),
+                json
+            );
+        }
+    }
+
+    #[test]
+    fn unknown_lr_scheduler_type_is_rejected() {
+        let json = serde_json::json!({ "type": "exponential", "update_interval": "per_batch", "warmup_epochs": 0 });
+        assert!(serde_json::from_value::<LearningRateSchedulerDto>(json).is_err());
     }
 
     // 再開リクエストは変えてよい項目だけで ResumeTrainingConfig に変換できること。

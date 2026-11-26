@@ -680,5 +680,6 @@ void fillStreamProgressResponse(const TrainingProcessSnapshot &snapshot, trainin
     response.set_val_loss(report.validation.loss);
     response.set_epoch_elapsed_ms(report.epochElapsedMs);
     response.set_total_elapsed_ms(report.totalElapsedMs);
+    response.set_learning_rate(report.learningRate);
     fillMetrics(report.validation.taskMetrics, response);
 }

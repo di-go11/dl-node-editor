@@ -1,9 +1,13 @@
 use crate::pb::training::v1::{self as training_pb};
 
 use entities::training::config::TrainingConfig;
-use entities::training::config::{Loss, Optimizer};
+use entities::training::config::{
+    LearningRateScheduler, LearningRateSchedulerConfig, LearningRateUpdateInterval, Loss,
+    Optimizer,
+};
 use entities::training::JobId;
 
+use crate::pb::training::v1::learning_rate_scheduler_config::Config as SchedulerConfig;
 use crate::pb::training::v1::optimizer_config::Config as OptimizerConfig;
 
 use crate::pb::training::v1::loss_config::Config as LossConfig;
@@ -35,8 +39,40 @@ impl From<&TrainingConfig> for training_pb::StartTrainingRequest {
             seed: value.seed.map(|v| training_pb::Seed { value: v }),
             model_id: String::new(),
             resume: false,
-            // lr_scheduler は未対応のため既定値(未設定 = スケジューラーなし)に任せる
-            ..Default::default()
+            // 再開でも保存した設定をそのまま送る(送らないと再開後が none になり、学習率が optimizer の値に跳ね上がる)
+            lr_scheduler: Some((&value.lr_scheduler).into()),
+        }
+    }
+}
+
+// 学習率スケジューラのドメインを proto に変換する
+impl From<&LearningRateScheduler> for training_pb::LearningRateSchedulerConfig {
+    fn from(value: &LearningRateScheduler) -> Self {
+        let config = match &value.scheduler {
+            LearningRateSchedulerConfig::None => {
+                SchedulerConfig::None(training_pb::NoneSchedulerConfig {})
+            }
+            LearningRateSchedulerConfig::Poly { power } => {
+                SchedulerConfig::Poly(training_pb::PolySchedulerConfig { power: *power })
+            }
+            LearningRateSchedulerConfig::Cosine { min_lr } => {
+                SchedulerConfig::Cosine(training_pb::CosineSchedulerConfig { min_lr: *min_lr })
+            }
+            LearningRateSchedulerConfig::Step { step_size, gamma } => {
+                SchedulerConfig::Step(training_pb::StepSchedulerConfig {
+                    step_size: *step_size,
+                    gamma: *gamma,
+                })
+            }
+        };
+        let update_interval = match value.update_interval {
+            LearningRateUpdateInterval::PerBatch => training_pb::LearningRateUpdateInterval::PerBatch,
+            LearningRateUpdateInterval::PerEpoch => training_pb::LearningRateUpdateInterval::PerEpoch,
+        };
+        training_pb::LearningRateSchedulerConfig {
+            config: Some(config),
+            update_interval: update_interval as i32,
+            warmup_epochs: value.warmup_epochs,
         }
     }
 }

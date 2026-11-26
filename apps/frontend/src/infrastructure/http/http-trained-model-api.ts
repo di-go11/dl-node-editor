@@ -2,12 +2,17 @@ import { z } from 'zod'
 
 import { apiError, apiOk } from '../../application/ports/api-result'
 import type { TrainedModelApi } from '../../application/ports/trained-model-api'
+import type { TrainingHistory } from '../../entity/trained-model/history'
 import type { TrainedModelSummary } from '../../entity/trained-model/trained-model'
 
 import type { ApiClient, HttpErrorMessages } from './api-client'
 import { callApi } from './api-client'
 import { trainingRejectionDetails } from './server-error-code'
-import { trainingStatusJsonSchema } from './http-training-progress'
+import {
+  metricsFromJson,
+  metricsJsonSchema,
+  trainingStatusJsonSchema,
+} from './http-training-progress'
 import {
   fromRustModelConfig,
   rustModelConfigSchema,
@@ -57,6 +62,60 @@ function summaryFromJson(json: z.infer<typeof modelSummaryJsonSchema>): TrainedM
 const startResponseSchema = z.object({
   job_id: z.string().min(1),
 })
+
+/** GET /models/{model_id}/history の応答(契約の ModelHistory) */
+export const modelHistoryJsonSchema = z.object({
+  model_id: z.string().min(1),
+  model_name: z.string(),
+  runs: z.array(
+    z.object({
+      job_id: z.string().min(1),
+      status: trainingStatusJsonSchema,
+      reason: z.string().optional(),
+      started_at: z.string(),
+      finished_at: z.string().nullable(),
+    }),
+  ),
+  epochs: z.array(
+    z.object({
+      job_id: z.string().min(1),
+      epoch: z.number().int(),
+      // NaN・inf・記録なしは null
+      train_loss: z.number().nullable(),
+      val_loss: z.number().nullable(),
+      learning_rate: z.number().nullable(),
+      epoch_elapsed_ms: z.number(),
+      metrics: metricsJsonSchema.nullable(),
+    }),
+  ),
+})
+
+function historyFromJson(json: z.infer<typeof modelHistoryJsonSchema>): TrainingHistory {
+  return {
+    modelId: json.model_id,
+    modelName: json.model_name,
+    runs: json.runs.map((run) => ({
+      jobId: run.job_id,
+      status: run.status,
+      failureReason: run.reason ?? null,
+      startedAt: run.started_at,
+      finishedAt: run.finished_at,
+    })),
+    epochs: json.epochs.map((epoch) => ({
+      jobId: epoch.job_id,
+      epoch: epoch.epoch,
+      trainLoss: epoch.train_loss,
+      valLoss: epoch.val_loss,
+      learningRate: epoch.learning_rate,
+      epochElapsedMs: epoch.epoch_elapsed_ms,
+      metrics: epoch.metrics === null ? null : metricsFromJson(epoch.metrics),
+    })),
+  }
+}
+
+const HISTORY_MESSAGES: HttpErrorMessages = {
+  404: '指定されたモデルが見つかりません。',
+}
 
 /** 状態コードの説明を、モデルの API の意味にする(既定の説明は学習ジョブ向け) */
 const CONFIG_MESSAGES: HttpErrorMessages = {
@@ -113,5 +172,13 @@ export function createHttpTrainedModelApi(client: ApiClient): TrainedModelApi {
         trainingRejectionDetails(request.value),
       )
     },
+
+    getHistory: (modelId) =>
+      callApi(
+        () => client.GET('/models/{model_id}/history', { params: { path: { model_id: modelId } } }),
+        modelHistoryJsonSchema,
+        historyFromJson,
+        HISTORY_MESSAGES,
+      ),
   }
 }

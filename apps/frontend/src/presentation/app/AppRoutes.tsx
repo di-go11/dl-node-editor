@@ -6,6 +6,7 @@ import { EditorPage } from '../pages/EditorPage'
 import { ProgressPage } from '../pages/ProgressPage'
 import { TrainedModelListPage } from '../pages/TrainedModelListPage'
 import { TrainedModelDetailPage } from '../pages/TrainedModelDetailPage'
+import { TrainedModelHistoryPage } from '../pages/TrainedModelHistoryPage'
 import { TrainingSettingsPage } from '../pages/TrainingSettingsPage'
 
 import { EditorSession } from './EditorSession'
@@ -18,6 +19,7 @@ import { EditorSession } from './EditorSession'
  *   /progress/:jobId   進捗画面(フェーズ 6。URL に job_id を持つので、再読み込みしても同じ学習を見られる)
  *   /models            学習済みモデルの一覧(issue doc 作業 7)
  *   /models/:modelId   学習済みモデルの詳細(今は学習再開の設定。前回の設定を初期値にし、変えられる項目だけを編集する)
+ *   /models/:modelId/history  学習の記録(loss・学習率のグラフを SVG、メトリクスの表を CSV で保存できる)
  *   /datasets          データセットの一覧と追加(zip のアップロード)
  *
  * 画面ごとに URL を分けるのは、ブラウザの「戻る」で前の画面に戻れるようにするためである。
@@ -32,6 +34,7 @@ export function AppRoutes() {
         <Route path="/progress/:jobId" element={<ProgressPage />} />
         <Route path="/models" element={<TrainedModelListPage />} />
         <Route path="/models/:modelId" element={<TrainedModelDetailPage />} />
+        <Route path="/models/:modelId/history" element={<TrainedModelHistoryPage />} />
         <Route path="/datasets" element={<DatasetListPage />} />
         <Route path="*" element={<NotFound />} />
       </Routes>

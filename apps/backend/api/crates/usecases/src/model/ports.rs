@@ -1,6 +1,6 @@
 use super::error::FetchModelError;
 use entities::{
-    model::{ModelId, ModelSummary},
+    model::{ModelHistory, ModelId, ModelSummary},
     training::config::TrainingConfig,
 };
 
@@ -15,4 +15,12 @@ pub trait ModelTrainingConfigProvider {
         &self,
         model_id: &ModelId,
     ) -> impl Future<Output = Result<TrainingConfig, FetchModelError>> + Send;
+}
+
+// モデルの学習の記録(全 run のエポックごとの結果)を読み出す
+pub trait ModelHistoryProvider {
+    fn fetch_history(
+        &self,
+        model_id: &ModelId,
+    ) -> impl Future<Output = Result<ModelHistory, FetchModelError>> + Send;
 }

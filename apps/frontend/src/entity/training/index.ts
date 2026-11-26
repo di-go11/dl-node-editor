@@ -1,5 +1,6 @@
 export * from './data-spec'
 export * from './loss'
+export * from './lr-scheduler'
 export * from './optimizer'
 export * from './progress'
 export * from './training-settings'

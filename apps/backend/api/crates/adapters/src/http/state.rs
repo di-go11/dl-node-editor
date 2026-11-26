@@ -1,7 +1,7 @@
 use usecases::{
     capabilities::{CapabilityProvider, GetCapabilities},
     dataset::{read_datasets_summary::ReadDatasetsSummary, upload_dataset::UploadDataset},
-    model::{GetModelSummary, GetModelTrainingConfig},
+    model::{GetModelHistory, GetModelSummary, GetModelTrainingConfig},
     training::{
         GetTrainingProcess, RecordTrainingProgress, ResumeTraining, StartTraining, StopTraining,
         TrainingProgressProvider, TrainingRecordReader, TrainingStopper, ValidateTrainingConfig,
@@ -41,6 +41,8 @@ where
     // 学習済みモデルの一覧・最新の学習設定の取得
     pub get_model_summary: Arc<GetModelSummary<MSummary>>,
     pub get_model_config: Arc<GetModelTrainingConfig<MConfig>>,
+    // 学習の記録(全 run のエポックごとの結果)。一覧と同じ読み出し(MSummary = SqliteTrainingRepository)を使う
+    pub get_model_history: Arc<GetModelHistory<MSummary>>,
     // 学習再開。依存は既存の型パラメータを使い回す(resumer = S、registar = R、scheduler = K、設定の読み出し = MConfig)。
     // S は TrainingStarter と TrainingResumer の両方を実装した型(GrpcTrainingStarter)にする必要がある。
     // TODO(設計改善): 作業12 で入力ポートを導入したら、ResumeTraining 用の型パラメータ 1 つに分ける。
@@ -72,6 +74,7 @@ where
             record_training: Arc::clone(&self.record_training),
             get_model_summary: Arc::clone(&self.get_model_summary),
             get_model_config: Arc::clone(&self.get_model_config),
+            get_model_history: Arc::clone(&self.get_model_history),
             resume_training: Arc::clone(&self.resume_training),
             upload_dataset: Arc::clone(&self.upload_dataset),
             read_dataset_summary: Arc::clone(&self.read_dataset_summary),
@@ -253,5 +256,21 @@ where
         app_state: &AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>,
     ) -> Self {
         Arc::clone(&app_state.read_dataset_summary)
+    }
+}
+
+impl<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>
+    FromRef<AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>>
+    for Arc<GetModelHistory<MSummary>>
+where
+    C: CapabilityProvider,
+    V: TrainingRecordReader,
+    P: TrainingProgressProvider,
+    T: TrainingStopper,
+{
+    fn from_ref(
+        app_state: &AppState<C, S, R, G, K, V, P, T, D, MSummary, MConfig, DG, DS, DR, DRD>,
+    ) -> Self {
+        Arc::clone(&app_state.get_model_history)
     }
 }

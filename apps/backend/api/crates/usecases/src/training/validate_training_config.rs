@@ -96,6 +96,7 @@ mod tests {
     // グラフの中身は C++(FakeValidator)が確かめる前提なので、それ以外は最小限の値にする
     fn gen_config(model_name: &str) -> StartTrainingConfig {
         StartTrainingConfig {
+            lr_scheduler: entities::training::config::LearningRateScheduler::none(),
             model_name: model_name.to_string(),
             model_graph: ModelGraph {
                 nodes: vec![],

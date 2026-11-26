@@ -4,7 +4,8 @@ use chrono::Utc;
 use entities::model::ModelGraph;
 use entities::model::ModelId;
 use entities::training::config::{
-    DataSpec, ImageAnnotationConfig, ImageTaskSpec, Loss, Optimizer, TrainingConfig,
+    DataSpec, ImageAnnotationConfig, ImageTaskSpec, LearningRateSchedulerConfig,
+    LearningRateUpdateInterval, Loss, Optimizer, TrainingConfig,
 };
 use entities::training::JobId;
 use entities::training::Metrics;
@@ -127,10 +128,28 @@ impl TrainingRunRegistar for SqliteTrainingRepository {
             ImageAnnotationConfig::PascalVoc(spec) => ("pascal_voc", Some(spec.include_difficult)),
             ImageAnnotationConfig::Original => ("original", None),
         };
+        let scheduler = &config.lr_scheduler;
+        let (lr_scheduler_type, lr_power, lr_min_lr, lr_step_size, lr_gamma) =
+            match &scheduler.scheduler {
+                LearningRateSchedulerConfig::None => ("none", None, None, None, None),
+                LearningRateSchedulerConfig::Poly { power } => {
+                    ("poly", Some(*power), None, None, None)
+                }
+                LearningRateSchedulerConfig::Cosine { min_lr } => {
+                    ("cosine", None, Some(*min_lr), None, None)
+                }
+                LearningRateSchedulerConfig::Step { step_size, gamma } => {
+                    ("step", None, None, Some(*step_size), Some(*gamma))
+                }
+            };
+        let lr_update_interval = match scheduler.update_interval {
+            LearningRateUpdateInterval::PerBatch => "per_batch",
+            LearningRateUpdateInterval::PerEpoch => "per_epoch",
+        };
 
         // training_configはtraining_runsを外部キーで参照するため、後にinsertする
         sqlx::query(
-            "INSERT INTO training_config (job_id,epochs,batch,device,dataset_path,save_last_every,resume_from,seed,optimizer_type,learning_rate,weight_decay,beta1,beta2,eps,momentum,nesterov,loss_type,loss_gamma,loss_alpha,data_type,input_width,input_height,task_type,ignore_index,annotation_type,include_difficult,ignore_color_r,ignore_color_g,ignore_color_b)VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO training_config (job_id,epochs,batch,device,dataset_path,save_last_every,resume_from,seed,optimizer_type,learning_rate,weight_decay,beta1,beta2,eps,momentum,nesterov,loss_type,loss_gamma,loss_alpha,data_type,input_width,input_height,task_type,ignore_index,annotation_type,include_difficult,ignore_color_r,ignore_color_g,ignore_color_b,lr_scheduler_type,lr_power,lr_min_lr,lr_step_size,lr_gamma,lr_update_interval,lr_warmup_epochs)VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         )
         .bind(job_id.as_str())
         .bind(config.epoch)
@@ -163,6 +182,14 @@ impl TrainingRunRegistar for SqliteTrainingRepository {
         .bind(ignore_color.map(|c| c.r))
         .bind(ignore_color.map(|c| c.g))
         .bind(ignore_color.map(|c| c.b))
+        // 学習率スケジューラ(0005)。種類ごとに使わない列は NULL
+        .bind(lr_scheduler_type)
+        .bind(lr_power)
+        .bind(lr_min_lr)
+        .bind(lr_step_size)
+        .bind(lr_gamma)
+        .bind(lr_update_interval)
+        .bind(scheduler.warmup_epochs)
         .execute(&mut *connect)
         .await
         .map_err(|e| RepositoryError::QueryFailed(e.to_string()))?;
@@ -226,13 +253,15 @@ impl TrainingProgressRecorder for SqliteTrainingRepository {
 
         // メトリクスのテーブルが外部キーで参照するため、training_epochsを先にinsertする
         sqlx::query(
-            "INSERT INTO training_epochs (job_id,epoch,train_loss,val_loss,epoch_elapsed_ms)VALUES (?,?,?,?,?)",
+            "INSERT INTO training_epochs (job_id,epoch,train_loss,val_loss,epoch_elapsed_ms,learning_rate)VALUES (?,?,?,?,?,?)",
         )
         .bind(job_id.as_str())
         .bind(epoch)
         .bind(process.train_loss)
         .bind(process.val_loss)
         .bind(epoch_elapsed_ms)
+        // 学習率を送らない古い学習エンジンのときは NULL(0005)
+        .bind(process.learning_rate)
         .execute(&mut *connect)
         .await
         .map_err(|e| RepositoryError::QueryFailed(e.to_string()))?;

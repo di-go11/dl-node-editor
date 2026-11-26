@@ -54,3 +54,8 @@ void SGDOptimizer::readFrom(ICheckpointReader &archive)
                 s.momentum_buffer(s.momentum_buffer().to(dev));
         });
 }
+double SGDOptimizer::learningRate() const
+{
+    // updateLearningRate は全 param group に同じ値を入れるので、先頭の group を読めば足りる
+    return _optim->param_groups().at(0).options().get_lr();
+}

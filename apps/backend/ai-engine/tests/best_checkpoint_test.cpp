@@ -83,6 +83,8 @@ public:
         m.loss = 1.0;
         return m;
     }
+
+    double learningRate() const override { return 1e-3; }
 };
 
 // evaluate は与えられた mIoU 列を順に返す。

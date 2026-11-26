@@ -144,8 +144,10 @@ function ResumeSettingsContent({
         settings,
         completedEpochs: summary.completedEpochs,
         ...(deviceIds === null ? {} : { availableDevices: deviceIds }),
+        // 前回の設定と比べて、学習率スケジューラの曲線がつながらなくなる変更に warning を出す
+        savedSettings: initialSettings,
       }),
-    [settings, summary.completedEpochs, deviceIds],
+    [settings, summary.completedEpochs, deviceIds, initialSettings],
   )
 
   const canResume = validation.ok && submit.status !== 'submitting'

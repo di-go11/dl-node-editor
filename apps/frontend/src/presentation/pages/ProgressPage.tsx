@@ -2,7 +2,8 @@ import { useNavigate, useParams } from 'react-router'
 
 import { finishRun } from '../../application/run-state/run-state'
 import type { ProgressMetrics } from '../../entity/training/progress'
-import { TRAINING_STATUS_LABELS } from '../../entity/training/progress'
+import { hasLearningRate, TRAINING_STATUS_LABELS } from '../../entity/training/progress'
+import { LearningRateChart } from '../components/progress/LearningRateChart'
 import { LossChart } from '../components/progress/LossChart'
 import { useEditorStoreApi } from '../stores/editor-store-context'
 
@@ -80,7 +81,7 @@ function MetricsView({ metrics }: { readonly metrics: ProgressMetrics }) {
 function TrainingProgressView({ jobId }: { readonly jobId: string }) {
   const navigate = useNavigate()
   const store = useEditorStoreApi()
-  const { latest, lossPoints, problem, ended, stopping, stopError, stop } =
+  const { latest, lossPoints, learningRatePoints, problem, ended, stopping, stopError, stop } =
     useTrainingProgress(jobId)
 
   const statusLabel = stopping
@@ -169,6 +170,14 @@ function TrainingProgressView({ jobId }: { readonly jobId: string }) {
           <LossChart points={lossPoints} />
         )}
       </section>
+
+      {/* 学習率を送らない古いサーバー・古い学習では、全エポックで分からないのでグラフを出さない */}
+      {hasLearningRate(learningRatePoints) && (
+        <section className={styles.section} aria-label="学習率の推移">
+          <h2>学習率の推移</h2>
+          <LearningRateChart points={learningRatePoints} />
+        </section>
+      )}
 
       {latest?.metrics != null && <MetricsView metrics={latest.metrics} />}
     </main>

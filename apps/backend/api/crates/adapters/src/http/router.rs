@@ -1,5 +1,6 @@
 use super::handler::{
-    get_capabilities, get_model_config, get_model_lists, get_training_process, get_training_status,
+    get_capabilities, get_model_config, get_model_history, get_model_lists, get_training_process,
+    get_training_status,
     read_summary_datasets, resume_training, start_training, stop_training, stream_training_process,
     upload_dataset, validate_training,
 };
@@ -19,7 +20,7 @@ use usecases::{
             DatasetFinder, DatasetLayoutChecker, DatasetReader, DatasetRegister, DatasetSaver,
         },
     },
-    model::ports::{ModelSummaryProvider, ModelTrainingConfigProvider},
+    model::ports::{ModelHistoryProvider, ModelSummaryProvider, ModelTrainingConfigProvider},
     training::{
         ModelGraphValidator, ModelIdGenerator, ProgressRecordingScheduler,
         TrainingProgressProvider, TrainingProgressRecorder, TrainingRecordReader, TrainingResumer,
@@ -48,7 +49,8 @@ where
         + Send
         + Sync
         + 'static,
-    MSummary: ModelSummaryProvider + Send + Sync + 'static,
+    // 一覧と学習の記録(履歴)の読み出し
+    MSummary: ModelSummaryProvider + ModelHistoryProvider + Send + Sync + 'static,
     MConfig: ModelTrainingConfigProvider + Send + Sync + 'static,
     // データセットのアップロード(UploadDataset)用
     DG: DatasetIdGenerator + Send + Sync + 'static,
@@ -81,6 +83,11 @@ where
             .route(
                 "/models/{model_id}/resume",
                 post(resume_training::<MConfig, S, R, K>),
+            )
+            // 学習の記録(loss・学習率のグラフとメトリクスの表。フロントが SVG・CSV にする)
+            .route(
+                "/models/{model_id}/history",
+                get(get_model_history::<MSummary>),
             )
             // データセット呼び出しAPI
             .route("/datasets", get(read_summary_datasets::<DRD>))

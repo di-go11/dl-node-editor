@@ -178,6 +178,9 @@ message StreamProgressResponse{
     uint64 epoch_elapsed_ms = 6; // 処理済みエポックにかかった時間
     uint64 total_elapsed_ms = 7; // 累計処理時間
     string error_message = 8; // status が FAILED のときの原因
+    // このエポックの最後のバッチで使った学習率(Optimizer から読んだ値。スケジューラなしなら optimizer の設定値)。
+    // 1 エポックも終わっていない(epoch = 0)ときは 0
+    double learning_rate = 10;
 }
 
 message SegmentationMetrics{

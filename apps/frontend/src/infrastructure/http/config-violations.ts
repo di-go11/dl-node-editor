@@ -99,6 +99,13 @@ function settingsField(field: string, request: SentRequest): string {
       }
       return `data_spec.image.${tail}`
     }
+    case 'lr_scheduler': {
+      // update_interval / warmup_epochs は種類によらない項目。パラメータ(power など)は種類の名前の下に並ぶ
+      if (tail === 'update_interval' || tail === 'warmup_epochs') return field
+      // 再開ではスケジューラを送らない(保存した設定で再開する)ので、種類が分からない。位置はそのまま返す
+      const type = 'lr_scheduler' in request ? request.lr_scheduler?.type : undefined
+      return type === undefined ? field : `lr_scheduler.${type}.${tail}`
+    }
     default:
       return field
   }

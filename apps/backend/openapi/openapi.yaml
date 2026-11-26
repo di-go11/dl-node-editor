@@ -285,6 +285,31 @@ paths:
         "500":
           description: DB の読み取りに失敗した
 
+  /models/{model_id}/history:
+    get:
+      tags: [models]
+      operationId: getModelHistory
+      summary: モデルの学習の記録を取得する
+      description: |
+        モデルの全 run(新規学習と再開)の、エポックごとの loss・学習率・メトリクスを返す。
+        フロントはこれから loss・学習率のグラフ(SVG で保存できる)とメトリクスの表(CSV で保存できる)を作る。
+        学習中のモデルでも、それまでに記録したエポックを返す。
+      parameters:
+        - $ref: "#/components/parameters/ModelId"
+      responses:
+        "200":
+          description: 取得できた
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelHistory"
+        "400":
+          $ref: "#/components/responses/InvalidModelId"
+        "404":
+          $ref: "#/components/responses/ModelNotFound"
+        "500":
+          description: DB の読み取りに失敗した
+
   /models/{model_id}/resume:
     post:
       tags: [models]
@@ -1105,6 +1130,97 @@ components:
           format: int64
           minimum: 0
           description: 乱数シード。0 も有効な値である。固定しない場合はキーごと省略する
+        lr_scheduler:
+          $ref: "#/components/schemas/LearningRateScheduler"
+
+    # ------------------------------------------------------------
+    # 学習率スケジューラ
+    # ------------------------------------------------------------
+
+    LearningRateScheduler:
+      description: |
+        学習率スケジューラ。基準の学習率(lr0)は optimizer の learning_rate で、ここには持たない。
+        学習開始のリクエストでは省略でき、省略すると none(学習率は optimizer の値のまま)。
+        保存済みの設定の応答(ModelTrainingConfig)では必ず返す。再開では変えられない(保存した設定で再開する)。
+        種類を type に入れ、パラメータを同じ階層に並べる(optimizer と同じ書き方)
+      oneOf:
+        - $ref: "#/components/schemas/NoneScheduler"
+        - $ref: "#/components/schemas/PolyScheduler"
+        - $ref: "#/components/schemas/CosineScheduler"
+        - $ref: "#/components/schemas/StepScheduler"
+
+    LearningRateSchedulerCommon:
+      type: object
+      required: [update_interval, warmup_epochs]
+      properties:
+        update_interval:
+          type: string
+          enum: [per_batch, per_epoch]
+          description: 学習率を変える単位(バッチごと / エポックごと)
+        warmup_epochs:
+          type: integer
+          format: int32
+          minimum: 0
+          description: 最初のこのエポック数で学習率を 0 付近から lr0 まで上げる。0 なら warmup しない。none のときは 0、それ以外は epoch より小さくする
+
+    NoneScheduler:
+      allOf:
+        - $ref: "#/components/schemas/LearningRateSchedulerCommon"
+        - type: object
+          required: [type]
+          properties:
+            type:
+              type: string
+              enum: [none]
+
+    PolyScheduler:
+      description: lr = lr0 × (1 − t / T)^power
+      allOf:
+        - $ref: "#/components/schemas/LearningRateSchedulerCommon"
+        - type: object
+          required: [type, power]
+          properties:
+            type:
+              type: string
+              enum: [poly]
+            power:
+              type: number
+              exclusiveMinimum: 0
+
+    CosineScheduler:
+      description: lr0 から min_lr まで余弦曲線で下げる
+      allOf:
+        - $ref: "#/components/schemas/LearningRateSchedulerCommon"
+        - type: object
+          required: [type, min_lr]
+          properties:
+            type:
+              type: string
+              enum: [cosine]
+            min_lr:
+              type: number
+              minimum: 0
+              description: optimizer の learning_rate 以下
+
+    StepScheduler:
+      description: step_size エポックごとに学習率を gamma 倍する
+      allOf:
+        - $ref: "#/components/schemas/LearningRateSchedulerCommon"
+        - type: object
+          required: [type, step_size, gamma]
+          properties:
+            type:
+              type: string
+              enum: [step]
+            step_size:
+              type: integer
+              format: int32
+              minimum: 1
+              description: エポック数
+            gamma:
+              type: number
+              exclusiveMinimum: 0
+              maximum: 1
 
     StartTrainingRequest:
       description: POST /trainings と POST /trainings/validate の本体
@@ -1184,6 +1300,85 @@ components:
               type: [string, "null"]
               description: 学習が終わった日時(UTC)。学習中、または終了を記録できていなければ null
 
+    ModelHistory:
+      type: object
+      description: GET /models/{model_id}/history の応答。モデルの全 run の、エポックごとの結果
+      required: [model_id, model_name, runs, epochs]
+      properties:
+        model_id:
+          type: string
+          minLength: 1
+        model_name:
+          type: string
+        runs:
+          type: array
+          description: 学習を始めた順(新規学習 1 件と、再開ごとに 1 件)
+          items:
+            $ref: "#/components/schemas/RunRecord"
+        epochs:
+          type: array
+          description: |
+            run の順、run の中はエポックの順。エポック番号は再開をまたいで続く。
+            checkpoint を間引いて保存していると(save_last_every > 1)、再開した run が前の run と同じエポック番号を
+            持つことがある。どちらも返す(後の run が新しい値)
+          items:
+            $ref: "#/components/schemas/EpochRecord"
+
+    RunRecord:
+      description: 1 回の学習(新規学習または再開)。status と reason は TrainingStatusResponse と同じ
+      allOf:
+        - $ref: "#/components/schemas/TrainingStatusResponse"
+        - type: object
+          required: [job_id, started_at, finished_at]
+          properties:
+            job_id:
+              type: string
+              minLength: 1
+            started_at:
+              type: string
+              description: 学習を始めた日時(UTC)
+            finished_at:
+              type: [string, "null"]
+              description: 学習が終わった日時(UTC)。学習中、または終了を記録できていなければ null
+
+    EpochRecord:
+      type: object
+      description: 1 エポックの結果
+      required:
+        [job_id, epoch, train_loss, val_loss, learning_rate, epoch_elapsed_ms, metrics]
+      properties:
+        job_id:
+          type: string
+          minLength: 1
+          description: このエポックを学習した run
+        epoch:
+          type: integer
+          format: int32
+          minimum: 1
+          description: 終了したエポック数(再開をまたいで続く)
+        train_loss:
+          type: [number, "null"]
+          format: double
+          description: NaN や inf、記録なしは null
+        val_loss:
+          type: [number, "null"]
+          format: double
+          description: NaN や inf、記録なしは null
+        learning_rate:
+          type: [number, "null"]
+          format: double
+          description: このエポックの最後のバッチで使った学習率。学習率を記録する前の学習では null
+        epoch_elapsed_ms:
+          type: integer
+          format: int64
+          minimum: 0
+        metrics:
+          description: 進捗(TrainingProcess)の metrics と同じ形。記録していないエポックは null
+          oneOf:
+            - $ref: "#/components/schemas/SegmentationMetrics"
+            - $ref: "#/components/schemas/ClassificationMetrics"
+            - type: "null"
+
     ModelSummariesResponse:
       type: object
       required: [models]
@@ -1201,7 +1396,7 @@ components:
       allOf:
         - $ref: "#/components/schemas/TrainingConfigBase"
         - type: object
-          required: [model_id]
+          required: [model_id, lr_scheduler]
           properties:
             model_id:
               type: string
@@ -1451,3 +1646,10 @@ components:
           format: int64
           minimum: 0
           description: 累計の処理時間(ミリ秒)。再開すると 0 から数え直す
+        learning_rate:
+          type: [number, "null"]
+          format: double
+          description: |
+            このエポックの最後のバッチで使った学習率(学習エンジンが optimizer から読んだ値。スケジューラなしなら
+            optimizer の設定値)。まだ 1 エポックも終わっていない・記録がないときは null。
+            学習率を送らない古いサーバーでは、キーがないこともある

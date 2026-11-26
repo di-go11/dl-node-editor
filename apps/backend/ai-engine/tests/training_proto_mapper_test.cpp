@@ -582,6 +582,7 @@ int main()
         s.latest.validation.loss = 0.3;
         s.latest.epochElapsedMs = 1200;
         s.latest.totalElapsedMs = 6000;
+        s.latest.learningRate = 0.0005;
         SegmentationMetricsConfig seg{};
         seg.pixelAccuracy = 0.9;
         seg.meanIoU = 0.5;
@@ -595,6 +596,7 @@ int main()
         check(res.epoch() == 5, "進捗: epoch は終了したエポック数(EpochReport::epoch + 1)");
         check(res.train_loss() == 0.4 && res.val_loss() == 0.3, "進捗: train_loss / val_loss");
         check(res.epoch_elapsed_ms() == 1200 && res.total_elapsed_ms() == 6000, "進捗: 経過時間");
+        check(res.learning_rate() == 0.0005, "進捗: 学習率(このエポックの最後のバッチで使った値)");
         check(res.has_segmentation() && res.segmentation().miou() == 0.5 && res.segmentation().fw_iou() == 0.8,
               "進捗: segmentation の指標");
         check(res.has_segmentation() && res.segmentation().per_class_iou_size() == 3 &&

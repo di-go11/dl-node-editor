@@ -169,6 +169,7 @@ mod tests {
 
     fn gen_normal_order() -> StartTrainingConfig {
         StartTrainingConfig {
+            lr_scheduler: entities::training::config::LearningRateScheduler::none(),
             model_name: "test_model".to_string(),
             model_graph: gen_model_graph(),
             epoch: 1,

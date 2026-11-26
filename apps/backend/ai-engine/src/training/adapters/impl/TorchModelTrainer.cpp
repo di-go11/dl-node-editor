@@ -79,3 +79,8 @@ EpochMetrics TorchModelTrainer::trainOneEpoch(IDatasetRepository &trainData, uns
     // taskMetrics は既定値(先頭の型をゼロ初期化したもの)のままなので、学習側では参照しないこと。
     return metrics;
 }
+
+double TorchModelTrainer::learningRate() const
+{
+    return _optimizer->learningRate();
+}

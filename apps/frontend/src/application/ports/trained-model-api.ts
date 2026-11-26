@@ -1,3 +1,4 @@
+import type { TrainingHistory } from '../../entity/trained-model/history'
 import type { TrainedModelSummary } from '../../entity/trained-model/trained-model'
 import type { TrainingSettings } from '../../entity/training/training-settings'
 
@@ -16,4 +17,6 @@ export type TrainedModelApi = {
   /** 最新の run の学習設定。再開フォームの初期値と、固定項目の表示に使う */
   getConfig(modelId: string): Promise<ApiResult<TrainingSettings>>
   resume(modelId: string, settings: TrainingSettings): Promise<ApiResult<StartedTraining>>
+  /** 学習の記録(全 run のエポックごとの loss・学習率・メトリクス)。グラフと CSV に使う */
+  getHistory(modelId: string): Promise<ApiResult<TrainingHistory>>
 }

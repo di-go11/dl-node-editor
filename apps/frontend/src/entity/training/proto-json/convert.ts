@@ -3,6 +3,8 @@ import { fromProtoJson, toProtoJson } from '../../model-graph/proto-json/convert
 import type { DataSpec } from '../data-spec'
 import { ANNOTATION_TYPES, IMAGE_TASK_TYPES } from '../data-spec'
 import { LOSS_TYPES } from '../loss'
+import type { LrSchedulerSettings, LrUpdateInterval } from '../lr-scheduler'
+import { defaultLrScheduler, LR_SCHEDULER_TYPES } from '../lr-scheduler'
 import { OPTIMIZER_TYPES } from '../optimizer'
 import type { TrainingSettings } from '../training-settings'
 import type { Variant, VariantCatalog } from '../variant'
@@ -10,6 +12,8 @@ import { isVariantKind } from '../variant'
 
 import type {
   DataSpecJson,
+  LrSchedulerJson,
+  LrUpdateIntervalJson,
   StartTrainingRequestJson,
   TrainingSettingsJson,
   VariantJson,
@@ -82,6 +86,34 @@ function dataSpecToJson(spec: DataSpec): DataSpecJson {
 }
 
 // ------------------------------------------------------------
+// 学習率スケジューラ
+// ------------------------------------------------------------
+
+const UPDATE_INTERVAL_TO_JSON: Readonly<Record<LrUpdateInterval, LrUpdateIntervalJson>> = {
+  per_batch: 'LEARNING_RATE_UPDATE_INTERVAL_PER_BATCH',
+  per_epoch: 'LEARNING_RATE_UPDATE_INTERVAL_PER_EPOCH',
+}
+
+function lrSchedulerFromJson(json: LrSchedulerJson | undefined): LrSchedulerSettings {
+  // この機能より前の保存ファイル・C++ の設定ファイルには項目がない。スケジューラなしとして読む
+  if (json === undefined) return defaultLrScheduler()
+  return {
+    scheduler: variantFromJson(LR_SCHEDULER_TYPES, json.scheduler),
+    updateInterval:
+      json.update_interval === 'LEARNING_RATE_UPDATE_INTERVAL_PER_EPOCH' ? 'per_epoch' : 'per_batch',
+    warmupEpochs: json.warmup_epochs,
+  }
+}
+
+function lrSchedulerToJson(settings: LrSchedulerSettings): LrSchedulerJson {
+  return {
+    scheduler: variantToJson(settings.scheduler),
+    update_interval: UPDATE_INTERVAL_TO_JSON[settings.updateInterval],
+    warmup_epochs: settings.warmupEpochs,
+  }
+}
+
+// ------------------------------------------------------------
 // 学習設定
 // ------------------------------------------------------------
 
@@ -101,6 +133,7 @@ export function trainingSettingsFromJson(json: TrainingSettingsJson): TrainingSe
     // 学習済みのモデルを選んで行う(再開元の checkpoint はサーバーが決める)
     // seed のキーがない = 乱数を固定しない。{ "value": 0 } は「0 に固定する」で別の意味
     seed: json.seed === undefined ? null : json.seed.value,
+    lrScheduler: lrSchedulerFromJson(json.lr_scheduler),
   }
 }
 
@@ -117,6 +150,8 @@ export function trainingSettingsToJson(settings: TrainingSettings): TrainingSett
     save_last_every: settings.saveLastEvery,
     // C++ の設定ファイル・保存ファイルの形にそろえるため、キーは残して常に空(再開しない)にする
     resume_from: '',
+    // none も省かずに書く(保存ファイルを開いたときに、スケジューラなしを選んでいたと分かるように)
+    lr_scheduler: lrSchedulerToJson(settings.lrScheduler),
   }
   // 固定しないときは、キーごと省く(契約の Seed の説明のとおり)。
   // { "seed": null } にすると、Rust 側で「null の Seed」という余計な場合が増える。

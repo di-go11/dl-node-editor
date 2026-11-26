@@ -105,6 +105,8 @@ TrainingStatus TrainModelUsecase::execute(const TrainingDatasets &datasets,
         report.validation = valMetrics;
         report.epochElapsedMs = elapsedMs(epochStart);
         report.totalElapsedMs = elapsedMs(trainingStart);
+        // 式から計算し直さず、Optimizer が実際に使った値を送る(フロントで式を二重に持たないため)
+        report.learningRate = _trainer->learningRate();
         _progressObserver->onEpochCompleted(report);
 
         if (bestTracker->update(monitored.value))

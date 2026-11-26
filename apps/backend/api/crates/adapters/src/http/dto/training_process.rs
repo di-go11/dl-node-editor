@@ -14,6 +14,8 @@ pub struct TrainingProcessDto {
     pub metrics: Option<MetricsDto>,
     pub epoch_elapsed_ms: u64,
     pub total_elapsed_ms: u64,
+    // このエポックの最後のバッチで使った学習率。まだ 1 エポックも終わっていない・記録がないときは null
+    pub learning_rate: Option<f64>,
 }
 
 impl From<TrainingProcess> for TrainingProcessDto {
@@ -26,6 +28,7 @@ impl From<TrainingProcess> for TrainingProcessDto {
             metrics: value.metrics.map(Into::into),
             epoch_elapsed_ms: value.epoch_elapsed_time.as_millis() as u64,
             total_elapsed_ms: value.total_elapsed_time.as_millis() as u64,
+            learning_rate: value.learning_rate,
         }
     }
 }
@@ -107,6 +110,7 @@ mod tests {
             })),
             epoch_elapsed_time: Duration::from_millis(1500),
             total_elapsed_time: Duration::from_secs(10),
+            learning_rate: Some(0.001),
         };
 
         let actual = serde_json::to_value(TrainingProcessDto::from(process)).unwrap();
@@ -125,7 +129,8 @@ mod tests {
                     "per_class_accuracy": [0.5, 1.0]
                 },
                 "epoch_elapsed_ms": 1500,
-                "total_elapsed_ms": 10000
+                "total_elapsed_ms": 10000,
+                "learning_rate": 0.001
             })
         );
     }
@@ -143,6 +148,7 @@ mod tests {
             metrics: None,
             epoch_elapsed_time: Duration::ZERO,
             total_elapsed_time: Duration::ZERO,
+            learning_rate: None,
         };
 
         let actual = serde_json::to_value(TrainingProcessDto::from(process)).unwrap();
