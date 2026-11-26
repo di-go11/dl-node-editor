@@ -17,6 +17,7 @@ pub struct TrainingConfig {
     pub seed: Option<u64>,
     pub data_spec: DataSpec,
     pub save_last_every: u32,
+    pub lr_scheduler: LearningRateScheduler,
 }
 
 // Optimizer
@@ -44,6 +45,27 @@ pub enum Optimizer {
     },
 }
 
+// LrScheduler
+#[derive(Debug, PartialEq, Clone)]
+pub struct LearningRateScheduler {
+    pub scheduler: LearningRateSchedulerConfig,
+    pub update_interval: LearningRateUpdateInterval,
+    pub warmup_epochs: u32,
+}
+#[derive(Debug, PartialEq, Clone)]
+pub enum LearningRateSchedulerConfig {
+    None,
+    Poly { power: f64 },
+    Cosine { min_lr: f64 },
+    Step { step_size: u32, gamma: f64 },
+}
+
+#[derive(Debug, PartialEq, Clone)]
+
+pub enum LearningRateUpdateInterval {
+    PerBatch,
+    PerEpoch,
+}
 // Loss
 // 並び順は training.proto の LossConfig(C++ の LossType)と対応させる。
 #[derive(Debug, PartialEq, Clone)]
