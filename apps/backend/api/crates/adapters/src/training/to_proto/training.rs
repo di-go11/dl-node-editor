@@ -35,8 +35,7 @@ impl From<&TrainingConfig> for training_pb::StartTrainingRequest {
             seed: value.seed.map(|v| training_pb::Seed { value: v }),
             model_id: String::new(),
             resume: false,
-            // resume_from は deprecated(学習再開は resume フラグと <model_id>_last.pt で行う)。
-            // 名前で書くと deprecated 警告になるので、既定値(空文字列=再開しない)に任せる
+            // lr_scheduler は未対応のため既定値(未設定 = スケジューラーなし)に任せる
             ..Default::default()
         }
     }

@@ -319,6 +319,7 @@ namespace
             c.eps = p.eps();
             requireGreaterThanZero(c.eps, "optimizer.adam.eps");
             result.kind = c;
+            break;
         }
         case training::v1::OptimizerConfig::kAdamW:
         {
@@ -328,6 +329,7 @@ namespace
             c.beta1 = p.beta1();
             c.beta2 = p.beta2();
             result.kind = c;
+            break;
         }
         case training::v1::OptimizerConfig::kSgd:
         {
@@ -337,11 +339,12 @@ namespace
             c.momentum = p.momentum();
             c.nesterov = p.nesterov();
             result.kind = c;
-        }
-        case training::v1::OptimizerConfig::CONFIG_NOT_SET:
             break;
         }
-        invalid("optimizer の種類が指定されていません");
+        case training::v1::OptimizerConfig::CONFIG_NOT_SET:
+            invalid("optimizer の種類が指定されていません");
+            break;
+        }
         result.learningRate = optimizer.learning_rate();
         requireGreaterThanZero(result.learningRate, "optimizer.learning_rate");
         return result;
@@ -350,9 +353,59 @@ namespace
     LearningRateSchedulerConfig toLrScheduler(const training::v1::LearningRateSchedulerConfig &scheduler)
     {
         LearningRateSchedulerConfig result;
-        switch (scheduler.config_case()){
-            case training::v1::LearningRateSchedulerConfig::
+        switch (scheduler.config_case())
+        {
+        case training::v1::LearningRateSchedulerConfig::kNone:
+        {
+            break;
         }
+        case training::v1::LearningRateSchedulerConfig::kPoly:
+        {
+            const auto &s = scheduler.poly();
+            PolyLearningRateSchedulerConfig c;
+            c.power = s.power();
+            result.scheduler = c;
+            break;
+        }
+        case training::v1::LearningRateSchedulerConfig::kCosine:
+        {
+            const auto &s = scheduler.cosine();
+            CosineLearningRateSchedulerConfig c;
+            c.minLR = s.min_lr();
+            result.scheduler = c;
+            break;
+        }
+        case training::v1::LearningRateSchedulerConfig::kStep:
+        {
+            const auto &s = scheduler.step();
+            StepLearningRateSchedulerConfig c;
+            c.gamma = s.gamma();
+            c.stepSize = s.step_size();
+            result.scheduler = c;
+            break;
+        }
+        case training::v1::LearningRateSchedulerConfig::CONFIG_NOT_SET:
+        {
+            break;
+        }
+        }
+        switch (scheduler.update_interval())
+        {
+        case training::v1::LEARNING_RATE_UPDATE_INTERVAL_PER_BATCH:
+        {
+            result.updateInterval = LearningRateUpdateInterval::PerBatch;
+            break;
+        }
+        case training::v1::LEARNING_RATE_UPDATE_INTERVAL_PER_EPOCH:
+        {
+            result.updateInterval = LearningRateUpdateInterval::PerEpoch;
+            break;
+        }
+        default:
+            invalid("lr_scheduler.update_interval: unknown value");
+        }
+        result.warmupEpochs = scheduler.warmup_epochs();
+        return result;
     }
 
     LossConfig toLoss(const training::v1::LossConfig &loss)
@@ -516,18 +569,13 @@ StartTrainingCommand toStartTrainingCommand(const training::v1::StartTrainingReq
     command.epochSize = request.epoch();
     command.batchSize = request.batch();
     command.saveLastEvery = request.save_last_every();
+    command.lrScheduler = toLrScheduler(request.lr_scheduler());
 
     if (request.dataset_path().empty())
     {
         invalid("dataset_path が空です");
     }
     command.datasetPath = request.dataset_path();
-    // 再開は resume と model_id で決める。任意のパスから再開する経路は廃止したので、
-    // 値が入っていたら黙って無視せずに拒否する。
-    if (!request.resume_from().empty())
-    {
-        invalid("resume_from は使えません。再開するには resume = true を指定してください(再開元は <model_id>_last.pt)");
-    }
     if (request.has_seed())
     {
         command.seed = request.seed().value();

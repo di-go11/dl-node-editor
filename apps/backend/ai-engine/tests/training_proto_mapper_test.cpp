@@ -410,8 +410,6 @@ int main()
     checkRejected([](auto &r)
                   { r.set_model_id("../evil"); }, "model_id にパスの区切りが含まれる");
     checkRejected([](auto &r)
-                  { r.set_resume_from("/somewhere/model_last.pt"); }, "resume_from は廃止(resume を使う)");
-    checkRejected([](auto &r)
                   { r.clear_model_graph(); }, "model_graph.nodes が空");
     checkRejected([](auto &r)
                   { r.mutable_model_graph()->add_nodes()->set_id("n2"); }, "層の種類が未指定");

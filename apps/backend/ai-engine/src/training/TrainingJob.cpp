@@ -293,7 +293,7 @@ TrainingStatus runTrainingJob(const TrainingRuntimeConfig &runtime,
     // 学習率スケジューラー。未指定なら None(nullptr が返り、学習率は Optimizer の設定値のまま)。
     // config はエポック単位で、ステップ単位への換算は Factory が train のバッチ数を使って行う。
     // 基準の学習率は Optimizer の設定値を使う(学習率の指定箇所は OptimizerConfig だけ)。
-    auto lrScheduler = createLRScheduler(command.lrScheduler.value_or(LearningRateSchedulerConfig{}),
+    auto lrScheduler = createLRScheduler(command.lrScheduler,
                                          command.optimizer.learningRate,
                                          command.epochSize,
                                          trainDataset->batchCount());

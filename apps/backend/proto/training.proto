@@ -133,7 +133,10 @@ message StartTrainingRequest {
     string device = 8;
     DataSpec data_spec = 9;
     uint32 save_last_every = 10; // 0=毎エポック
-    string resume_from = 11[deprecated = true]; // 使用しない
+    // 11 は旧 resume_from(任意のパスから再開する経路。廃止)。再開は resume と model_id で決める。
+    // 別の意味で再利用しないように番号と名前を予約する。
+    reserved 11;
+    reserved "resume_from";
     Seed seed = 12; // 未設定(has_seed = false)なら乱数を固定しない
     string model_id = 13; // モデル保存用のモデルid
     bool resume = 14; // 再開するかしないか
