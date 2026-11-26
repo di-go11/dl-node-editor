@@ -47,9 +47,15 @@ describe('parseEditorFileText', () => {
       string,
       unknown
     >
+    // 学習率スケジューラはファイルにないので、既定値(なし)が入る
     expect(toStartTrainingRequestJson(result.document.graph, result.document.training)).toEqual({
       ...example,
       dataset_id: '',
+      lr_scheduler: {
+        scheduler: { none: {} },
+        update_interval: 'LEARNING_RATE_UPDATE_INTERVAL_PER_BATCH',
+        warmup_epochs: 0,
+      },
     })
   })
 

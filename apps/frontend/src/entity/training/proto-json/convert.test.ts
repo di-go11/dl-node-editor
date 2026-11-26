@@ -25,16 +25,27 @@ function parseExample(): unknown {
   return JSON.parse(exampleRaw)
 }
 
+/** 学習率スケジューラのない設定ファイルを読んだときの既定値(なし)を書き戻した形 */
+const DEFAULT_LR_SCHEDULER_JSON = {
+  scheduler: { none: {} },
+  update_interval: 'LEARNING_RATE_UPDATE_INTERVAL_PER_BATCH',
+  warmup_epochs: 0,
+}
+
 /**
- * 書き戻したときに期待する形。データセットだけは C++ の設定ファイルと違い、
- * パス(dataset_path)を読み捨てて未選択の ID(dataset_id: '')になる。キーの位置は同じ
+ * 書き戻したときに期待する形。C++ の設定ファイルとの違いは次の 2 つで、ほかのキーの位置は同じ。
+ * - データセット: パス(dataset_path)を読み捨てて未選択の ID(dataset_id: '')になる
+ * - 学習率スケジューラ: ファイルにない(test_segnet_dag.json はスケジューラより前に作った)ので、
+ *   既定値(なし)を seed の前に書く
  */
 function expectedRoundTrip(): unknown {
   const example = parseExample() as Record<string, unknown>
   return Object.fromEntries(
-    Object.entries(example).map(([key, value]) =>
-      key === 'dataset_path' ? ['dataset_id', ''] : [key, value],
-    ),
+    Object.entries(example).flatMap(([key, value]): [string, unknown][] => {
+      if (key === 'dataset_path') return [['dataset_id', '']]
+      if (key === 'seed') return [['lr_scheduler', DEFAULT_LR_SCHEDULER_JSON], [key, value]]
+      return [[key, value]]
+    }),
   )
 }
 
