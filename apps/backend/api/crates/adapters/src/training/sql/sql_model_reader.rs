@@ -4,16 +4,16 @@ use crate::model;
 use entities::model::{
     EpochRecord, LastRunSummary, ModelHistory, ModelId, ModelSummary, ModelTaskType, RunRecord,
 };
-use entities::training::{ClassificationMetrics, JobId, Metrics, SegmentationMetrics};
-use std::collections::HashMap;
 use entities::training::config::{
     DataSpec, ImageAnnotationConfig, ImageSpec, ImageTaskSpec, LearningRateScheduler,
     LearningRateSchedulerConfig, LearningRateUpdateInterval, Loss, Optimizer, PascalVocConfig,
     RgbColor, SegmentationSpec, TrainingConfig,
 };
 use entities::training::TrainingJobStatus;
+use entities::training::{ClassificationMetrics, JobId, Metrics, SegmentationMetrics};
 use sqlx::sqlite::SqliteRow;
 use sqlx::Row;
+use std::collections::HashMap;
 use usecases::model::error::FetchModelError;
 use usecases::model::ports::{
     ModelHistoryProvider, ModelSummaryProvider, ModelTrainingConfigProvider,
@@ -227,7 +227,10 @@ impl ModelHistoryProvider for SqliteTrainingRepository {
                     Some(Metrics::Classification(ClassificationMetrics {
                         accuracy: value("accuracy")?,
                         macro_f1: value("macro_f1")?,
-                        per_class_accuracy: per_class_accuracy.get(&key).cloned().unwrap_or_default(),
+                        per_class_accuracy: per_class_accuracy
+                            .get(&key)
+                            .cloned()
+                            .unwrap_or_default(),
                     }))
                 } else {
                     None
@@ -619,9 +622,13 @@ mod tests {
             repo.insert_model(&model_id(), &config.model_name, &config.model_graph)
                 .await
                 .unwrap();
-            repo.insert_training_run(&JobId::new(format!("job-{i}")).unwrap(), &config, &model_id())
-                .await
-                .unwrap();
+            repo.insert_training_run(
+                &JobId::new(format!("job-{i}")).unwrap(),
+                &config,
+                &model_id(),
+            )
+            .await
+            .unwrap();
 
             let fetched = ModelTrainingConfigProvider::fetch(&repo, &model_id())
                 .await
@@ -900,7 +907,10 @@ mod tests {
         assert_eq!(names, vec!["old", "new"]);
     }
 
-    fn epoch_process(epoch: u32, learning_rate: Option<f64>) -> entities::training::TrainingProcess {
+    fn epoch_process(
+        epoch: u32,
+        learning_rate: Option<f64>,
+    ) -> entities::training::TrainingProcess {
         entities::training::TrainingProcess {
             epoch,
             train_loss: 0.5,
@@ -931,17 +941,31 @@ mod tests {
             .unwrap();
         let first = JobId::new("job-1").unwrap();
         let second = JobId::new("job-2").unwrap();
-        repo.insert_training_run(&first, &config, &model_id()).await.unwrap();
-        repo.insert_epoch(&first, 1, &epoch_process(1, Some(1e-3))).await.unwrap();
-        repo.insert_epoch(&first, 2, &epoch_process(2, None)).await.unwrap();
-        repo.insert_training_run(&second, &config, &model_id()).await.unwrap();
-        repo.insert_epoch(&second, 3, &epoch_process(3, Some(5e-4))).await.unwrap();
+        repo.insert_training_run(&first, &config, &model_id())
+            .await
+            .unwrap();
+        repo.insert_epoch(&first, 1, &epoch_process(1, Some(1e-3)))
+            .await
+            .unwrap();
+        repo.insert_epoch(&first, 2, &epoch_process(2, None))
+            .await
+            .unwrap();
+        repo.insert_training_run(&second, &config, &model_id())
+            .await
+            .unwrap();
+        repo.insert_epoch(&second, 3, &epoch_process(3, Some(5e-4)))
+            .await
+            .unwrap();
 
         let history = repo.fetch_history(&model_id()).await.unwrap();
 
         assert_eq!(history.model_name, "test_model");
         assert_eq!(
-            history.runs.iter().map(|r| r.job_id.as_str()).collect::<Vec<_>>(),
+            history
+                .runs
+                .iter()
+                .map(|r| r.job_id.as_str())
+                .collect::<Vec<_>>(),
             vec!["job-1", "job-2"]
         );
         assert_eq!(
@@ -950,7 +974,11 @@ mod tests {
                 .iter()
                 .map(|e| (e.job_id.as_str(), e.epoch, e.learning_rate))
                 .collect::<Vec<_>>(),
-            vec![("job-1", 1, Some(1e-3)), ("job-1", 2, None), ("job-2", 3, Some(5e-4))]
+            vec![
+                ("job-1", 1, Some(1e-3)),
+                ("job-1", 2, None),
+                ("job-2", 3, Some(5e-4))
+            ]
         );
         let first_epoch = &history.epochs[0];
         assert_eq!(first_epoch.train_loss, Some(0.5));

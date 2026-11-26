@@ -87,9 +87,8 @@ mod tests {
     use super::TrainingRunRegistar;
     use super::TrainingStarter;
     use crate::dataset::error::DatasetError;
-    use crate::training::ModelGraphValidatorError;
-    use entities::validation::ConfigViolation;
     use crate::dataset::ports::DatasetFinder;
+    use crate::training::ModelGraphValidatorError;
     use crate::training::ProgressRecordingScheduler;
     use crate::training::RecordError;
     use crate::training::StartTrainingConfig;
@@ -100,6 +99,7 @@ mod tests {
         DataSpec, ImageAnnotationConfig, ImageSpec, ImageTaskSpec, Loss, Optimizer,
         PascalVocConfig, SegmentationSpec, TrainingConfig,
     };
+    use entities::validation::ConfigViolation;
     use entities::{
         model::ModelId,
         training::{JobId, TrainingJobStatus},

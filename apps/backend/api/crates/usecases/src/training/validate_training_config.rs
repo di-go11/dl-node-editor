@@ -39,9 +39,7 @@ impl<R: TrainingRecordReader, M: ModelGraphValidator, F: DatasetFinder>
             .await
             .map_err(|e| ValidateTrainingConfigError::DatasetReadFailed(e.to_string()))?
             .ok_or_else(|| {
-                ValidateTrainingConfigError::DatasetNotFound(
-                    config.dataset_id.as_str().to_string(),
-                )
+                ValidateTrainingConfigError::DatasetNotFound(config.dataset_id.as_str().to_string())
             })?;
 
         check_training_config(
@@ -319,6 +317,9 @@ mod tests {
 
         let result = usecase.execute(&gen_config("new_model")).await;
 
-        assert_eq!(result, Err(ValidateTrainingConfigError::GraphCheckFailed(err)));
+        assert_eq!(
+            result,
+            Err(ValidateTrainingConfigError::GraphCheckFailed(err))
+        );
     }
 }

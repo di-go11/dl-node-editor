@@ -7,6 +7,6 @@ pub use data_spec::{
 };
 
 pub use training_config::{
-    LearningRateScheduler, LearningRateSchedulerConfig, LearningRateUpdateInterval, Loss, Optimizer,
-    TrainingConfig,
+    LearningRateScheduler, LearningRateSchedulerConfig, LearningRateUpdateInterval, Loss,
+    Optimizer, TrainingConfig,
 };

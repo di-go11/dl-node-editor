@@ -108,7 +108,10 @@ fn response_from_start_error(error: StartTrainingError) -> Response {
         // 学習開始前のグラフの検証(ValidateModelGraph)と、学習開始の時点(StartTraining)の両方
         StartTrainingError::DatasetUnreadable(_)
         | StartTrainingError::GraphCheckFailed(ModelGraphValidatorError::DatasetUnreadable(_)) => {
-            error_code_response(StatusCode::UNPROCESSABLE_ENTITY, ErrorCode::DatasetUnreadable)
+            error_code_response(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                ErrorCode::DatasetUnreadable,
+            )
         }
         // 学習開始の時点で C++ が見つけたグラフの問題も、設定の違反と同じ本文で返す。
         // C++ のメッセージにノードと内容が並んでいるので、グラフ全体(model_graph)の違反 1 件にする
@@ -188,7 +191,10 @@ fn response_from_validate_error(error: ValidateTrainingConfigError) -> Response 
         }
         ValidateTrainingConfigError::GraphCheckFailed(
             ModelGraphValidatorError::DatasetUnreadable(_),
-        ) => error_code_response(StatusCode::UNPROCESSABLE_ENTITY, ErrorCode::DatasetUnreadable),
+        ) => error_code_response(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            ErrorCode::DatasetUnreadable,
+        ),
         ValidateTrainingConfigError::ReadFailed(_)
         | ValidateTrainingConfigError::DatasetReadFailed(_) => {
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
@@ -760,7 +766,11 @@ mod tests {
             (invalid_request_response(), "invalid_request"),
         ];
         for (response, code) in cases {
-            assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY, "{code}");
+            assert_eq!(
+                response.status(),
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "{code}"
+            );
             assert_eq!(
                 body_json(response).await,
                 serde_json::json!({ "error": code })

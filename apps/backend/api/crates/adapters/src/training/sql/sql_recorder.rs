@@ -129,19 +129,18 @@ impl TrainingRunRegistar for SqliteTrainingRepository {
             ImageAnnotationConfig::Original => ("original", None),
         };
         let scheduler = &config.lr_scheduler;
-        let (lr_scheduler_type, lr_power, lr_min_lr, lr_step_size, lr_gamma) =
-            match &scheduler.scheduler {
-                LearningRateSchedulerConfig::None => ("none", None, None, None, None),
-                LearningRateSchedulerConfig::Poly { power } => {
-                    ("poly", Some(*power), None, None, None)
-                }
-                LearningRateSchedulerConfig::Cosine { min_lr } => {
-                    ("cosine", None, Some(*min_lr), None, None)
-                }
-                LearningRateSchedulerConfig::Step { step_size, gamma } => {
-                    ("step", None, None, Some(*step_size), Some(*gamma))
-                }
-            };
+        let (lr_scheduler_type, lr_power, lr_min_lr, lr_step_size, lr_gamma) = match &scheduler
+            .scheduler
+        {
+            LearningRateSchedulerConfig::None => ("none", None, None, None, None),
+            LearningRateSchedulerConfig::Poly { power } => ("poly", Some(*power), None, None, None),
+            LearningRateSchedulerConfig::Cosine { min_lr } => {
+                ("cosine", None, Some(*min_lr), None, None)
+            }
+            LearningRateSchedulerConfig::Step { step_size, gamma } => {
+                ("step", None, None, Some(*step_size), Some(*gamma))
+            }
+        };
         let lr_update_interval = match scheduler.update_interval {
             LearningRateUpdateInterval::PerBatch => "per_batch",
             LearningRateUpdateInterval::PerEpoch => "per_epoch",

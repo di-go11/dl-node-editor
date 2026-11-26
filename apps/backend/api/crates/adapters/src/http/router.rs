@@ -1,8 +1,7 @@
 use super::handler::{
     get_capabilities, get_model_config, get_model_history, get_model_lists, get_training_process,
-    get_training_status,
-    read_summary_datasets, resume_training, start_training, stop_training, stream_training_process,
-    upload_dataset, validate_training,
+    get_training_status, read_summary_datasets, resume_training, start_training, stop_training,
+    stream_training_process, upload_dataset, validate_training,
 };
 
 use super::config::HttpConfig;

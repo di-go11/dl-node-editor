@@ -65,7 +65,10 @@ where
         }
     }
 
-    pub async fn get_history(&self, model_id: &ModelId) -> Result<ModelHistory, ModelRepositoryError> {
+    pub async fn get_history(
+        &self,
+        model_id: &ModelId,
+    ) -> Result<ModelHistory, ModelRepositoryError> {
         Ok(self.history.fetch_history(model_id).await?)
     }
 }

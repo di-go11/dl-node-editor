@@ -2,8 +2,7 @@ use crate::pb::training::v1::{self as training_pb};
 
 use entities::training::config::TrainingConfig;
 use entities::training::config::{
-    LearningRateScheduler, LearningRateSchedulerConfig, LearningRateUpdateInterval, Loss,
-    Optimizer,
+    LearningRateScheduler, LearningRateSchedulerConfig, LearningRateUpdateInterval, Loss, Optimizer,
 };
 use entities::training::JobId;
 
@@ -66,8 +65,12 @@ impl From<&LearningRateScheduler> for training_pb::LearningRateSchedulerConfig {
             }
         };
         let update_interval = match value.update_interval {
-            LearningRateUpdateInterval::PerBatch => training_pb::LearningRateUpdateInterval::PerBatch,
-            LearningRateUpdateInterval::PerEpoch => training_pb::LearningRateUpdateInterval::PerEpoch,
+            LearningRateUpdateInterval::PerBatch => {
+                training_pb::LearningRateUpdateInterval::PerBatch
+            }
+            LearningRateUpdateInterval::PerEpoch => {
+                training_pb::LearningRateUpdateInterval::PerEpoch
+            }
         };
         training_pb::LearningRateSchedulerConfig {
             config: Some(config),

@@ -1,6 +1,8 @@
 use entities::dataset::DatasetId;
 use entities::model::ModelGraph;
-use entities::training::config::{DataSpec, LearningRateScheduler, Loss, Optimizer, TrainingConfig};
+use entities::training::config::{
+    DataSpec, LearningRateScheduler, Loss, Optimizer, TrainingConfig,
+};
 
 // 新規学習の入力。クライアントはデータセットを ID で指定し、パスは持たない。
 // パスは StartTraining が DatasetFinder で ID から引き、TrainingConfig に入れて C++ に送る。

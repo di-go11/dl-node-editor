@@ -240,12 +240,18 @@ mod tests {
     #[test]
     fn graph_violation_converts_indices_to_request_field() {
         let cases = [
-            (pb_violation(Some(3), Some(1), None), "model_graph.nodes[3].inputs[1]"),
+            (
+                pb_violation(Some(3), Some(1), None),
+                "model_graph.nodes[3].inputs[1]",
+            ),
             (pb_violation(Some(3), None, None), "model_graph.nodes[3]"),
             (pb_violation(None, None, Some(0)), "model_graph.outputs[0]"),
             (pb_violation(None, None, None), "model_graph"),
             // 添字 0 も「該当なし」と区別する(Index で包んでいるため)
-            (pb_violation(Some(0), Some(0), None), "model_graph.nodes[0].inputs[0]"),
+            (
+                pb_violation(Some(0), Some(0), None),
+                "model_graph.nodes[0].inputs[0]",
+            ),
         ];
         for (violation, expected) in cases {
             let converted = config_violation_from_pb(&violation);
