@@ -1,6 +1,7 @@
 #include "TrainingServiceImpl.hpp"
 
 #include "api/grpc/TrainingProtoMapper.hpp"
+#include "training/ModelGraphCheck.hpp"
 
 #include <chrono>
 #include <cstdint>
@@ -160,5 +161,36 @@ grpc::Status TrainingServiceImpl::StopTraining(grpc::ServerContext * /*context*/
     catch (const TrainingJobNotFoundError &e)
     {
         return grpc::Status(grpc::StatusCode::NOT_FOUND, e.what());
+    }
+}
+
+grpc::Status TrainingServiceImpl::ValidateModelGraph(grpc::ServerContext * /*context*/,
+                                                     const training::v1::ValidateModelGraphRequest *request,
+                                                     training::v1::ValidateModelGraphResponse *response)
+{
+    ModelGraphCheckRequest check;
+    try
+    {
+        check = toModelGraphCheckRequest(*request);
+    }
+    catch (const std::invalid_argument &e)
+    {
+        // 層のパラメータの値などは Rust が先に確かめるので、ここに来るのは Rust 側の検証漏れ
+        return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, e.what());
+    }
+
+    try
+    {
+        fillValidateModelGraphResponse(checkModelGraph(check.graph, check.dataSpec, check.datasetPath), *response);
+        return grpc::Status::OK;
+    }
+    catch (const TrainingPreconditionError &e)
+    {
+        return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, e.what()); // データセットの色表が読めない
+    }
+    catch (const std::exception &e)
+    {
+        // 構造の検証が通った後の create や形の計算での想定外の失敗。gRPC のスレッドの外に例外を出さない
+        return grpc::Status(grpc::StatusCode::INTERNAL, e.what());
     }
 }

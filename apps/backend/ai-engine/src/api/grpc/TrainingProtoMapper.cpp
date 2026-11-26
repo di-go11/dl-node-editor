@@ -599,6 +599,52 @@ StartTrainingCommand toStartTrainingCommand(const training::v1::StartTrainingReq
     return command;
 }
 
+ModelGraphCheckRequest toModelGraphCheckRequest(const training::v1::ValidateModelGraphRequest &request)
+{
+    ModelGraphCheckRequest result;
+    result.graph = toModelGraph(request.model_graph());
+    if (!request.has_data_spec())
+    {
+        invalid("data_spec が指定されていません");
+    }
+    result.dataSpec = toDataSpec(request.data_spec());
+    result.datasetPath = request.dataset_path();
+    return result;
+}
+
+void fillValidateModelGraphResponse(const std::vector<GraphValidationError> &errors,
+                                    training::v1::ValidateModelGraphResponse &response)
+{
+    for (const GraphValidationError &error : errors)
+    {
+        training::v1::GraphViolation *violation = response.add_violations();
+        if (error.nodeIndex.has_value())
+        {
+            violation->mutable_node_index()->set_value(static_cast<uint32_t>(*error.nodeIndex));
+        }
+        if (error.inputIndex.has_value())
+        {
+            violation->mutable_input_index()->set_value(static_cast<uint32_t>(*error.inputIndex));
+        }
+        if (error.outputIndex.has_value())
+        {
+            violation->mutable_output_index()->set_value(static_cast<uint32_t>(*error.outputIndex));
+        }
+        // ノードのポート単位の問題は、添字だけではどのポートか分からないので名前を前に付ける。
+        // 例: 必須の入力ポートが未接続(port = 入力ポート)、モデルの出力の形が合わない(port = 出力ポート)。
+        // 入力の接続(inputIndex あり)と outputs の問題は、添字で場所が決まり、メッセージにもポート名が入っている。
+        if (!error.port.empty() && !error.inputIndex.has_value() && !error.outputIndex.has_value() &&
+            error.nodeIndex.has_value())
+        {
+            violation->set_message("ポート '" + error.port + "': " + error.message);
+        }
+        else
+        {
+            violation->set_message(error.message);
+        }
+    }
+}
+
 training::v1::TrainingStatus toProtoTrainingStatus(TrainingStatus status)
 {
     switch (status)

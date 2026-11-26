@@ -1,7 +1,7 @@
 use super::dto::{
-    CapabilitiesDto, DatasetLayoutMismatchDto, DatasetSummariesDto, ModelSummariesDto,
-    ModelTrainingConfigDto, ResumeTrainingConfigDto, StartTrainingResponseDto, TrainingConfigDto,
-    TrainingJobStatusDto, TrainingProcessDto,
+    CapabilitiesDto, DatasetLayoutMismatchDto, DatasetSummariesDto, InvalidConfigDto,
+    ModelSummariesDto, ModelTrainingConfigDto, ResumeTrainingConfigDto, StartTrainingResponseDto,
+    TrainingConfigDto, TrainingJobStatusDto, TrainingProcessDto,
 };
 use axum::{
     extract::{Path, State},
@@ -11,6 +11,7 @@ use axum::{
 use entities::{
     model::ModelId,
     training::{JobId, TrainingProcess},
+    validation::ConfigViolation,
 };
 use futures_util::StreamExt;
 use usecases::{
@@ -56,7 +57,7 @@ use std::sync::Arc;
 pub async fn start_training<S, R, G, K, F>(
     State(start): State<Arc<StartTraining<S, R, G, K, F>>>,
     Json(dto): Json<TrainingConfigDto>,
-) -> Result<Json<StartTrainingResponseDto>, StatusCode>
+) -> Result<Json<StartTrainingResponseDto>, Response>
 where
     S: TrainingStarter + Send + Sync + 'static,
     R: TrainingRunRegistar + Send + Sync + 'static,
@@ -65,27 +66,48 @@ where
     F: DatasetFinder + Send + Sync + 'static,
 {
     // 空の dataset_id はクライアントの誤り
-    let config =
-        StartTrainingConfig::try_from(dto).map_err(|_| StatusCode::UNPROCESSABLE_ENTITY)?;
+    let config = StartTrainingConfig::try_from(dto)
+        .map_err(|_| StatusCode::UNPROCESSABLE_ENTITY.into_response())?;
     let job_id = start
         .execute(&config)
         .await
-        .map_err(status_code_from_start_error)?;
+        .map_err(response_from_start_error)?;
     Ok(Json(job_id.into()))
 }
 
-// 新規学習と学習再開で共通の、C++での学習開始・記録の失敗の変換
+// 学習設定の違反を 422 と違反の一覧(本文)にする。学習開始・再開・整合性チェックで共通
+fn invalid_config_response(violations: Vec<ConfigViolation>) -> Response {
+    (
+        StatusCode::UNPROCESSABLE_ENTITY,
+        Json(InvalidConfigDto::from(violations)),
+    )
+        .into_response()
+}
+
+// 新規学習と学習再開で共通の、学習開始・記録の失敗の変換。設定の違反のときだけ本文を付ける
+fn response_from_start_error(error: StartTrainingError) -> Response {
+    match error {
+        StartTrainingError::InvalidConfig(violations) => invalid_config_response(violations),
+        other => status_code_from_start_error(other).into_response(),
+    }
+}
+
 fn status_code_from_start_error(error: StartTrainingError) -> StatusCode {
     match error {
         StartTrainingError::StartOrderFailed(_) => StatusCode::BAD_GATEWAY,
+        StartTrainingError::ResumePreconditionFailed(_) | StartTrainingError::AlreadyRunning(_) => {
+            StatusCode::CONFLICT
+        }
+        // 設定の誤りは Rust の検証で先に返すので、proto への変換の失敗や C++ の INVALID_ARGUMENT は
+        // Rust 側のバグ(検証漏れ)。クライアントの誤りではないので 500 にする
         StartTrainingError::ConversionToProtoFailed(_)
-        | StartTrainingError::InvalidConfig(_)
-        | StartTrainingError::ResumePreconditionFailed(_) => StatusCode::CONFLICT,
-        StartTrainingError::AlreadyRunning(_) => StatusCode::CONFLICT,
-        StartTrainingError::RecordFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        | StartTrainingError::EngineRejectedConfig(_)
+        | StartTrainingError::RecordFailed(_)
+        | StartTrainingError::DatasetReadFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
         // 本体で指定されたデータセットがない(URL のリソースがないわけではないので 404 ではなく 422)
-        StartTrainingError::DatasetNotFound(_) => StatusCode::UNPROCESSABLE_ENTITY,
-        StartTrainingError::DatasetReadFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        StartTrainingError::DatasetNotFound(_) | StartTrainingError::InvalidConfig(_) => {
+            StatusCode::UNPROCESSABLE_ENTITY
+        }
     }
 }
 
@@ -93,17 +115,24 @@ fn status_code_from_start_error(error: StartTrainingError) -> StatusCode {
 pub async fn validate_training<V>(
     State(usecase): State<Arc<ValidateTrainingConfig<V>>>,
     Json(dto): Json<TrainingConfigDto>,
-) -> StatusCode
+) -> Response
 where
     V: TrainingRecordReader + Send + Sync + 'static,
 {
     let Ok(config) = StartTrainingConfig::try_from(dto) else {
-        return StatusCode::UNPROCESSABLE_ENTITY; // 空の dataset_id
+        return StatusCode::UNPROCESSABLE_ENTITY.into_response(); // 空の dataset_id
     };
     match usecase.execute(&config).await {
-        Ok(()) => StatusCode::NO_CONTENT,
-        Err(ValidateTrainingConfigError::ModelNameAlreadyUsed(_)) => StatusCode::CONFLICT,
-        Err(ValidateTrainingConfigError::ReadFailed(_)) => StatusCode::INTERNAL_SERVER_ERROR,
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(ValidateTrainingConfigError::InvalidConfig(violations)) => {
+            invalid_config_response(violations)
+        }
+        Err(ValidateTrainingConfigError::ModelNameAlreadyUsed(_)) => {
+            StatusCode::CONFLICT.into_response()
+        }
+        Err(ValidateTrainingConfigError::ReadFailed(_)) => {
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
     }
 }
 
@@ -276,26 +305,33 @@ pub async fn resume_training<C, S, R, K>(
     State(usecase): State<Arc<ResumeTraining<C, S, R, K>>>,
     Path(model_id): Path<String>,
     Json(dto): Json<ResumeTrainingConfigDto>,
-) -> Result<Json<StartTrainingResponseDto>, StatusCode>
+) -> Result<Json<StartTrainingResponseDto>, Response>
 where
     C: ModelTrainingConfigProvider + Send + Sync + 'static,
     S: TrainingResumer + Send + Sync + 'static,
     R: TrainingRunRegistar + Send + Sync + 'static,
     K: ProgressRecordingScheduler + Send + Sync + 'static,
 {
-    let model_id = ModelId::new(model_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let model_id = ModelId::new(model_id).map_err(|_| StatusCode::BAD_REQUEST.into_response())?;
     let input = ResumeTrainingConfig::from(dto);
     let job_id = usecase
         .execute(&model_id, &input)
         .await
-        .map_err(|e| match e {
-            ResumeTrainingError::ModelNotFound(_) => StatusCode::NOT_FOUND,
-            ResumeTrainingError::NotResumable(_) => StatusCode::CONFLICT,
-            ResumeTrainingError::ReadFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            ResumeTrainingError::OptimizerTypeChanged(_) => StatusCode::UNPROCESSABLE_ENTITY,
-            ResumeTrainingError::Start(e) => status_code_from_start_error(e),
-        })?;
+        .map_err(response_from_resume_error)?;
     Ok(Json(job_id.into()))
+}
+
+fn response_from_resume_error(error: ResumeTrainingError) -> Response {
+    match error {
+        ResumeTrainingError::InvalidConfig(violations) => invalid_config_response(violations),
+        ResumeTrainingError::Start(e) => response_from_start_error(e),
+        ResumeTrainingError::ModelNotFound(_) => StatusCode::NOT_FOUND.into_response(),
+        ResumeTrainingError::NotResumable(_) => StatusCode::CONFLICT.into_response(),
+        ResumeTrainingError::ReadFailed(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        ResumeTrainingError::OptimizerTypeChanged(_) => {
+            StatusCode::UNPROCESSABLE_ENTITY.into_response()
+        }
+    }
 }
 
 // データセットのアップロードPOSTリクエストハンドラ。
@@ -451,6 +487,73 @@ mod tests {
                 "missing": ["JPEGImages/", "labelmap.txt"]
             })
         );
+    }
+
+    async fn body_json(response: Response) -> serde_json::Value {
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        serde_json::from_slice(&body).unwrap()
+    }
+
+    fn violations() -> Vec<ConfigViolation> {
+        vec![
+            ConfigViolation {
+                field: "optimizer.learning_rate".to_string(),
+                message: "0 より大きくしてください(0)".to_string(),
+            },
+            ConfigViolation {
+                field: "model_graph.nodes[3].spec.stride".to_string(),
+                message: "1 以上にしてください(0)".to_string(),
+            },
+        ]
+    }
+
+    fn expected_invalid_config_body() -> serde_json::Value {
+        serde_json::json!({
+            "error": "invalid_config",
+            "violations": [
+                { "field": "optimizer.learning_rate", "message": "0 より大きくしてください(0)" },
+                { "field": "model_graph.nodes[3].spec.stride", "message": "1 以上にしてください(0)" }
+            ]
+        })
+    }
+
+    // 設定の違反は 422 で、違反をすべて本文で返す
+    #[tokio::test]
+    async fn invalid_config_on_start_converts_to_422_with_violations() {
+        let response = response_from_start_error(StartTrainingError::InvalidConfig(violations()));
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(body_json(response).await, expected_invalid_config_body());
+    }
+
+    // 再開でも同じ形(ResumeTrainingError 自身の違反と、Start に包まれた違反の両方)
+    #[tokio::test]
+    async fn invalid_config_on_resume_converts_to_422_with_violations() {
+        let errors = [
+            ResumeTrainingError::InvalidConfig(violations()),
+            ResumeTrainingError::Start(StartTrainingError::InvalidConfig(violations())),
+        ];
+        for error in errors {
+            let response = response_from_resume_error(error);
+            assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+            assert_eq!(body_json(response).await, expected_invalid_config_body());
+        }
+    }
+
+    // C++ が設定を拒否した・proto に変換できなかったのは Rust の検証漏れなので 500
+    #[test]
+    fn engine_rejection_and_conversion_failure_convert_to_500() {
+        let errors = [
+            StartTrainingError::EngineRejectedConfig("lr".to_string()),
+            StartTrainingError::ConversionToProtoFailed("graph".to_string()),
+        ];
+        for error in errors {
+            assert_eq!(
+                response_from_start_error(error).status(),
+                StatusCode::INTERNAL_SERVER_ERROR
+            );
+        }
     }
 
     #[test]

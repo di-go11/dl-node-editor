@@ -7,6 +7,9 @@ service TrainingService {
     rpc StartTraining(StartTrainingRequest) returns (StartTrainingResponse); // 単項
     rpc StreamProgress(StreamProgressRequest) returns (stream StreamProgressResponse); // サーバーストリーミング
     rpc StopTraining(StopTrainingRequest) returns (StopTrainingResponse); //単項
+    // 学習を始めずに、モデルのグラフの構造と形を検証する(単項)。GPU は使わず、学習中でも呼べる。
+    // 見つかった問題は status ではなく応答の violations で返す(問題があっても OK)。
+    rpc ValidateModelGraph(ValidateModelGraphRequest) returns (ValidateModelGraphResponse);
 }
 
 // ---StartTrainingRequest---
@@ -192,4 +195,29 @@ enum TrainingStatus {
     TRAINING_STATUS_FAILED = 3;
     TRAINING_STATUS_STOPPED = 4;
     TRAINING_STATUS_IDLE = 5;
+}
+// ---ValidateModelGraph---
+// 学習開始前の整合性チェックで、Rust から呼ぶ(docs/issues/学習設定の検証をRustに集める.md の段階 2)。
+// 確認するのはグラフの構造(つなぎ方・閉路)と形(チャンネル数・H / W・出力チャンネル数 = クラス数)。
+// 層のパラメータの値の範囲は Rust が先に確かめる。不正な値が届いたときは INVALID_ARGUMENT を返す。
+
+message ValidateModelGraphRequest {
+    model.v1.ModelGraph model_graph = 1;
+    DataSpec data_spec = 2;   // 入力の形(input_width / input_height)、タスク、アノテーションの形式
+    string dataset_path = 3;  // クラス数を求めるため(Original なら labelmap.txt を読む。読めなければ FAILED_PRECONDITION)
+}
+
+// 添字。0 も有効な値なので、Seed と同じくメッセージで包んで「該当なし」と区別する
+message Index { uint32 value = 1; }
+
+// グラフの問題 1 つ。場所は添字で示す(該当しないものは未設定)
+message GraphViolation {
+    Index node_index = 1;   // model_graph.nodes の添字
+    Index input_index = 2;  // そのノードの inputs の添字(node_index があるときだけ)
+    Index output_index = 3; // model_graph.outputs の添字
+    string message = 4;     // 利用者に見せる説明(日本語)
+}
+
+message ValidateModelGraphResponse {
+    repeated GraphViolation violations = 1; // 空なら問題なし
 }

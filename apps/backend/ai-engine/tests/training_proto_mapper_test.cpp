@@ -8,8 +8,10 @@
 #include <functional>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -598,6 +600,92 @@ int main()
         check(res.has_segmentation() && res.segmentation().per_class_iou_size() == 3 &&
                   std::isnan(res.segmentation().per_class_iou(1)),
               "進捗: per_class_iou(NaN も含めてそのまま送る)");
+    }
+
+    // ---------- ValidateModelGraph の依頼の変換 ----------
+    {
+        training::v1::ValidateModelGraphRequest req;
+        const training::v1::StartTrainingRequest valid = makeValidRequest();
+        *req.mutable_model_graph() = valid.model_graph();
+        *req.mutable_data_spec() = valid.data_spec();
+        req.set_dataset_path("/data/train");
+
+        const ModelGraphCheckRequest check1 = toModelGraphCheckRequest(req);
+        check(check1.graph.nodes.size() == 1 && check1.graph.nodes[0].id == "conv1", "グラフ検証の依頼: model_graph");
+        check(std::get<ImageSpec>(check1.dataSpec).inputWidth == 128, "グラフ検証の依頼: data_spec");
+        check(check1.datasetPath == "/data/train", "グラフ検証の依頼: dataset_path");
+
+        // 構造の問題は例外にしない(checkModelGraph が集めて応答で返すため)
+        training::v1::ValidateModelGraphRequest unconnected = req;
+        unconnected.mutable_model_graph()->mutable_nodes(0)->clear_inputs();
+        bool threw = false;
+        try
+        {
+            toModelGraphCheckRequest(unconnected);
+        }
+        catch (const std::exception &)
+        {
+            threw = true;
+        }
+        check(!threw, "グラフ検証の依頼: 未接続のポートがあっても例外にしない");
+
+        // 層のパラメータの値と data_spec の未設定は、StartTraining と同じく拒否する
+        training::v1::ValidateModelGraphRequest badParam = req;
+        badParam.mutable_model_graph()->mutable_nodes(0)->mutable_spec()->mutable_conv2d()->set_stride(0);
+        training::v1::ValidateModelGraphRequest noDataSpec = req;
+        noDataSpec.clear_data_spec();
+        for (const auto &[bad, label] : {std::pair{badParam, std::string("層のパラメータが不正")},
+                                         std::pair{noDataSpec, std::string("data_spec がない")}})
+        {
+            bool rejected = false;
+            try
+            {
+                toModelGraphCheckRequest(bad);
+            }
+            catch (const std::invalid_argument &)
+            {
+                rejected = true;
+            }
+            check(rejected, "グラフ検証の依頼: 拒否: " + label);
+        }
+    }
+
+    // ---------- ValidateModelGraph の応答 ----------
+    {
+        std::vector<GraphValidationError> errors;
+        errors.push_back({"pool1", "x", "参照先のノードが存在しません: enc9", 2, 1});              // 入力の接続
+        errors.push_back({"unpool1", "indices", "必須の入力ポートがつながっていません", 4});         // 入力ポート単位
+        errors.push_back({"head", "y", "モデルの出力のチャンネル数(3)が、クラス数(21)と一致しません", 7}); // 出力ポート単位
+        errors.push_back({"", "y", "outputs の参照先のノードが存在しません: none", std::nullopt, std::nullopt, 0});
+        errors.push_back({"", "", "グラフに閉路があります。実行できないノード: a, b"});           // グラフ全体
+
+        training::v1::ValidateModelGraphResponse res;
+        fillValidateModelGraphResponse(errors, res);
+        check(res.violations_size() == 5, "グラフ検証の応答: 問題をすべて詰める");
+
+        const auto &connection = res.violations(0);
+        check(connection.has_node_index() && connection.node_index().value() == 2 && connection.has_input_index() &&
+                  connection.input_index().value() == 1 && !connection.has_output_index(),
+              "グラフ検証の応答: 入力の接続はノードと入力の添字");
+        check(connection.message() == "参照先のノードが存在しません: enc9",
+              "グラフ検証の応答: 入力の接続のメッセージはそのまま");
+
+        const auto &inputPort = res.violations(1);
+        check(inputPort.has_node_index() && inputPort.node_index().value() == 4 && !inputPort.has_input_index(),
+              "グラフ検証の応答: ポート単位はノードの添字だけ");
+        check(inputPort.message() == "ポート 'indices': 必須の入力ポートがつながっていません",
+              "グラフ検証の応答: ポート単位はポート名を前に付ける(入力ポート)");
+        check(res.violations(2).message() == "ポート 'y': モデルの出力のチャンネル数(3)が、クラス数(21)と一致しません",
+              "グラフ検証の応答: ポート単位はポート名を前に付ける(出力ポート)");
+
+        const auto &output = res.violations(3);
+        check(!output.has_node_index() && output.has_output_index() && output.output_index().value() == 0 &&
+                  output.message() == "outputs の参照先のノードが存在しません: none",
+              "グラフ検証の応答: outputs の問題は outputs の添字だけ");
+
+        const auto &whole = res.violations(4);
+        check(!whole.has_node_index() && !whole.has_input_index() && !whole.has_output_index(),
+              "グラフ検証の応答: グラフ全体の問題は添字なし");
     }
 
     if (failureCount == 0)

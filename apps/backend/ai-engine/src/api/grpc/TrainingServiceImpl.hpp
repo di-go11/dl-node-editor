@@ -27,6 +27,12 @@ public:
                               const training::v1::StopTrainingRequest *request,
                               training::v1::StopTrainingResponse *response) override;
 
+    // 単項。学習を始めずにグラフを検証する。ジョブには触らないので、学習中でも呼べる。
+    // 問題があっても OK で、応答の violations に入れる。
+    grpc::Status ValidateModelGraph(grpc::ServerContext *context,
+                                    const training::v1::ValidateModelGraphRequest *request,
+                                    training::v1::ValidateModelGraphResponse *response) override;
+
 private:
     ITrainingJobManager &_jobManager; // 所有しない。呼び出し側(GrpcApp)が生存を保証
 };
