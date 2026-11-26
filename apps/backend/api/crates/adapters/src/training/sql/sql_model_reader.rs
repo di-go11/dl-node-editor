@@ -123,6 +123,8 @@ impl ModelTrainingConfigProvider for SqliteTrainingRepository {
         let model_graph = model::from_json(&graph_json).map_err(invalid)?;
 
         Ok(TrainingConfig {
+            // 学習率スケジューラの列は migration を作るまでないので none(issue 段階 3b)
+            lr_scheduler: entities::training::config::LearningRateScheduler::none(),
             model_name: get(&row, "model_name")?,
             model_graph,
             epoch: get(&row, "epochs")?,
@@ -335,6 +337,7 @@ mod tests {
 
     fn gen_config() -> TrainingConfig {
         TrainingConfig {
+            lr_scheduler: entities::training::config::LearningRateScheduler::none(),
             model_name: "test_model".to_string(),
             model_graph: gen_graph(),
             epoch: 5,

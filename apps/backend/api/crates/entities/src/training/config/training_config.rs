@@ -159,6 +159,16 @@ pub struct LearningRateScheduler {
 }
 
 impl LearningRateScheduler {
+    // スケジューラなし(学習率は Optimizer の値のまま)。warmup もしない。
+    // 更新の単位は使われないが、proto の既定値(PER_BATCH)に合わせる
+    pub fn none() -> Self {
+        Self {
+            scheduler: LearningRateSchedulerConfig::None,
+            update_interval: LearningRateUpdateInterval::PerBatch,
+            warmup_epochs: 0,
+        }
+    }
+
     // epoch と learning_rate は TrainingConfig 側の値(warmup と min_lr の上限に使う)
     fn validate(&self, epoch: u32, learning_rate: f64, v: &mut Violations) {
         match &self.scheduler {

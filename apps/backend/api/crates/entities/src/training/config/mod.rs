@@ -6,4 +6,7 @@ pub use data_spec::{
     SegmentationSpec,
 };
 
-pub use training_config::{Loss, Optimizer, TrainingConfig};
+pub use training_config::{
+    LearningRateScheduler, LearningRateSchedulerConfig, LearningRateUpdateInterval, Loss, Optimizer,
+    TrainingConfig,
+};

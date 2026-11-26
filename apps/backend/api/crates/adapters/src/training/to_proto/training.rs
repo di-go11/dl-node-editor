@@ -52,8 +52,9 @@ impl From<&Optimizer> for training_pb::OptimizerConfig {
                 beta2,
                 eps,
             } => training_pb::OptimizerConfig {
+                // 学習率は種類によらず OptimizerConfig の直下(学習率スケジューラの基準にも使う)
+                learning_rate: *learning_rate, // コピーするために*で参照外しをする。
                 config: Some(OptimizerConfig::Adam(training_pb::AdamConfig {
-                    learning_rate: *learning_rate, // コピーするために*で参照外しをする。
                     weight_decay: *weight_decay,
                     beta1: *beta1,
                     beta2: *beta2,
@@ -66,8 +67,8 @@ impl From<&Optimizer> for training_pb::OptimizerConfig {
                 beta1,
                 beta2,
             } => training_pb::OptimizerConfig {
+                learning_rate: *learning_rate,
                 config: Some(OptimizerConfig::AdamW(training_pb::AdamWConfig {
-                    learning_rate: *learning_rate,
                     weight_decay: *weight_decay,
                     beta1: *beta1,
                     beta2: *beta2,
@@ -79,8 +80,8 @@ impl From<&Optimizer> for training_pb::OptimizerConfig {
                 momentum,
                 nesterov,
             } => training_pb::OptimizerConfig {
+                learning_rate: *learning_rate,
                 config: Some(OptimizerConfig::Sgd(training_pb::SgdConfig {
-                    learning_rate: *learning_rate,
                     weight_decay: *weight_decay,
                     momentum: *momentum,
                     nesterov: *nesterov,

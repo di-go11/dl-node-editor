@@ -292,6 +292,7 @@ mod tests {
 
     fn gen_saved_config() -> TrainingConfig {
         TrainingConfig {
+            lr_scheduler: entities::training::config::LearningRateScheduler::none(),
             model_name: "test_model".to_string(),
             model_graph: ModelGraph {
                 nodes: vec![],
