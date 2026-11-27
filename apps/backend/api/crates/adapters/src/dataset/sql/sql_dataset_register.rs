@@ -8,7 +8,7 @@ impl DatasetRegister for SqliteDatasetRepository {
         dataset: &RegisterDatasetInput,
     ) -> Result<(), usecases::dataset::error::DatasetError> {
         sqlx::query("INSERT INTO datasets (dataset_id, dataset_name, dataset_type, dataset_path, created_at) VALUES (?, ?, ?, ?, ?)")
-            .bind(&dataset.dataset_id.as_str())
+            .bind(dataset.dataset_id.as_str())
             .bind(&dataset.dataset_name)
             .bind(&dataset.dataset_type)
             .bind(&dataset.dataset_path)

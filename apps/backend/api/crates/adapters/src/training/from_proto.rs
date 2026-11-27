@@ -19,12 +19,29 @@ impl From<pb::stream_progress_response::Metrics> for Metrics {
 
 impl From<pb::SegmentationMetrics> for SegmentationMetrics {
     fn from(value: pb::SegmentationMetrics) -> Self {
+        let confusion_matrix_l: Option<Vec<Vec<u64>>>;
+        let class_size = value.per_class_iou.len();
+        let c_matrix_size = value.confusion_matrix.len();
+        if class_size.pow(2) == c_matrix_size {
+            let mut i = 0;
+            let mut confusion_maxrix_value: Vec<Vec<u64>> = Vec::new();
+            while class_size > i {
+                confusion_maxrix_value
+                    .push(value.confusion_matrix[i * class_size..(i + 1) * class_size].to_vec());
+                i += 1;
+            }
+            confusion_matrix_l = Some(confusion_maxrix_value)
+        } else {
+            confusion_matrix_l = None
+        }
+
         Self {
             pixel_accuracy: value.pixel_acc,
             miou: value.miou,
             fw_iou: value.fw_iou,
             mean_class_accuracy: value.mean_class_accuracy,
             per_class_iou: value.per_class_iou,
+            confusion_matrix: confusion_matrix_l, // 新規追加機能だから念のためNoneを許可できるようにしておく
         }
     }
 }
@@ -249,6 +266,7 @@ mod metrics_tests {
                 fw_iou: 0.8,
                 mean_class_accuracy: 0.75,
                 per_class_iou: vec![0.6, 0.8],
+                confusion_matrix: vec![1, 0, 0, 1],
             })),
             Some(Metrics::Segmentation(SegmentationMetrics {
                 pixel_accuracy: 0.9,
@@ -256,6 +274,7 @@ mod metrics_tests {
                 fw_iou: 0.8,
                 mean_class_accuracy: 0.75,
                 per_class_iou: vec![0.6, 0.8],
+                confusion_matrix: Some(vec![vec![1, 0], vec![0, 1]]),
             })),
         );
     }

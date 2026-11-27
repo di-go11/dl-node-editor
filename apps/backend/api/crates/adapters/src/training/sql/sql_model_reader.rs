@@ -192,6 +192,7 @@ impl ModelHistoryProvider for SqliteTrainingRepository {
         let epoch_rows = sqlx::query(
             "SELECT e.job_id, e.epoch, e.train_loss, e.val_loss, e.learning_rate, e.epoch_elapsed_ms, \
                     s.job_id AS seg_job_id, s.pixel_accuracy, s.miou, s.fw_iou, s.mean_class_accuracy, \
+                    s.confusion_matrix, \
                     c.job_id AS cls_job_id, c.accuracy, c.macro_f1 \
              FROM training_epochs e \
              JOIN training_runs r ON r.job_id = e.job_id \
@@ -222,6 +223,7 @@ impl ModelHistoryProvider for SqliteTrainingRepository {
                         fw_iou: value("fw_iou")?,
                         mean_class_accuracy: value("mean_class_accuracy")?,
                         per_class_iou: per_class_iou.get(&key).cloned().unwrap_or_default(),
+                        confusion_matrix: read_confusion_matrix(row)?,
                     }))
                 } else if get::<Option<String>>(row, "cls_job_id")?.is_some() {
                     Some(Metrics::Classification(ClassificationMetrics {
@@ -440,6 +442,15 @@ fn read_ignore_color(row: &SqliteRow) -> Result<Option<RgbColor>, FetchModelErro
             "ignore_color_r/g/b must be all NULL or all set".to_string(),
         )),
     }
+}
+
+// 混同行列の列(JSON 文字列)を読む。NULL(0006 より前の記録や、ai-engine が送ってこなかった場合)は None、
+// 壊れた JSON は InvalidData。保存側は sql_recorder の insert_epoch
+fn read_confusion_matrix(row: &SqliteRow) -> Result<Option<Vec<Vec<u64>>>, FetchModelError> {
+    get::<Option<String>>(row, "confusion_matrix")?
+        .map(|json| serde_json::from_str(&json))
+        .transpose()
+        .map_err(invalid)
 }
 
 // 列を読む。型が合わない・列がない場合は InvalidData
@@ -922,6 +933,7 @@ mod tests {
                 fw_iou: 0.8,
                 mean_class_accuracy: 0.6,
                 per_class_iou: vec![0.9, 0.1],
+                confusion_matrix: Some(vec![vec![7, 1], vec![2, 5]]),
             })),
             epoch_elapsed_time: std::time::Duration::from_millis(1200),
             total_elapsed_time: std::time::Duration::from_millis(1200 * u64::from(epoch)),
@@ -991,8 +1003,65 @@ mod tests {
                 fw_iou: 0.8,
                 mean_class_accuracy: 0.6,
                 per_class_iou: vec![0.9, 0.1],
+                confusion_matrix: Some(vec![vec![7, 1], vec![2, 5]]),
             }))
         );
+    }
+
+    // 混同行列がないエポック(ai-engine が送ってこなかった・0006 より前の記録)は NULL で保存され、None で読める
+    #[tokio::test]
+    async fn history_without_confusion_matrix_reads_none() {
+        use usecases::training::TrainingProgressRecorder;
+
+        let repo = gen_repository().await;
+        let config = gen_config();
+        repo.insert_model(&model_id(), &config.model_name, &config.model_graph)
+            .await
+            .unwrap();
+        let job = JobId::new("job-1").unwrap();
+        repo.insert_training_run(&job, &config, &model_id())
+            .await
+            .unwrap();
+        let mut process = epoch_process(1, None);
+        if let Some(Metrics::Segmentation(m)) = &mut process.metrics {
+            m.confusion_matrix = None;
+        }
+        repo.insert_epoch(&job, 1, &process).await.unwrap();
+
+        let history = repo.fetch_history(&model_id()).await.unwrap();
+
+        match &history.epochs[0].metrics {
+            Some(Metrics::Segmentation(m)) => assert_eq!(m.confusion_matrix, None),
+            other => panic!("expected segmentation metrics, got {other:?}"),
+        }
+    }
+
+    // 壊れた JSON が入っていたら InvalidData
+    #[tokio::test]
+    async fn history_with_broken_confusion_matrix_is_invalid_data() {
+        use usecases::training::TrainingProgressRecorder;
+
+        let repo = gen_repository().await;
+        let config = gen_config();
+        repo.insert_model(&model_id(), &config.model_name, &config.model_graph)
+            .await
+            .unwrap();
+        let job = JobId::new("job-1").unwrap();
+        repo.insert_training_run(&job, &config, &model_id())
+            .await
+            .unwrap();
+        repo.insert_epoch(&job, 1, &epoch_process(1, None))
+            .await
+            .unwrap();
+        sqlx::query("UPDATE segmentation_epoch_metrics SET confusion_matrix = 'not json'")
+            .execute(&repo.pool)
+            .await
+            .unwrap();
+
+        assert!(matches!(
+            repo.fetch_history(&model_id()).await,
+            Err(FetchModelError::InvalidData(_))
+        ));
     }
 
     #[tokio::test]

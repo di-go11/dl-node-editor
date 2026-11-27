@@ -57,6 +57,7 @@ pub struct SegmentationMetricsDto {
     pub fw_iou: f64,
     pub mean_class_accuracy: f64,
     pub per_class_iou: Vec<f64>,
+    pub confusion_matrix: Option<Vec<Vec<u64>>>,
 }
 
 impl From<SegmentationMetrics> for SegmentationMetricsDto {
@@ -67,6 +68,7 @@ impl From<SegmentationMetrics> for SegmentationMetricsDto {
             fw_iou: value.fw_iou,
             mean_class_accuracy: value.mean_class_accuracy,
             per_class_iou: value.per_class_iou,
+            confusion_matrix: value.confusion_matrix,
         }
     }
 }
@@ -166,6 +168,7 @@ mod tests {
             fw_iou: 0.75,
             mean_class_accuracy: 0.5,
             per_class_iou: vec![0.25],
+            confusion_matrix: Some(vec![vec![3, 1], vec![0, 4]]),
         });
 
         let actual = serde_json::to_value(MetricsDto::from(metrics)).unwrap();
@@ -178,7 +181,9 @@ mod tests {
                 "miou": 0.25,
                 "fw_iou": 0.75,
                 "mean_class_accuracy": 0.5,
-                "per_class_iou": [0.25]
+                "per_class_iou": [0.25],
+                // 行 = 正解クラス, 列 = 予測クラス の 2 次元配列
+                "confusion_matrix": [[3, 1], [0, 4]]
             })
         );
     }

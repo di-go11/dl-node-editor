@@ -129,7 +129,7 @@ fn extract_zip(zip_path: &Path, dest: &Path, max_extracted_bytes: &u64) -> Resul
 
         // 中身をコピー。残り容量 + 1 バイトまでしか読まないようにする
         let mut out = File::create(&out_path)?;
-        let max_extracted_bytes = max_extracted_bytes.clone();
+        let max_extracted_bytes = *max_extracted_bytes;
         let remaining = max_extracted_bytes - written;
         written += io::copy(&mut (&mut entry).take(remaining + 1), &mut out)?;
         if written > max_extracted_bytes {

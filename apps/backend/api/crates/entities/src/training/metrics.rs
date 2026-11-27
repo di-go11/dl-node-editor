@@ -11,6 +11,7 @@ pub struct SegmentationMetrics {
     pub fw_iou: f64,
     pub mean_class_accuracy: f64,
     pub per_class_iou: Vec<f64>,
+    pub confusion_matrix: Option<Vec<Vec<u64>>>,
 }
 #[derive(Debug, PartialEq, Clone)]
 pub struct ClassificationMetrics {

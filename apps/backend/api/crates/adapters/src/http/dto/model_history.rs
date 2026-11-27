@@ -106,6 +106,7 @@ mod tests {
                     fw_iou: 0.75,
                     mean_class_accuracy: 0.5,
                     per_class_iou: vec![0.25],
+                    confusion_matrix: None,
                 })),
             }],
         };
@@ -136,7 +137,8 @@ mod tests {
                         "miou": 0.5,
                         "fw_iou": 0.75,
                         "mean_class_accuracy": 0.5,
-                        "per_class_iou": [0.25]
+                        "per_class_iou": [0.25],
+                        "confusion_matrix": null
                     }
                 }]
             })

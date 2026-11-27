@@ -267,8 +267,15 @@ impl TrainingProgressRecorder for SqliteTrainingRepository {
 
         match &process.metrics {
             Some(Metrics::Segmentation(metrics)) => {
+                let confusion_matrix_json: Option<String> = metrics
+                    .confusion_matrix
+                    .as_ref()
+                    .map(serde_json::to_string)
+                    .transpose()
+                    .map_err(|e| RepositoryError::InvalidData(e.to_string()))?;
+
                 sqlx::query(
-                    "INSERT INTO segmentation_epoch_metrics (job_id,epoch,pixel_accuracy,miou,fw_iou,mean_class_accuracy)VALUES (?,?,?,?,?,?)",
+                    "INSERT INTO segmentation_epoch_metrics (job_id,epoch,pixel_accuracy,miou,fw_iou,mean_class_accuracy, confusion_matrix)VALUES (?,?,?,?,?,?,?)",
                 )
                 .bind(job_id.as_str())
                 .bind(epoch)
@@ -276,6 +283,7 @@ impl TrainingProgressRecorder for SqliteTrainingRepository {
                 .bind(metrics.miou)
                 .bind(metrics.fw_iou)
                 .bind(metrics.mean_class_accuracy)
+                .bind(confusion_matrix_json)
                 .execute(&mut *connect)
                 .await
                 .map_err(|e| RepositoryError::QueryFailed(e.to_string()))?;

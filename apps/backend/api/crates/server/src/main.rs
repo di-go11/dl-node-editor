@@ -142,7 +142,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // http通信の際の設定
-    let http_config = HttpConfig::new(max_dataset_upload_bytes).map_err(|e| e)?;
+    let http_config = HttpConfig::new(max_dataset_upload_bytes)?;
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await?;
     axum::serve(listener, router(state, http_config)).await?;
