@@ -130,6 +130,7 @@ describe('進捗の表示', () => {
           fwIou: 0.81,
           meanClassAccuracy: 0.75,
           perClassIou: [0.92, 0.42],
+          confusionMatrix: null,
         },
       }),
     )
@@ -158,6 +159,7 @@ describe('進捗の表示', () => {
           fwIou: 0.81,
           meanClassAccuracy: 0.75,
           perClassIou: [0.92, null, 0.5],
+          confusionMatrix: null,
         },
       }),
     )
@@ -180,6 +182,7 @@ describe('進捗の表示', () => {
           fwIou: 0.81,
           meanClassAccuracy: 0.75,
           perClassIou: [0.92, null],
+          confusionMatrix: null,
         },
       }),
     )
@@ -196,6 +199,56 @@ describe('進捗の表示', () => {
     )
     expect(screen.getByText('macro_f1')).toBeInTheDocument()
     expect(screen.getByText('0.7200')).toBeInTheDocument()
+    // 分類タスクの混同行列は対象外
+    expect(screen.queryByRole('heading', { name: '混同行列' })).not.toBeInTheDocument()
+  })
+})
+
+describe('混同行列', () => {
+  const segmentation = (confusionMatrix: number[][] | null) =>
+    ({
+      kind: 'segmentation',
+      pixelAcc: 0.9,
+      miou: 0.5,
+      fwIou: 0.8,
+      meanClassAccuracy: 0.6,
+      perClassIou: [0.9, 0.4],
+      confusionMatrix,
+    }) as const
+
+  it('最新のエポックの混同行列を出し、エポックごとに更新する', () => {
+    const { send } = renderProgress()
+    send(
+      progress({
+        epoch: 1,
+        metrics: segmentation([
+          [9, 1],
+          [5, 5],
+        ]),
+      }),
+    )
+    expect(screen.getByRole('table', { name: '検証データ・エポック 1' })).toHaveTextContent(
+      '50.0 %',
+    )
+
+    send(
+      progress({
+        epoch: 2,
+        metrics: segmentation([
+          [9, 1],
+          [2, 8],
+        ]),
+      }),
+    )
+    const table = screen.getByRole('table', { name: '検証データ・エポック 2' })
+    expect(table).toHaveTextContent('80.0 %')
+    expect(screen.queryByRole('table', { name: '検証データ・エポック 1' })).not.toBeInTheDocument()
+  })
+
+  it('学習エンジンが混同行列を送らなければ、その旨を出す', () => {
+    const { send } = renderProgress()
+    send(progress({ metrics: segmentation(null) }))
+    expect(screen.getByText('学習エンジンから混同行列が届いていません。')).toBeInTheDocument()
   })
 })
 

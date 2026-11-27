@@ -263,6 +263,11 @@ function mockProcess(epoch: number, status: Schemas['TrainingStatus']): Schemas[
             fw_iou: 1 - loss / 2,
             mean_class_accuracy: 1 - loss,
             per_class_iou: [1 - loss / 2, 1 - loss],
+            // 学習が進むほど対角(正しく予測した画素)が増えて見える
+            confusion_matrix: [
+              [Math.round(9000 * (1 - loss / 2)), Math.round(9000 * (loss / 2))],
+              [Math.round(1000 * loss), Math.round(1000 * (1 - loss))],
+            ],
           },
     epoch_elapsed_ms: epoch === 0 ? 0 : 1000,
     total_elapsed_ms: epoch * 1000,

@@ -1,0 +1,81 @@
+.modes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  margin: 0 0 var(--space-2);
+  padding: 0;
+  border: none;
+}
+
+.modesTitle {
+  float: left;
+  margin-right: var(--space-2);
+  padding: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-small);
+}
+
+.mode {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  white-space: nowrap;
+}
+
+.scroll {
+  overflow-x: auto;
+}
+
+.table {
+  border-collapse: separate;
+  border-spacing: 2px;
+  font-variant-numeric: tabular-nums;
+}
+
+.caption {
+  margin-bottom: var(--space-1);
+  text-align: left;
+  font-weight: 600;
+}
+
+.table th,
+.table td {
+  padding: var(--space-1) var(--space-2);
+  white-space: nowrap;
+}
+
+.table th {
+  color: var(--color-text-muted);
+  font-weight: normal;
+  font-size: var(--font-size-small);
+}
+
+.table td {
+  min-width: 5.5em;
+  border-radius: 2px;
+  text-align: right;
+}
+
+.corner {
+  text-align: left;
+}
+
+/* 対角(正しく予測した画素)。色だけでなく枠でも示す */
+.diagonal {
+  outline: 2px solid var(--color-text);
+  outline-offset: -2px;
+  font-weight: 600;
+}
+
+/* 「画素の割合」は行列の外の値なので、区切り線で離す */
+.share {
+  border-left: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+}
+
+.note {
+  margin: var(--space-1) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-small);
+}

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { ReactElement } from 'react'
 import {
   CartesianGrid,
+  Legend,
   Line,
   LineChart,
   ResponsiveContainer,
@@ -23,7 +24,8 @@ import styles from './MetricsChart.module.css'
  *   - 横軸はエポック(LossChart・LearningRateChart とそろえる)
  *   - 縦軸は 0〜1 に固定する。学習ごとに範囲が変わると、別の学習の SVG を並べて比べられない
  *   - mIoU は太い線(文字の色)、クラスごとは細い線(系列の配色)。9 番目以降のクラスは破線で区別する
- *   - 色だけに頼らないよう、線の終わりに名前を出す(SVG で保存したときにも残る)
+ *   - 色だけに頼らないよう、下に凡例(LossChart と同じ)を出し、線の終わりにも名前を出す。
+ *     凡例は表示している線だけ。印は線の形(破線)も写す。SVG・PNG で保存したときも残る(export-files.ts)
  *   - 線ごとに表示を切り替えられる。クラスが多い(VOC は 21 クラス)と線が重なって読めないので、
  *     DEFAULT_VISIBLE_CLASSES を超えるときは、最初は mIoU だけを出す
  *   - 値が null(メトリクスがない・NaN)の点は線を切る
@@ -43,6 +45,13 @@ const seriesDash = (classIndex: number) =>
 
 /** 点がこれ以下なら印を付ける(1〜2 エポックだけでは線にならず、何も見えないため) */
 const MAX_POINTS_WITH_DOTS = 20
+
+/**
+ * 凡例 1 行に収まる項目数の目安と、1 行の高さ。凡例はグラフの高さの中に描かれるので、
+ * 線を多く出して凡例が何行にもなったら、その分グラフを高くして描く場所が狭くならないようにする
+ */
+const LEGEND_ITEMS_PER_ROW = 6
+const LEGEND_ROW_HEIGHT = 20
 
 const MAIN_KEY = 'main'
 const classKey = (classIndex: number) => `class${classIndex}`
@@ -125,6 +134,9 @@ export function MetricsChart({
       ...Object.fromEntries(keys.map((key) => [key, visible])),
     }))
   const classKeys = classIndexes.map(classKey)
+  const visibleSeries = series.filter((item) => isVisible(item.key))
+  const legendRows = Math.max(1, Math.ceil(visibleSeries.length / LEGEND_ITEMS_PER_ROW))
+  const chartHeight = height + (legendRows - 1) * LEGEND_ROW_HEIGHT
 
   const data = points.map((point) => ({
     epoch: point.epoch,
@@ -172,7 +184,7 @@ export function MetricsChart({
           </span>
         )}
       </fieldset>
-      <ResponsiveContainer width="100%" height={height}>
+      <ResponsiveContainer width="100%" height={chartHeight}>
         <LineChart data={data} margin={{ top: 8, right: 72, bottom: 0, left: 0 }}>
           <CartesianGrid stroke="var(--color-border)" />
           <XAxis dataKey="epoch" allowDecimals={false} stroke="var(--color-text-muted)" />
@@ -182,21 +194,21 @@ export function MetricsChart({
             stroke="var(--color-text-muted)"
           />
           <Tooltip formatter={formatValue} />
-          {series
-            .filter((item) => isVisible(item.key))
-            .map((item) => (
-              <Line
-                key={item.key}
-                dataKey={item.key}
-                name={item.name}
-                stroke={item.color}
-                strokeWidth={item.width}
-                strokeDasharray={item.dash}
-                dot={data.length <= MAX_POINTS_WITH_DOTS}
-                label={endLabel(item.shortName, lastIndexOf(item.key))}
-                isAnimationActive={false}
-              />
-            ))}
+          <Legend />
+          {visibleSeries.map((item) => (
+            <Line
+              key={item.key}
+              dataKey={item.key}
+              name={item.name}
+              stroke={item.color}
+              strokeWidth={item.width}
+              strokeDasharray={item.dash}
+              legendType="plainline"
+              dot={data.length <= MAX_POINTS_WITH_DOTS}
+              label={endLabel(item.shortName, lastIndexOf(item.key))}
+              isAnimationActive={false}
+            />
+          ))}
         </LineChart>
       </ResponsiveContainer>
       {labels.main === 'mIoU' && (

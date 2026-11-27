@@ -6,6 +6,8 @@
  * 表記の都合を変換層の外に漏らさないためである。
  */
 
+import type { ConfusionMatrix } from './confusion-matrix'
+
 export const TRAINING_STATUSES = ['idle', 'running', 'completed', 'failed', 'stopped'] as const
 
 export type TrainingStatus = (typeof TRAINING_STATUSES)[number]
@@ -39,6 +41,8 @@ export type SegmentationMetrics = {
   readonly meanClassAccuracy: number | null
   /** クラスの番号順 */
   readonly perClassIou: readonly (number | null)[]
+  /** 検証データの混同行列。学習エンジンが送らなかった・記録する前の学習では null */
+  readonly confusionMatrix: ConfusionMatrix | null
 }
 
 export type ClassificationMetrics = {

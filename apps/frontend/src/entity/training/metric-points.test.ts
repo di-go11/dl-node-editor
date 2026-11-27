@@ -18,6 +18,7 @@ const segmentation = (patch: Partial<Extract<ProgressMetrics, { kind: 'segmentat
     fwIou: 0.8,
     meanClassAccuracy: 0.7,
     perClassIou: [0.95, 0.8, 0.4],
+    confusionMatrix: null,
     ...patch,
   }) as const
 

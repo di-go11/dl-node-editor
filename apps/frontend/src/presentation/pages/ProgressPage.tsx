@@ -4,6 +4,7 @@ import { finishRun } from '../../application/run-state/run-state'
 import { hasMetrics, metricsChartTitle } from '../../entity/training/metric-points'
 import type { ProgressMetrics } from '../../entity/training/progress'
 import { hasLearningRate, TRAINING_STATUS_LABELS } from '../../entity/training/progress'
+import { ConfusionMatrixTable } from '../components/metrics/ConfusionMatrixTable'
 import { LearningRateChart } from '../components/progress/LearningRateChart'
 import { LossChart } from '../components/progress/LossChart'
 import { MetricsChart } from '../components/progress/MetricsChart'
@@ -34,7 +35,14 @@ function formatDuration(ms: number): string {
   return minutes === 0 ? `${seconds} 秒` : `${minutes} 分 ${seconds} 秒`
 }
 
-function MetricsView({ metrics }: { readonly metrics: ProgressMetrics }) {
+function MetricsView({
+  metrics,
+  epoch,
+}: {
+  readonly metrics: ProgressMetrics
+  /** このメトリクスを計算したエポック(混同行列の表の名前に出す) */
+  readonly epoch: number
+}) {
   const [rows, perClassLabel, perClass] =
     metrics.kind === 'segmentation'
       ? ([
@@ -76,6 +84,20 @@ function MetricsView({ metrics }: { readonly metrics: ProgressMetrics }) {
           </div>
         ))}
       </dl>
+      {/* 混同行列はセグメンテーションだけ(分類タスクは評価の作りが違う) */}
+      {metrics.kind === 'segmentation' && (
+        <>
+          <h3>混同行列</h3>
+          {metrics.confusionMatrix === null ? (
+            <p className={styles.muted}>学習エンジンから混同行列が届いていません。</p>
+          ) : (
+            <ConfusionMatrixTable
+              matrix={metrics.confusionMatrix}
+              caption={`検証データ・エポック ${epoch}`}
+            />
+          )}
+        </>
+      )}
     </section>
   )
 }
@@ -199,7 +221,7 @@ function TrainingProgressView({ jobId }: { readonly jobId: string }) {
         </section>
       )}
 
-      {latest?.metrics != null && <MetricsView metrics={latest.metrics} />}
+      {latest?.metrics != null && <MetricsView metrics={latest.metrics} epoch={latest.epoch} />}
     </main>
   )
 }

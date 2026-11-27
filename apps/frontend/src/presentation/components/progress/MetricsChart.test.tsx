@@ -71,6 +71,20 @@ describe('MetricsChart', () => {
     expect(lines(container)).toHaveLength(1)
   })
 
+  it('下の凡例に、表示している線だけを出す(loss のグラフと同じ)', async () => {
+    const { container } = render(
+      <MetricsChart points={[segPoint(1, [0.9, 0.4]), segPoint(2, [0.95, 0.5])]} />,
+    )
+    const legendNames = () =>
+      Array.from(container.querySelectorAll('.recharts-legend-item-text')).map(
+        (text) => text.textContent,
+      )
+    expect(legendNames()).toEqual(['mIoU', 'クラス 0 の IoU', 'クラス 1 の IoU'])
+
+    await userEvent.click(checkbox('クラス 0 の IoU'))
+    expect(legendNames()).toEqual(['mIoU', 'クラス 1 の IoU'])
+  })
+
   it('線の終わりに名前を出す(色だけに頼らない)', () => {
     const { container } = render(
       <MetricsChart points={[segPoint(1, [0.9, 0.4]), segPoint(2, [0.95, null])]} />,

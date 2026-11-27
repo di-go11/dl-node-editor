@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 import type { ProgressListener } from '../../application/ports/training-api'
+import { confusionMatrixOf } from '../../entity/training/confusion-matrix'
 import type { ProgressMetrics, TrainingProgress } from '../../entity/training/progress'
 import { isTerminalStatus } from '../../entity/training/progress'
 
@@ -50,6 +51,9 @@ export const metricsJsonSchema = z.discriminatedUnion('type', [
     fw_iou: metricValueSchema,
     mean_class_accuracy: metricValueSchema,
     per_class_iou: z.array(metricValueSchema),
+    // 混同行列(画素数。行 = 正解、列 = 予測)。記録がなければ null、混同行列を送る前の古いサーバーではキーがない。
+    // 形(正方か)はここでは確かめず、confusionMatrixOf で確かめる(形が悪くても、ほかのメトリクスは読めるように)
+    confusion_matrix: z.array(z.array(z.number())).nullable().optional(),
   }),
   z.object({
     type: z.literal('classification'),
@@ -85,6 +89,8 @@ export function metricsFromJson(json: z.infer<typeof metricsJsonSchema>): Progre
         fwIou: json.fw_iou,
         meanClassAccuracy: json.mean_class_accuracy,
         perClassIou: json.per_class_iou,
+        confusionMatrix:
+          json.confusion_matrix == null ? null : confusionMatrixOf(json.confusion_matrix),
       }
     case 'classification':
       return {

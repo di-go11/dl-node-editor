@@ -100,6 +100,7 @@ describe('進捗の受信', () => {
         fwIou: 0.95,
         meanClassAccuracy: 0.36,
         perClassIou: [0.97, 0.001, 0.08],
+        confusionMatrix: null,
       },
       epochElapsedMs: 6806,
       totalElapsedMs: 20378,
@@ -148,6 +149,36 @@ describe('進捗の受信', () => {
       kind: 'segmentation',
       miou: null,
       perClassIou: [0.9, null, 0.1],
+      // 混同行列のキーがない(混同行列を送る前の古いサーバー)ときは null
+      confusionMatrix: null,
+    })
+  })
+
+  it.each([
+    [
+      'C 行 C 列の行列',
+      [
+        [3, 1],
+        [0, 4],
+      ],
+      [
+        [3, 1],
+        [0, 4],
+      ],
+    ],
+    ['null(記録なし)', null, null],
+    ['正方でない行列(読めないので記録なしと同じ)', [[3, 1]], null],
+  ])('混同行列: %s', (_, confusionMatrix, expected) => {
+    const { source, listener } = subscribe()
+    const json = {
+      ...RUNNING_JSON,
+      metrics: { ...RUNNING_JSON.metrics, confusion_matrix: confusionMatrix },
+    }
+    source.emit('progress', JSON.stringify(json))
+    // 行列の形が悪くても、ほかのメトリクスは読める
+    expect(listener.onProgress.mock.calls[0]?.[0].metrics).toMatchObject({
+      kind: 'segmentation',
+      confusionMatrix: expected,
     })
   })
 

@@ -874,6 +874,8 @@ export interface components {
             /** Format: double */
             mean_class_accuracy: number;
             per_class_iou: number[];
+            /** @description 検証データの混同行列(画素数)。行 = 正解のクラス、列 = 予測のクラスで、C 行 C 列 (C = per_class_iou の長さ)。ignore_index の画素は含めない。 ai-engine が送らなかった・混同行列を記録する前(0006 より前)の記録では null。 混同行列を送る前の古いサーバーではキーがない。 */
+            confusion_matrix?: number[][] | null;
         };
         ClassificationMetrics: {
             /** @enum {string} */

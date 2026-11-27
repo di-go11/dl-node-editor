@@ -16,7 +16,7 @@ import type { LossPoint } from '../../../entity/training/progress'
  * train_loss / val_loss の折れ線グラフ(指示書 4.6)。
  *
  * loss が null の点(NaN や inf)は線を切る。つなぐと、値があったように見えてしまう。
- * 受信のたびに描き直すので、線のアニメーションは切っている。
+ * 受信のたびに描き直すので、線のアニメーションは切っている。点の印(丸)は付けない(エポックが多いと線が見えなくなる)。
  *
  * 縦軸は対数目盛に切り替えられる(既定は普通の目盛り)。val が一時的に大きく跳ねると、普通の目盛りでは
  * ほかのエポックが底に張り付いて見えなくなるため。対数目盛では 0 以下を描けないので、その点は線を切る
@@ -62,12 +62,14 @@ export function LossChart({ points }: { readonly points: readonly LossPoint[] })
             dataKey="trainLoss"
             name="train_loss"
             stroke="var(--color-accent)"
+            dot={false}
             isAnimationActive={false}
           />
           <Line
             dataKey="valLoss"
             name="val_loss"
             stroke="var(--color-warning)"
+            dot={false}
             isAnimationActive={false}
           />
         </LineChart>

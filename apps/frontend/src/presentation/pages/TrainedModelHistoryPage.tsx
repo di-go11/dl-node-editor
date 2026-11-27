@@ -1,8 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
+import type { RefObject } from 'react'
 import { Link, useParams } from 'react-router'
 
-import type { TrainingHistory } from '../../entity/trained-model/history'
+import type { ConfusionMatrixEpoch, TrainingHistory } from '../../entity/trained-model/history'
 import {
+  confusionMatrixEpochs,
+  defaultConfusionMatrixEpoch,
   historyLearningRatePoints,
   historyLossPoints,
   historyMetricPoints,
@@ -12,7 +15,14 @@ import {
 import { hasMetrics, metricsChartTitle, perClassValuesOf } from '../../entity/training/metric-points'
 import { hasLearningRate, TRAINING_STATUS_LABELS } from '../../entity/training/progress'
 import { useDependencies } from '../app/dependencies'
-import { chartSvgOf, downloadText, safeFileName } from '../components/history/export-files'
+import {
+  chartSvgOf,
+  downloadBlob,
+  downloadText,
+  safeFileName,
+  svgToPngBlob,
+} from '../components/history/export-files'
+import { ConfusionMatrixTable } from '../components/metrics/ConfusionMatrixTable'
 import { LearningRateChart } from '../components/progress/LearningRateChart'
 import { LossChart } from '../components/progress/LossChart'
 import { MetricsChart } from '../components/progress/MetricsChart'
@@ -23,9 +33,10 @@ import styles from './TrainedModelPage.module.css'
  * 学習の記録の画面(/models/:modelId/history)。モデル一覧から開く。
  *
  *   [← 一覧]  学習の記録: <モデル名>
- *   loss の推移        [SVG で保存]
- *   mIoU の推移        [SVG で保存](分類は accuracy)
- *   学習率の推移       [SVG で保存]
+ *   loss の推移        [SVG で保存] [PNG で保存]
+ *   mIoU の推移        [SVG で保存] [PNG で保存](分類は accuracy)
+ *   学習率の推移       [SVG で保存] [PNG で保存]
+ *   混同行列           [エポック ▼](既定は最後のエポック)
  *   メトリクスの表     [CSV で保存]
  *
  * データは DB に記録した全 run のエポックごとの結果(GET /models/{model_id}/history)。
@@ -33,6 +44,7 @@ import styles from './TrainedModelPage.module.css'
  * 学習が終わった後や、サーバーを再起動した後でも見られる。
  *
  * グラフは学習中の画面と同じ部品で描き、画面に描いた SVG をそのままファイルにする(画面とファイルの見た目が同じ)。
+ * PNG は、その SVG を canvas に描いて作る(スライドなど、SVG を貼れないところに使う)。
  * 同じエポック番号が 2 つの run にあるとき(再開でやり直したエポック)、グラフは後の run の値を使い、
  * 表と CSV は両方の行を残す。
  */
@@ -97,6 +109,44 @@ function formatLearningRate(value: number | null): string {
   return value === null || !Number.isFinite(value) ? '—' : value.toExponential(3)
 }
 
+/**
+ * 選んだエポックの混同行列。開いたときは defaultConfusionMatrixEpoch のエポックを選ぶ。
+ * 全エポックを並べることはしない(200 個並べても見比べられない)
+ */
+function ConfusionMatrixSection({ epochs }: { readonly epochs: readonly ConfusionMatrixEpoch[] }) {
+  const [selected, setSelected] = useState(() => defaultConfusionMatrixEpoch(epochs))
+  const selectId = useId()
+  const current = epochs.find((entry) => entry.epoch === selected)
+
+  return (
+    <section aria-label="混同行列">
+      <h2>混同行列</h2>
+      {current === undefined ? (
+        <p className={styles.muted}>この学習には混同行列が記録されていません。</p>
+      ) : (
+        <>
+          <label htmlFor={selectId}>エポック </label>
+          <select
+            id={selectId}
+            value={current.epoch}
+            onChange={(event) => setSelected(Number(event.target.value))}
+          >
+            {epochs.map((entry) => (
+              <option key={entry.epoch} value={entry.epoch}>
+                {entry.epoch}
+              </option>
+            ))}
+          </select>
+          <ConfusionMatrixTable
+            matrix={current.matrix}
+            caption={`検証データ・エポック ${current.epoch}`}
+          />
+        </>
+      )}
+    </section>
+  )
+}
+
 function HistoryContent({ history }: { readonly history: TrainingHistory }) {
   const lossChartRef = useRef<HTMLDivElement>(null)
   const lrChartRef = useRef<HTMLDivElement>(null)
@@ -113,15 +163,47 @@ function HistoryContent({ history }: { readonly history: TrainingHistory }) {
   const perClass = perClassColumnsOf(history.epochs)
   const classIndexes = Array.from({ length: perClass.count }, (_, index) => index)
 
-  const saveChart = (container: HTMLDivElement | null, kind: string, title: string) => {
+  // PNG も、画面に描いた SVG(chartSvgOf)から作る。SVG と PNG で見た目がそろう
+  const saveChart = async (
+    container: HTMLDivElement | null,
+    kind: string,
+    title: string,
+    format: 'svg' | 'png',
+  ) => {
     const svg = container === null ? null : chartSvgOf(container, title)
     if (svg === null) {
       setExportError('グラフがまだ描かれていないため、保存できませんでした。')
       return
     }
+    if (format === 'svg') {
+      setExportError(null)
+      downloadText(`${baseName}_${kind}.svg`, 'image/svg+xml', svg)
+      return
+    }
+    const png = await svgToPngBlob(svg)
+    if (png === null) {
+      setExportError('グラフを PNG に変換できませんでした。SVG で保存してください。')
+      return
+    }
     setExportError(null)
-    downloadText(`${baseName}_${kind}.svg`, 'image/svg+xml', svg)
+    downloadBlob(`${baseName}_${kind}.png`, png)
   }
+
+  /** グラフの上に置く「SVG で保存」「PNG で保存」 */
+  const saveButtons = (
+    ref: RefObject<HTMLDivElement | null>,
+    kind: string,
+    title: string,
+  ) => (
+    <span className={styles.saveButtons}>
+      <button type="button" onClick={() => void saveChart(ref.current, kind, title, 'svg')}>
+        SVG で保存
+      </button>
+      <button type="button" onClick={() => void saveChart(ref.current, kind, title, 'png')}>
+        PNG で保存
+      </button>
+    </span>
+  )
 
   return (
     <div className={styles.page}>
@@ -176,9 +258,7 @@ function HistoryContent({ history }: { readonly history: TrainingHistory }) {
           <>
             <section aria-label="loss の推移">
               <h2>loss の推移</h2>
-              <button type="button" onClick={() => saveChart(lossChartRef.current, 'loss', `${history.modelName} の loss`)}>
-                SVG で保存
-              </button>
+              {saveButtons(lossChartRef, 'loss', `${history.modelName} の loss`)}
               <div ref={lossChartRef}>
                 <LossChart points={lossPoints} />
               </div>
@@ -187,14 +267,7 @@ function HistoryContent({ history }: { readonly history: TrainingHistory }) {
             {hasMetrics(metricPoints) ? (
               <section aria-label={metricsTitle}>
                 <h2>{metricsTitle}</h2>
-                <button
-                  type="button"
-                  onClick={() =>
-                    saveChart(metricsChartRef.current, 'metrics', `${history.modelName} の ${metricsTitle}`)
-                  }
-                >
-                  SVG で保存
-                </button>
+                {saveButtons(metricsChartRef, 'metrics', `${history.modelName} の ${metricsTitle}`)}
                 <div ref={metricsChartRef}>
                   <MetricsChart points={metricPoints} />
                 </div>
@@ -207,14 +280,7 @@ function HistoryContent({ history }: { readonly history: TrainingHistory }) {
             {hasLearningRate(learningRatePoints) ? (
               <section aria-label="学習率の推移">
                 <h2>学習率の推移</h2>
-                <button
-                  type="button"
-                  onClick={() =>
-                    saveChart(lrChartRef.current, 'learning_rate', `${history.modelName} の学習率`)
-                  }
-                >
-                  SVG で保存
-                </button>
+                {saveButtons(lrChartRef, 'learning_rate', `${history.modelName} の学習率`)}
                 <div ref={lrChartRef}>
                   <LearningRateChart points={learningRatePoints} />
                 </div>
@@ -222,6 +288,8 @@ function HistoryContent({ history }: { readonly history: TrainingHistory }) {
             ) : (
               <p className={styles.muted}>この学習には学習率の記録がありません。</p>
             )}
+
+            <ConfusionMatrixSection epochs={confusionMatrixEpochs(history)} />
 
             <section aria-label="メトリクス">
               <h2>メトリクス</h2>

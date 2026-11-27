@@ -1,3 +1,4 @@
+import type { ConfusionMatrix } from '../training/confusion-matrix'
 import type { MetricPoint } from '../training/metric-points'
 import { metricPointOf, perClassValuesOf } from '../training/metric-points'
 import type {
@@ -73,6 +74,35 @@ export function historyLearningRatePoints(history: TrainingHistory): readonly Le
 /** mIoU(分類は accuracy)とクラスごとの値のグラフの点。再開をまたいだエポックの扱いは loss と同じ */
 export function historyMetricPoints(history: TrainingHistory): readonly MetricPoint[] {
   return latestEpochs(history).map((epoch) => metricPointOf(epoch.epoch, epoch.metrics))
+}
+
+/** 混同行列のあるエポック。再開でやり直したエポックは、グラフと同じく後の run のものを使う */
+export type ConfusionMatrixEpoch = {
+  readonly epoch: number
+  readonly matrix: ConfusionMatrix
+}
+
+/** 混同行列を選べるエポック(エポックの順)。混同行列を記録する前の学習・分類タスクでは空 */
+export function confusionMatrixEpochs(history: TrainingHistory): readonly ConfusionMatrixEpoch[] {
+  return latestEpochs(history).flatMap(({ epoch, metrics }) =>
+    metrics?.kind === 'segmentation' && metrics.confusionMatrix !== null
+      ? [{ epoch, matrix: metrics.confusionMatrix }]
+      : [],
+  )
+}
+
+/**
+ * 開いたときに表示するエポック。最後のエポック。
+ *
+ * 本来は最も良かったエポック(推論に使う _best.pt のエポック)を既定にする。ただしそのエポックは
+ * C++ の BestMetricTracker が決めたものを使い、ここで mIoU の最大値から計算し直さない(同じ値のエポックが
+ * 複数あるときや再開のときに _best.pt とずれる)。C++ から送って記録する issue「最も良かったエポックの記録と
+ * 表示」が入るまでは、最後のエポックにする。混同行列が 1 つもなければ null
+ */
+export function defaultConfusionMatrixEpoch(
+  epochs: readonly ConfusionMatrixEpoch[],
+): number | null {
+  return epochs.at(-1)?.epoch ?? null
 }
 
 // ------------------------------------------------------------

@@ -1578,6 +1578,19 @@ components:
           items:
             type: number
             format: double
+        confusion_matrix:
+          type: [array, "null"]
+          description: >-
+            検証データの混同行列(画素数)。行 = 正解のクラス、列 = 予測のクラスで、C 行 C 列
+            (C = per_class_iou の長さ)。ignore_index の画素は含めない。
+            ai-engine が送らなかった・混同行列を記録する前(0006 より前)の記録では null。
+            混同行列を送る前の古いサーバーではキーがない。
+          items:
+            type: array
+            items:
+              type: integer
+              format: int64
+              minimum: 0
 
     ClassificationMetrics:
       type: object

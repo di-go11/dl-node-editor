@@ -156,6 +156,9 @@ describe('createHttpTrainedModelApi', () => {
       metrics: { kind: 'segmentation' },
     })
     expect(typeof result.value.epochs[0]?.learningRate).toBe('number')
+    // 混同行列も記録から読める(モックは 2 クラス)
+    const metrics = result.value.epochs[0]?.metrics
+    expect(metrics?.kind === 'segmentation' ? metrics.confusionMatrix : undefined).toHaveLength(2)
   })
 
   it('学習の記録の 404 は、モデルが見つからないという説明にする', async () => {

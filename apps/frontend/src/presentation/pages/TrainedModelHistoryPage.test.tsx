@@ -1,4 +1,5 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { describe, expect, it } from 'vitest'
 
@@ -68,6 +69,7 @@ describe('mIoU とクラスごとの IoU の推移', () => {
           fwIou: 0.8,
           meanClassAccuracy: 0.6,
           perClassIou: [0.9, null, 0.3],
+          confusionMatrix: null,
         },
       }),
     ])
@@ -101,5 +103,76 @@ describe('mIoU とクラスごとの IoU の推移', () => {
       screen.queryByRole('heading', { name: 'mIoU とクラスごとの IoU の推移' }),
     ).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'loss の推移' })).toBeInTheDocument()
+  })
+})
+
+describe('混同行列', () => {
+  const withMatrix = (matrix: number[][]): HistoryEpoch['metrics'] => ({
+    kind: 'segmentation',
+    pixelAcc: 0.9,
+    miou: 0.5,
+    fwIou: 0.8,
+    meanClassAccuracy: 0.6,
+    perClassIou: [0.9, 0.4],
+    confusionMatrix: matrix,
+  })
+
+  it('開いたときは最後のエポックを選び、エポックを選ぶと切り替わる', async () => {
+    const user = userEvent.setup()
+    renderHistory([
+      epoch({
+        epoch: 1,
+        metrics: withMatrix([
+          [9, 1],
+          [6, 4],
+        ]),
+      }),
+      epoch({
+        epoch: 2,
+        metrics: withMatrix([
+          [9, 1],
+          [3, 7],
+        ]),
+      }),
+    ])
+    const select = await screen.findByRole('combobox', { name: 'エポック' })
+    expect(select).toHaveValue('2')
+    expect(screen.getByRole('table', { name: '検証データ・エポック 2' })).toHaveTextContent(
+      '70.0 %',
+    )
+
+    await user.selectOptions(select, '1')
+    expect(screen.getByRole('table', { name: '検証データ・エポック 1' })).toHaveTextContent(
+      '40.0 %',
+    )
+  })
+
+  it('混同行列のない記録(このissueより前の学習・分類タスク)では、その旨を出す', async () => {
+    renderHistory([
+      epoch({ epoch: 1 }),
+      epoch({
+        epoch: 2,
+        metrics: { kind: 'classification', accuracy: 1, macroF1: 1, perClassAccuracy: [1] },
+      }),
+    ])
+    expect(
+      await screen.findByText('この学習には混同行列が記録されていません。'),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: 'エポック' })).not.toBeInTheDocument()
+  })
+})
+
+describe('グラフの保存', () => {
+  it('グラフごとに SVG と PNG の保存ボタンがある。描く前に押すと保存できない理由を出す', async () => {
+    const user = userEvent.setup()
+    renderHistory([epoch({ epoch: 1 }), epoch({ epoch: 2 })])
+    const lossSection = await screen.findByRole('region', { name: 'loss の推移' })
+    expect(within(lossSection).getByRole('button', { name: 'SVG で保存' })).toBeInTheDocument()
+
+    // jsdom はグラフ(recharts の svg)を描かないので、保存できない側の動きを確かめる
+    await user.click(within(lossSection).getByRole('button', { name: 'PNG で保存' }))
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'グラフがまだ描かれていないため、保存できませんでした。',
+    )
   })
 })

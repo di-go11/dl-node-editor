@@ -1,3 +1,4 @@
+export * from './confusion-matrix'
 export * from './data-spec'
 export * from './loss'
 export * from './metric-points'

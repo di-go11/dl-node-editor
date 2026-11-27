@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest'
 
 import type { HistoryEpoch, TrainingHistory } from './history'
 import {
+  confusionMatrixEpochs,
+  defaultConfusionMatrixEpoch,
   historyLearningRatePoints,
   historyLossPoints,
   historyMetricPoints,
@@ -26,6 +28,7 @@ const epoch = (patch: Partial<HistoryEpoch>): HistoryEpoch => ({
     fwIou: 0.8,
     meanClassAccuracy: 0.6,
     perClassIou: [0.9, 0.1],
+    confusionMatrix: null,
   },
   ...patch,
 })
@@ -65,6 +68,7 @@ describe('グラフの点', () => {
       fwIou: 0.8,
       meanClassAccuracy: 0.6,
       perClassIou: [0.95, null],
+      confusionMatrix: null,
     } as const
     const h = history([
       epoch({ epoch: 1, metrics: null }),
@@ -75,6 +79,45 @@ describe('グラフの点', () => {
       { epoch: 1, kind: null, main: null, perClass: [] },
       { epoch: 2, kind: 'segmentation', main: 0.7, perClass: [0.95, null] },
     ])
+  })
+})
+
+describe('混同行列のエポック', () => {
+  const withMatrix = (matrix: number[][]): HistoryEpoch['metrics'] => ({
+    kind: 'segmentation',
+    pixelAcc: 0.9,
+    miou: 0.5,
+    fwIou: 0.8,
+    meanClassAccuracy: 0.6,
+    perClassIou: matrix.map(() => 0.5),
+    confusionMatrix: matrix,
+  })
+
+  it('混同行列のあるエポックだけを選べる。再開でやり直したエポックは後の run の行列', () => {
+    const h = history([
+      epoch({ epoch: 1 }), // 混同行列を記録する前のエポック(null)
+      epoch({ epoch: 2, metrics: withMatrix([[1]]) }),
+      epoch({ jobId: 'job-2', epoch: 2, metrics: withMatrix([[2]]) }),
+      epoch({ jobId: 'job-2', epoch: 3, metrics: withMatrix([[3]]) }),
+      epoch({
+        jobId: 'job-2',
+        epoch: 4,
+        metrics: { kind: 'classification', accuracy: 1, macroF1: 1, perClassAccuracy: [1] },
+      }),
+    ])
+    const epochs = confusionMatrixEpochs(h)
+    expect(epochs).toEqual([
+      { epoch: 2, matrix: [[2]] },
+      { epoch: 3, matrix: [[3]] },
+    ])
+    // 最も良かったエポックを記録するまでは、最後のエポック
+    expect(defaultConfusionMatrixEpoch(epochs)).toBe(3)
+  })
+
+  it('混同行列が 1 つもなければ空で、既定のエポックは null', () => {
+    const epochs = confusionMatrixEpochs(history([epoch({ epoch: 1 })]))
+    expect(epochs).toEqual([])
+    expect(defaultConfusionMatrixEpoch(epochs)).toBeNull()
   })
 })
 
@@ -135,6 +178,7 @@ describe('クラスごとの値の列', () => {
           fwIou: 0.8,
           meanClassAccuracy: 0.6,
           perClassIou: [0.9, 0.1, 0.3],
+          confusionMatrix: null,
         },
       }),
     ])
