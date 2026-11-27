@@ -189,6 +189,7 @@ message SegmentationMetrics{
     double fw_iou = 3;
     double mean_class_accuracy = 4;
     repeated double per_class_iou = 5;
+    repeated uint64 confusion_matrix = 6;
 }
 
 message ClassificationMetrics{

@@ -1,6 +1,7 @@
 #include <cmath>
 #include <cstdint>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -17,106 +18,127 @@
 
 namespace
 {
-int failureCount = 0;
-
-void check(bool condition, const std::string &message)
-{
-    std::cout << (condition ? "[PASS] " : "[FAIL] ") << message << std::endl;
-    if (!condition)
+    template <class T>
+    std::string toStringVec(const std::vector<T> &v)
     {
-        ++failureCount;
+        std::ostringstream os;
+        os << '[';
+        for (std::size_t i = 0; i < v.size(); i++)
+        {
+            if (i > 0)
+                os << ", ";
+            os << v[i];
+        }
+        os << ']';
+        return os.str();
     }
-}
 
-void checkNear(double actual, double expected, const std::string &message, double tol = 1e-6)
-{
-    check(std::fabs(actual - expected) <= tol, message +
-        " (expected " + std::to_string(expected) + ", got " + std::to_string(actual) + ")");
-}
+    int failureCount = 0;
 
-// 2クラス・2x2・バッチ1 の固定 prediction を返すだけのモデル。
-class FakeModel : public IModel
-{
-public:
-    explicit FakeModel(torch::Tensor prediction) : _prediction(std::move(prediction)) {}
-
-    at::Tensor forward(const at::Tensor & /*input*/) override { return _prediction; }
-    at::Tensor trainStep(at::Tensor &, at::Tensor &, ILoss &, IOptimizer &) override
+    void check(bool condition, const std::string &message)
     {
-        return torch::tensor(0.0);
+        std::cout << (condition ? "[PASS] " : "[FAIL] ") << message << std::endl;
+        if (!condition)
+        {
+            ++failureCount;
+        }
     }
-    std::vector<at::Tensor> parameters() const override { return {}; } // 評価テストでは未使用
-    void writeTo(ICheckpointWriter &) const override {}
-    void readFrom(ICheckpointReader &) override {}
-    void setTrain() override { ++setTrainCalls; }
-    void setEval() override { ++setEvalCalls; }
 
-    int setTrainCalls = 0;
-    int setEvalCalls = 0;
-
-private:
-    torch::Tensor _prediction;
-};
-
-// 常に 0.5 を返す loss。
-class FakeLoss : public ILoss
-{
-public:
-    void lossOut(const at::Tensor &, const at::Tensor &, at::Tensor &output) override
+    void checkNear(double actual, double expected, const std::string &message, double tol = 1e-6)
     {
-        output = torch::tensor(0.5);
+        check(std::fabs(actual - expected) <= tol, message +
+                                                       " (expected " + std::to_string(expected) + ", got " + std::to_string(actual) + ")");
     }
-};
 
-// バッチを1つだけ返すデータセット。
-class SingleBatchDataset : public IDatasetRepository
-{
-public:
-    explicit SingleBatchDataset(TrainingBatch batch) : _batch(std::move(batch)) {}
-
-    void reset() override { _consumed = false; }
-    bool hasNext() const override { return !_consumed; }
-    TrainingBatch getNextBatch() override
+    // 長さと各要素がすべて一致するか。std::vector の == は長さが違えば false を返し、範囲外を読まない
+    void checkVector(const std::vector<int64_t> &actual, const std::vector<int64_t> &expected, const std::string &message)
     {
-        _consumed = true;
-        return _batch;
+        check(actual == expected, message + " (expected " + toStringVec(expected) + ", got " + toStringVec(actual) + ")");
     }
-    std::size_t batchCount() const override { return 1; }
 
-private:
-    TrainingBatch _batch;
-    bool _consumed = false;
-};
-
-// target マスク(2x2, クラスID)から TrainingBatch を作る。入力画像の中身は評価結果に影響しない。
-TrainingBatch makeBatch(const std::vector<uint8_t> &targetMask)
-{
-    TrainingBatch batch;
-
-    NormalizedImageData input;
-    input.shape = {2, 2, 2}; // C=2, H=2, W=2
-    input.values.assign(2 * 2 * 2, 0.0f);
-    batch.input.values.push_back(std::move(input));
-    batch.input.num_samples = 1;
-
-    batch.target.values.emplace_back(std::vector<size_t>{1, 2, 2}, targetMask);
-    batch.target.num_samples = 1;
-
-    return batch;
-}
-
-// [1,2,2,2] の prediction を作る。channel 次元の argmax が predictedMask になる。
-torch::Tensor makePrediction(const std::vector<int64_t> &predictedMask, int64_t numClasses = 2)
-{
-    torch::Tensor logits = torch::zeros({1, numClasses, 2, 2});
-    for (int64_t p = 0; p < 4; ++p)
+    // 2クラス・2x2・バッチ1 の固定 prediction を返すだけのモデル。
+    class FakeModel : public IModel
     {
-        const int64_t y = p / 2;
-        const int64_t x = p % 2;
-        logits[0][predictedMask[p]][y][x] = 1.0;
+    public:
+        explicit FakeModel(torch::Tensor prediction) : _prediction(std::move(prediction)) {}
+
+        at::Tensor forward(const at::Tensor & /*input*/) override { return _prediction; }
+        at::Tensor trainStep(at::Tensor &, at::Tensor &, ILoss &, IOptimizer &) override
+        {
+            return torch::tensor(0.0);
+        }
+        std::vector<at::Tensor> parameters() const override { return {}; } // 評価テストでは未使用
+        void writeTo(ICheckpointWriter &) const override {}
+        void readFrom(ICheckpointReader &) override {}
+        void setTrain() override { ++setTrainCalls; }
+        void setEval() override { ++setEvalCalls; }
+
+        int setTrainCalls = 0;
+        int setEvalCalls = 0;
+
+    private:
+        torch::Tensor _prediction;
+    };
+
+    // 常に 0.5 を返す loss。
+    class FakeLoss : public ILoss
+    {
+    public:
+        void lossOut(const at::Tensor &, const at::Tensor &, at::Tensor &output) override
+        {
+            output = torch::tensor(0.5);
+        }
+    };
+
+    // バッチを1つだけ返すデータセット。
+    class SingleBatchDataset : public IDatasetRepository
+    {
+    public:
+        explicit SingleBatchDataset(TrainingBatch batch) : _batch(std::move(batch)) {}
+
+        void reset() override { _consumed = false; }
+        bool hasNext() const override { return !_consumed; }
+        TrainingBatch getNextBatch() override
+        {
+            _consumed = true;
+            return _batch;
+        }
+        std::size_t batchCount() const override { return 1; }
+
+    private:
+        TrainingBatch _batch;
+        bool _consumed = false;
+    };
+
+    // target マスク(2x2, クラスID)から TrainingBatch を作る。入力画像の中身は評価結果に影響しない。
+    TrainingBatch makeBatch(const std::vector<uint8_t> &targetMask)
+    {
+        TrainingBatch batch;
+
+        NormalizedImageData input;
+        input.shape = {2, 2, 2}; // C=2, H=2, W=2
+        input.values.assign(2 * 2 * 2, 0.0f);
+        batch.input.values.push_back(std::move(input));
+        batch.input.num_samples = 1;
+
+        batch.target.values.emplace_back(std::vector<size_t>{1, 2, 2}, targetMask);
+        batch.target.num_samples = 1;
+
+        return batch;
     }
-    return logits;
-}
+
+    // [1,2,2,2] の prediction を作る。channel 次元の argmax が predictedMask になる。
+    torch::Tensor makePrediction(const std::vector<int64_t> &predictedMask, int64_t numClasses = 2)
+    {
+        torch::Tensor logits = torch::zeros({1, numClasses, 2, 2});
+        for (int64_t p = 0; p < 4; ++p)
+        {
+            const int64_t y = p / 2;
+            const int64_t x = p % 2;
+            logits[0][predictedMask[p]][y][x] = 1.0;
+        }
+        return logits;
+    }
 } // namespace
 
 int main()
@@ -138,6 +160,10 @@ int main()
         checkNear(seg.fwIoU, 1.0, "perfect: fwIoU == 1.0");
         checkNear(seg.meanClassAccuracy, 1.0, "perfect: meanClassAccuracy == 1.0");
         checkNear(metrics.loss, 0.5, "perfect: loss == 0.5");
+        // 行 = 正解、列 = 予測(行優先)。対角だけに 2 画素ずつ
+        checkVector(seg.confusionMatrix, {2, 0,
+                                          0, 2},
+                    "perfect: confusionMatrix");
         check(seg.perClassIoU.size() == 2, "perfect: perClassIoU に 2 クラス分");
         check(model.setEvalCalls == 1, "perfect: setEval が1回呼ばれる");
         check(model.setTrainCalls == 1, "perfect: 評価後に setTrain へ戻す");
@@ -163,6 +189,10 @@ int main()
         checkNear(seg.fwIoU, 0.25, "all-zero: fwIoU == 0.25");
         // class0 の accuracy=2/2, class1 の accuracy=0/2 -> 平均 0.5
         checkNear(seg.meanClassAccuracy, 0.5, "all-zero: meanClassAccuracy == 0.5");
+        // 正解 1 の 2 画素が、予測 0 の列に入る
+        checkVector(seg.confusionMatrix, {2, 0,
+                                          2, 0},
+                    "all-zero: confusionMatrix");
     }
 
     // ---------- 3クラス: 背景を除いた meanIoU・fwIoU・meanClassAccuracy ----------
@@ -187,6 +217,11 @@ int main()
         checkNear(seg.fwIoU, 0.625, "3class: fwIoU == 0.625");
         // accuracy 1 / 1 / 0.5 -> 平均 2.5/3
         checkNear(seg.meanClassAccuracy, 2.5 / 3.0, "3class: meanClassAccuracy == 0.8333");
+        // 正解 2 の 1 画素を予測 1 と誤る -> [2][1] = 1。行と列の向き(正解 × 予測)を確かめる
+        checkVector(seg.confusionMatrix, {1, 0, 0,
+                                          0, 1, 0,
+                                          0, 1, 1},
+                    "3class: confusionMatrix");
     }
 
     // ---------- ignore_index(255): Letterbox 余白の扱い ----------
@@ -207,6 +242,10 @@ int main()
         checkNear(seg.pixelAccuracy, 1.0, "ignore: 無視画素を除けば accuracy == 1.0(落ちない)");
         checkNear(seg.meanIoU, 1.0, "ignore: 無視画素を除けば mIoU == 1.0");
         checkNear(metrics.loss, 0.5, "ignore: loss は FakeLoss の 0.5");
+        // 無視画素(予測 0)は数えない。数えると [0][0] が 2 になる
+        checkVector(seg.confusionMatrix, {1, 0,
+                                          0, 2},
+                    "ignore: confusionMatrix に無視画素を含めない");
     }
 
     // ---------- 全画素が ignore_index: 0 除算せず 0 を返す ----------
@@ -224,6 +263,10 @@ int main()
         checkNear(seg.meanIoU, 0.0, "all-ignore: meanIoU == 0.0");
         checkNear(seg.fwIoU, 0.0, "all-ignore: fwIoU == 0.0");
         checkNear(seg.meanClassAccuracy, 0.0, "all-ignore: meanClassAccuracy == 0.0");
+        // 数える画素がなくても、C×C の 0 で返す(空にしない)
+        checkVector(seg.confusionMatrix, {0, 0,
+                                          0, 0},
+                    "all-ignore: confusionMatrix は全て 0");
     }
 
     if (failureCount == 0)

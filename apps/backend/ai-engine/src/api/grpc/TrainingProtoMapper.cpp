@@ -537,6 +537,7 @@ namespace
                     out->set_miou(s.meanIoU);
                     out->set_fw_iou(s.fwIoU);
                     out->set_mean_class_accuracy(s.meanClassAccuracy);
+                    out->mutable_confusion_matrix()->Add(s.confusionMatrix.begin(), s.confusionMatrix.end());
                     out->mutable_per_class_iou()->Add(s.perClassIoU.begin(), s.perClassIoU.end());
                 },
                 [&](const ClassificationMetricsConfig &c)

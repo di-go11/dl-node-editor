@@ -18,6 +18,7 @@
 #include <string>
 #include <utility>
 #include <variant>
+#include <vector>
 
 namespace
 {
@@ -71,7 +72,7 @@ EpochMetrics TorchModelEvaluator::evaluateSegmentation(IDatasetRepository &valDa
         TrainingBatch batch = valData.getNextBatch();
 
         // BatchData を libtorch テンソルへ変換(学習時の TorchModelTrainer と同じ経路)
-        torch::Tensor input = converter.convert(batch.input);        // [N,C,H,W] float
+        torch::Tensor input = converter.convert(batch.input);         // [N,C,H,W] float
         torch::Tensor target = converter.convertTarget(batch.target); // [N,H,W]   int64
 
         // forward はモデルの device(CPU/CUDA)上の予測を返す。指標計算は
@@ -133,9 +134,9 @@ EpochMetrics TorchModelEvaluator::evaluateSegmentation(IDatasetRepository &valDa
     torch::Tensor fn = confusionMatrix.sum(1).to(torch::kFloat64) - tp;
     torch::Tensor denom = tp + fp + fn; // IoU の分母
 
-    double iouSum = 0.0;          // meanIoU 用(背景を除く)
+    double iouSum = 0.0; // meanIoU 用(背景を除く)
     int iouClasses = 0;
-    double fwIoU = 0.0;           // Σ 出現頻度 × IoU
+    double fwIoU = 0.0;            // Σ 出現頻度 × IoU
     double classAccuracySum = 0.0; // meanClassAccuracy 用
     int accuracyClasses = 0;
     segMetrics.perClassIoU.reserve(_numClasses);
@@ -170,9 +171,14 @@ EpochMetrics TorchModelEvaluator::evaluateSegmentation(IDatasetRepository &valDa
             ++accuracyClasses;
         }
     }
+
     segMetrics.meanIoU = iouClasses > 0 ? iouSum / iouClasses : 0.0;
     segMetrics.fwIoU = fwIoU; // 有効ピクセルが 0 のときは全クラス d == 0 なので 0 のまま
     segMetrics.meanClassAccuracy = accuracyClasses > 0 ? classAccuracySum / accuracyClasses : 0.0;
+
+    const torch::Tensor flat = confusionMatrix.contiguous().view({-1}); // 行優先の長さ(CxC)の平坦化された配列
+    const int64_t *first = flat.data_ptr<int64_t>();
+    segMetrics.confusionMatrix = std::vector<int64_t>(first, first + flat.numel()); // 範囲コンストラクタで始まりから終わりまでのアドレス先の値をコピーする。
 
     EpochMetrics metrics;
     metrics.loss = validPixelCount > 0 ? lossSum / static_cast<double>(validPixelCount) : 0.0;

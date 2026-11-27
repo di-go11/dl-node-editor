@@ -2,14 +2,16 @@
 
 #include <variant>
 #include <vector>
+#include <cstdint>
 
 struct SegmentationMetricsConfig
 {
-    double pixelAccuracy;     // 正解ピクセル / 総ピクセル: Max
-    double meanIoU;           // クラスごとの IoU の平均値(画素が存在するクラスのみ。背景(クラス0)は除く): Max
-    double fwIoU;             // クラスの出現頻度で重み付けした IoU: Max
-    double meanClassAccuracy; // クラスごとの accuracy(TP / (TP + FN))の平均: Max
-    std::vector<double> perClassIoU; // 背景を含む全クラス分。画素が存在しないクラスは NaN
+    double pixelAccuracy;                 // 正解ピクセル / 総ピクセル: Max
+    double meanIoU;                       // クラスごとの IoU の平均値(画素が存在するクラスのみ。背景(クラス0)は除く): Max
+    double fwIoU;                         // クラスの出現頻度で重み付けした IoU: Max
+    double meanClassAccuracy;             // クラスごとの accuracy(TP / (TP + FN))の平均: Max
+    std::vector<double> perClassIoU;      // 背景を含む全クラス分。画素が存在しないクラスは NaN
+    std::vector<int64_t> confusionMatrix; // 混同行列
 };
 
 struct ClassificationMetricsConfig
