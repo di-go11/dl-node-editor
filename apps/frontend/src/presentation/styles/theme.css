@@ -27,6 +27,21 @@
   --color-accent-text: #ffffff;
   --color-selection: #2563eb;
 
+  /*
+   * ---- グラフの系列(クラスごとの線など)の配色 ----
+   * この順に並べると、隣り合う色が色覚の多様性(P型・D型・T型)でも見分けられる(検証済み)。
+   * 順番を入れ替えたり、9 色目を足したりしない。9 番目以降のクラスは線の形(破線)で区別する。
+   * 明るい背景では 2〜5 が 3:1 を下回るので、色だけに頼らず名前のラベルを添える。
+   */
+  --color-series-1: #257de0; /* 青 */
+  --color-series-2: #f47230; /* 橙 */
+  --color-series-3: #00b894; /* 青緑 */
+  --color-series-4: #f2a600; /* 黄 */
+  --color-series-5: #ee7fac; /* 桃 */
+  --color-series-6: #008a17; /* 緑 */
+  --color-series-7: #6a4ce2; /* 紫 */
+  --color-series-8: #ec4647; /* 赤 */
+
   /* ---- 問題の重さ ---- */
   --color-error: #dc2626;
   --color-error-bg: #fef2f2;
@@ -70,6 +85,16 @@
     --color-text-muted: #94a3b8;
     --color-accent: #3b82f6;
     --color-selection: #60a5fa;
+
+    /* 同じ 8 色を暗い背景用の明るさにしたもの(並び順は同じ) */
+    --color-series-1: #338ced;
+    --color-series-2: #e76624;
+    --color-series-3: #00a888;
+    --color-series-4: #d28e05;
+    --color-series-5: #e24d8b;
+    --color-series-6: #0aac23;
+    --color-series-7: #9887ef;
+    --color-series-8: #eb6263;
 
     --color-error: #f87171;
     --color-error-bg: #3b1d1d;

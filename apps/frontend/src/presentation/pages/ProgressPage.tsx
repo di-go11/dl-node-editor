@@ -1,10 +1,12 @@
 import { useNavigate, useParams } from 'react-router'
 
 import { finishRun } from '../../application/run-state/run-state'
+import { hasMetrics, metricsChartTitle } from '../../entity/training/metric-points'
 import type { ProgressMetrics } from '../../entity/training/progress'
 import { hasLearningRate, TRAINING_STATUS_LABELS } from '../../entity/training/progress'
 import { LearningRateChart } from '../components/progress/LearningRateChart'
 import { LossChart } from '../components/progress/LossChart'
+import { MetricsChart } from '../components/progress/MetricsChart'
 import { useEditorStoreApi } from '../stores/editor-store-context'
 
 import styles from './ProgressPage.module.css'
@@ -81,8 +83,18 @@ function MetricsView({ metrics }: { readonly metrics: ProgressMetrics }) {
 function TrainingProgressView({ jobId }: { readonly jobId: string }) {
   const navigate = useNavigate()
   const store = useEditorStoreApi()
-  const { latest, lossPoints, learningRatePoints, problem, ended, stopping, stopError, stop } =
-    useTrainingProgress(jobId)
+  const {
+    latest,
+    lossPoints,
+    learningRatePoints,
+    metricPoints,
+    problem,
+    ended,
+    stopping,
+    stopError,
+    stop,
+  } = useTrainingProgress(jobId)
+  const metricsTitle = metricsChartTitle(metricPoints)
 
   const statusLabel = stopping
     ? '停止中(エポックの区切りで止まります)'
@@ -170,6 +182,14 @@ function TrainingProgressView({ jobId }: { readonly jobId: string }) {
           <LossChart points={lossPoints} />
         )}
       </section>
+
+      {/* メトリクスは検証のあとに届く。1 エポックも届いていなければグラフを出さない */}
+      {hasMetrics(metricPoints) && (
+        <section className={styles.section} aria-label={metricsTitle}>
+          <h2>{metricsTitle}</h2>
+          <MetricsChart points={metricPoints} />
+        </section>
+      )}
 
       {/* 学習率を送らない古いサーバー・古い学習では、全エポックで分からないのでグラフを出さない */}
       {hasLearningRate(learningRatePoints) && (

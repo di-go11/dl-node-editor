@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 
 import type { ProgressProblem } from '../../application/ports/training-api'
 import { finishRun } from '../../application/run-state/run-state'
+import type { MetricPoint } from '../../entity/training/metric-points'
+import { appendMetricPoint } from '../../entity/training/metric-points'
 import type {
   LearningRatePoint,
   LossPoint,
@@ -30,6 +32,8 @@ export type TrainingProgressView = {
   readonly lossPoints: readonly LossPoint[]
   /** エポックごとの学習率(学習エンジンから届いた値をそのまま描く) */
   readonly learningRatePoints: readonly LearningRatePoint[]
+  /** エポックごとの mIoU(分類は accuracy)とクラスごとの値 */
+  readonly metricPoints: readonly MetricPoint[]
   readonly problem: ProgressProblem | null
   /** 学習が終わったか、もう進捗が届かない。これ以上の変化を待たなくてよい */
   readonly ended: boolean
@@ -45,6 +49,7 @@ export function useTrainingProgress(jobId: string): TrainingProgressView {
   const [latest, setLatest] = useState<TrainingProgress | null>(null)
   const [lossPoints, setLossPoints] = useState<readonly LossPoint[]>([])
   const [learningRatePoints, setLearningRatePoints] = useState<readonly LearningRatePoint[]>([])
+  const [metricPoints, setMetricPoints] = useState<readonly MetricPoint[]>([])
   const [problem, setProblem] = useState<ProgressProblem | null>(null)
   const [stopRequested, setStopRequested] = useState(false)
   const [stopError, setStopError] = useState<string | null>(null)
@@ -56,6 +61,7 @@ export function useTrainingProgress(jobId: string): TrainingProgressView {
           setLatest(progress)
           setLossPoints((points) => appendLossPoint(points, progress))
           setLearningRatePoints((points) => appendLearningRatePoint(points, progress))
+          setMetricPoints((points) => appendMetricPoint(points, progress))
           setProblem(null)
           if (isTerminalStatus(progress.status)) {
             const state = store.getState()
@@ -83,6 +89,7 @@ export function useTrainingProgress(jobId: string): TrainingProgressView {
     latest,
     lossPoints,
     learningRatePoints,
+    metricPoints,
     problem,
     ended: finished || problem?.retrying === false,
     stopping: stopRequested && !finished,

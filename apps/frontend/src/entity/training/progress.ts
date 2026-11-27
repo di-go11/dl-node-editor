@@ -25,22 +25,28 @@ export function isTerminalStatus(status: TrainingStatus): status is TerminalTrai
   return status === 'completed' || status === 'failed' || status === 'stopped'
 }
 
+/*
+ * メトリクスの値は、NaN や inf のときは null(JSON では表せないため。Rust の serde_json は null で書く)。
+ * 例えば検証データに現れないクラスの IoU は、学習エンジンが NaN にする(0 と区別するため)。
+ */
+
 export type SegmentationMetrics = {
   readonly kind: 'segmentation'
-  readonly pixelAcc: number
-  readonly miou: number
-  readonly fwIou: number
-  readonly meanClassAccuracy: number
+  readonly pixelAcc: number | null
+  /** 背景(クラス 0)と、検証データに現れないクラスを除いた IoU の平均 */
+  readonly miou: number | null
+  readonly fwIou: number | null
+  readonly meanClassAccuracy: number | null
   /** クラスの番号順 */
-  readonly perClassIou: readonly number[]
+  readonly perClassIou: readonly (number | null)[]
 }
 
 export type ClassificationMetrics = {
   readonly kind: 'classification'
-  readonly accuracy: number
-  readonly macroF1: number
+  readonly accuracy: number | null
+  readonly macroF1: number | null
   /** クラスの番号順 */
-  readonly perClassAccuracy: readonly number[]
+  readonly perClassAccuracy: readonly (number | null)[]
 }
 
 /** タスクによってどちらか一方になる */

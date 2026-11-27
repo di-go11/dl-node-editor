@@ -5,11 +5,12 @@ import type { HistoryEpoch, TrainingHistory } from './history'
 import {
   historyLearningRatePoints,
   historyLossPoints,
+  historyMetricPoints,
   historyToCsv,
   latestEpochs,
   perClassColumnsOf,
-  perClassValuesOf,
 } from './history'
+import { perClassValuesOf } from '../training/metric-points'
 
 const epoch = (patch: Partial<HistoryEpoch>): HistoryEpoch => ({
   jobId: 'job-1',
@@ -54,6 +55,26 @@ describe('グラフの点', () => {
     ])
     expect(historyLossPoints(h)[1]).toEqual({ epoch: 2, trainLoss: 0.3, valLoss: 0.6 })
     expect(historyLearningRatePoints(h)[1]).toEqual({ epoch: 2, learningRate: 5e-4 })
+  })
+
+  it('mIoU の点も、再開でやり直したエポックは後の run の値になる', () => {
+    const later = {
+      kind: 'segmentation',
+      pixelAcc: 0.9,
+      miou: 0.7,
+      fwIou: 0.8,
+      meanClassAccuracy: 0.6,
+      perClassIou: [0.95, null],
+    } as const
+    const h = history([
+      epoch({ epoch: 1, metrics: null }),
+      epoch({ epoch: 2 }),
+      epoch({ jobId: 'job-2', epoch: 2, metrics: later }),
+    ])
+    expect(historyMetricPoints(h)).toEqual([
+      { epoch: 1, kind: null, main: null, perClass: [] },
+      { epoch: 2, kind: 'segmentation', main: 0.7, perClass: [0.95, null] },
+    ])
   })
 })
 

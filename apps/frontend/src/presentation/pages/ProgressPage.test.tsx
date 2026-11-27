@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { describe, expect, it, vi } from 'vitest'
@@ -133,10 +133,58 @@ describe('進捗の表示', () => {
         },
       }),
     )
-    expect(screen.getByText('mIoU')).toBeInTheDocument()
-    expect(screen.getByText('0.7100')).toBeInTheDocument()
-    expect(screen.getByText('クラス 1')).toBeInTheDocument()
-    expect(screen.getByText('0.4200')).toBeInTheDocument()
+    // グラフの線の切り替えにも mIoU の名前が出るので、最新の値の区画の中を見る
+    const latest = within(screen.getByRole('region', { name: 'メトリクス' }))
+    expect(latest.getByText('mIoU')).toBeInTheDocument()
+    expect(latest.getByText('0.7100')).toBeInTheDocument()
+    expect(latest.getByText('クラス 1')).toBeInTheDocument()
+    expect(latest.getByText('0.4200')).toBeInTheDocument()
+  })
+
+  it('メトリクスが届くと mIoU とクラスごとの IoU の推移のグラフを出す', () => {
+    const { send } = renderProgress()
+    send(progress({ epoch: 1 }))
+    expect(
+      screen.queryByRole('heading', { name: 'mIoU とクラスごとの IoU の推移' }),
+    ).not.toBeInTheDocument()
+
+    send(
+      progress({
+        epoch: 2,
+        metrics: {
+          kind: 'segmentation',
+          pixelAcc: 0.91,
+          miou: 0.71,
+          fwIou: 0.81,
+          meanClassAccuracy: 0.75,
+          perClassIou: [0.92, null, 0.5],
+        },
+      }),
+    )
+    expect(
+      screen.getByRole('heading', { name: 'mIoU とクラスごとの IoU の推移' }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: 'クラス 2 の IoU' })).toBeChecked()
+  })
+
+  it('NaN のクラス(null)は — と出す', () => {
+    const { send } = renderProgress()
+    send(
+      progress({
+        trainLoss: 0.5,
+        valLoss: 0.6,
+        metrics: {
+          kind: 'segmentation',
+          pixelAcc: 0.91,
+          miou: 0.71,
+          fwIou: 0.81,
+          meanClassAccuracy: 0.75,
+          perClassIou: [0.92, null],
+        },
+      }),
+    )
+    const latest = within(screen.getByRole('region', { name: 'メトリクス' }))
+    expect(latest.getByText('—')).toBeInTheDocument()
   })
 
   it('クラス分類のメトリクスを出す', () => {

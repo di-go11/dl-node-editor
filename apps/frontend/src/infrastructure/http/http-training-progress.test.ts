@@ -128,6 +128,29 @@ describe('進捗の受信', () => {
     expect(listener.onProgress.mock.calls[1]?.[0].metrics).toBeNull()
   })
 
+  it('メトリクスの NaN(JSON では null)を読める。検証データに現れないクラスの IoU は NaN になる', () => {
+    const { source, listener } = subscribe()
+    source.emit(
+      'progress',
+      JSON.stringify({
+        ...RUNNING_JSON,
+        metrics: {
+          type: 'segmentation',
+          pixel_accuracy: 0.9,
+          miou: null,
+          fw_iou: 0.8,
+          mean_class_accuracy: 0.7,
+          per_class_iou: [0.9, null, 0.1],
+        },
+      }),
+    )
+    expect(listener.onProgress.mock.calls[0]?.[0].metrics).toMatchObject({
+      kind: 'segmentation',
+      miou: null,
+      perClassIou: [0.9, null, 0.1],
+    })
+  })
+
   it.each(['completed', 'stopped'])('%s を受け取ったら閉じる', (status) => {
     const { source, listener } = subscribe()
     source.emit('progress', JSON.stringify({ ...RUNNING_JSON, status }))

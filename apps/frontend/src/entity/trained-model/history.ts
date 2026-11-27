@@ -1,3 +1,5 @@
+import type { MetricPoint } from '../training/metric-points'
+import { metricPointOf, perClassValuesOf } from '../training/metric-points'
 import type {
   LearningRatePoint,
   LossPoint,
@@ -7,7 +9,7 @@ import type {
 
 /**
  * 学習済みモデルの学習の記録(GET /models/{model_id}/history)。全 run の、エポックごとの結果。
- * モデル一覧から開く「学習の記録」の画面で、loss・学習率のグラフ(SVG で保存できる)と
+ * モデル一覧から開く「学習の記録」の画面で、loss・学習率・mIoU のグラフ(SVG で保存できる)と
  * メトリクスの表(CSV で保存できる)に使う。
  */
 export type TrainingHistory = {
@@ -68,6 +70,11 @@ export function historyLearningRatePoints(history: TrainingHistory): readonly Le
   }))
 }
 
+/** mIoU(分類は accuracy)とクラスごとの値のグラフの点。再開をまたいだエポックの扱いは loss と同じ */
+export function historyMetricPoints(history: TrainingHistory): readonly MetricPoint[] {
+  return latestEpochs(history).map((epoch) => metricPointOf(epoch.epoch, epoch.metrics))
+}
+
 // ------------------------------------------------------------
 // CSV
 // ------------------------------------------------------------
@@ -78,12 +85,6 @@ function csvCell(value: string | number | null): string {
   // NaN や inf(JSON の null 以外で来ることはないが、念のため)は空にする
   if (typeof value === 'number') return Number.isFinite(value) ? String(value) : ''
   return /[",\r\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value
-}
-
-/** クラスごとの値。segmentation は IoU、classification は accuracy。メトリクスがなければ空 */
-export function perClassValuesOf(metrics: ProgressMetrics | null): readonly number[] {
-  if (metrics === null) return []
-  return metrics.kind === 'segmentation' ? metrics.perClassIou : metrics.perClassAccuracy
 }
 
 /**

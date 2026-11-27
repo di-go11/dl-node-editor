@@ -5,15 +5,17 @@ import type { TrainingHistory } from '../../entity/trained-model/history'
 import {
   historyLearningRatePoints,
   historyLossPoints,
+  historyMetricPoints,
   historyToCsv,
   perClassColumnsOf,
-  perClassValuesOf,
 } from '../../entity/trained-model/history'
+import { hasMetrics, metricsChartTitle, perClassValuesOf } from '../../entity/training/metric-points'
 import { hasLearningRate, TRAINING_STATUS_LABELS } from '../../entity/training/progress'
 import { useDependencies } from '../app/dependencies'
 import { chartSvgOf, downloadText, safeFileName } from '../components/history/export-files'
 import { LearningRateChart } from '../components/progress/LearningRateChart'
 import { LossChart } from '../components/progress/LossChart'
+import { MetricsChart } from '../components/progress/MetricsChart'
 
 import styles from './TrainedModelPage.module.css'
 
@@ -22,6 +24,7 @@ import styles from './TrainedModelPage.module.css'
  *
  *   [← 一覧]  学習の記録: <モデル名>
  *   loss の推移        [SVG で保存]
+ *   mIoU の推移        [SVG で保存](分類は accuracy)
  *   学習率の推移       [SVG で保存]
  *   メトリクスの表     [CSV で保存]
  *
@@ -97,10 +100,13 @@ function formatLearningRate(value: number | null): string {
 function HistoryContent({ history }: { readonly history: TrainingHistory }) {
   const lossChartRef = useRef<HTMLDivElement>(null)
   const lrChartRef = useRef<HTMLDivElement>(null)
+  const metricsChartRef = useRef<HTMLDivElement>(null)
   const [exportError, setExportError] = useState<string | null>(null)
 
   const lossPoints = historyLossPoints(history)
   const learningRatePoints = historyLearningRatePoints(history)
+  const metricPoints = historyMetricPoints(history)
+  const metricsTitle = metricsChartTitle(metricPoints)
   const baseName = safeFileName(history.modelName)
   const runNumber = new Map(history.runs.map((run, index) => [run.jobId, index + 1]))
   // クラスごとの値の列(segmentation は IoU、classification は accuracy)
@@ -177,6 +183,25 @@ function HistoryContent({ history }: { readonly history: TrainingHistory }) {
                 <LossChart points={lossPoints} />
               </div>
             </section>
+
+            {hasMetrics(metricPoints) ? (
+              <section aria-label={metricsTitle}>
+                <h2>{metricsTitle}</h2>
+                <button
+                  type="button"
+                  onClick={() =>
+                    saveChart(metricsChartRef.current, 'metrics', `${history.modelName} の ${metricsTitle}`)
+                  }
+                >
+                  SVG で保存
+                </button>
+                <div ref={metricsChartRef}>
+                  <MetricsChart points={metricPoints} />
+                </div>
+              </section>
+            ) : (
+              <p className={styles.muted}>この学習にはメトリクスの記録がありません。</p>
+            )}
 
             {/* 学習率を記録する前の学習では、全エポックで分からないのでグラフを出さない */}
             {hasLearningRate(learningRatePoints) ? (

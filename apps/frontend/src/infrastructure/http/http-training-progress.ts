@@ -36,20 +36,26 @@ export const trainingStatusResponseSchema = z.object({
   reason: z.string().optional(),
 })
 
+/**
+ * メトリクスの値は NaN や inf のとき null で届く(Rust の f64 を serde_json が null で書く)。
+ * 検証データに現れないクラスの IoU は NaN なので、null を許さないと進捗や記録の全体が読めなくなる。
+ */
+const metricValueSchema = z.number().nullable()
+
 export const metricsJsonSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('segmentation'),
-    pixel_accuracy: z.number(),
-    miou: z.number(),
-    fw_iou: z.number(),
-    mean_class_accuracy: z.number(),
-    per_class_iou: z.array(z.number()),
+    pixel_accuracy: metricValueSchema,
+    miou: metricValueSchema,
+    fw_iou: metricValueSchema,
+    mean_class_accuracy: metricValueSchema,
+    per_class_iou: z.array(metricValueSchema),
   }),
   z.object({
     type: z.literal('classification'),
-    accuracy: z.number(),
-    macro_f1: z.number(),
-    per_class_accuracy: z.array(z.number()),
+    accuracy: metricValueSchema,
+    macro_f1: metricValueSchema,
+    per_class_accuracy: z.array(metricValueSchema),
   }),
 ])
 
